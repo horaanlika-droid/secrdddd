@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>рабочая тетрадь дибитишки · печать</title>
+<style>
+  :root{ --ink:#2B2320; --ink2:#6E6156; --line:#D8CFC2; --lav:#CCC3D1; --sky:#AFB8CD; --peony:#F7DDD5; --leaf:#C1BC77; --grass:#8D8B4C; --rose:#D8A4AF; }
+  *{box-sizing:border-box}
+  body{margin:0; font:14px/1.55 "SF Pro Text", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; color:var(--ink); background:#FBF8F2}
+  .bar{position:sticky; top:0; z-index:5; background:rgba(251,248,242,.9); backdrop-filter:blur(14px); border-bottom:1px solid var(--line);
+    display:flex; gap:10px; align-items:center; padding:10px 16px}
+  .bar button{border:0; border-radius:12px; padding:10px 16px; font:600 15px inherit; background:var(--grass); color:#fff; cursor:pointer}
+  .bar button.sec{background:#fff; color:var(--ink); box-shadow:0 1px 6px rgba(0,0,0,.08)}
+  .bar span{color:var(--ink2); font-size:13px; flex:1}
+  .page{max-width:820px; margin:0 auto; padding:28px 22px 80px}
+  header.cover{ text-align:center; padding:40px 10px 26px; border-bottom:2px solid var(--ink)}
+  header.cover img{width:120px; margin:0 auto 14px}
+  header.cover h1{margin:0; font-size:34px; letter-spacing:-.02em}
+  header.cover p{color:var(--ink2); margin:8px auto 0; max-width:560px}
+  .credit{font-size:11.5px; color:var(--ink2); margin-top:14px}
+  section{page-break-before:always; padding-top:22px}
+  section:first-of-type{page-break-before:auto}
+  h2{font-size:24px; margin:26px 0 4px; display:flex; align-items:center; gap:10px}
+  h2 .dot{width:14px;height:14px;border-radius:50% 50% 50% 0; transform:rotate(-45deg); flex:none}
+  .intro{color:var(--ink2); margin:0 0 14px}
+  .practice{border:1.5px solid var(--line); border-radius:16px; padding:16px 18px; margin:14px 0; page-break-inside:avoid}
+  .practice h3{margin:0 0 2px; font-size:17px}
+  .practice .mins{color:var(--ink2); font-size:12px}
+  .practice .why{margin:8px 0; color:#4A4038}
+  .practice ol{margin:6px 0; padding-left:20px}
+  .practice li{margin:4px 0}
+  .alt{background:var(--peony); border-radius:10px; padding:8px 12px; margin-top:8px; font-size:13px}
+  .alt b{display:block}
+  .write{margin-top:10px; border-top:1px dashed var(--line); padding-top:6px; color:var(--ink2); font-size:12px; letter-spacing:.06em; text-transform:uppercase}
+  .lines{height:96px; background:repeating-linear-gradient(to bottom, transparent 0 27px, var(--line) 27px 28px)}
+  .lines.short{height:60px}
+  .master{margin-top:8px; font-size:13px; color:var(--grass); font-weight:600}
+  .master:before{content:"☐ "; color:var(--ink2)}
+  .affirm{background:#fff; border:1.5px solid var(--line); border-radius:12px; padding:10px 14px; margin:8px 0; page-break-inside:avoid}
+  table.sens{width:100%; border-collapse:collapse; margin:10px 0}
+  table.sens td, table.sens th{border:1px solid var(--line); padding:8px 10px; font-size:13px; text-align:left}
+  table.sens th{background:var(--peony)}
+  footer{margin-top:30px; color:var(--ink2); font-size:12px; text-align:center}
+  @media print{
+    .bar{display:none}
+    body{background:#fff}
+    .page{padding:0}
+    .practice{border-color:#BBB}
+    section{padding-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button onclick="window.print()">печать / сохранить в pdf</button>
+  <button class="sec" onclick="location.href='index.html'">← в приложение</button>
+  <span>дибитишка · печатная тетрадь</span>
+</div>
+<div class="page" id="page">загружаю тетрадь…</div>
+<script>
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+(async () => {
+  let C = null;
+  for (const u of ['content/content.json']) {
+    try { const r = await fetch(u); C = await r.json(); if (C.blocks) break; } catch (e) {}
+  }
+  if (!C) { document.getElementById('page').textContent = 'не удалось загрузить контент'; return; }
+  const W = C.workbook;
+  const tints = { lavender:'#CCC3D1', leaf:'#C1BC77', grass:'#8D8B4C', sky:'#AFB8CD', peony:'#F7DDD5' };
+  let h = `<header class="cover">
+    <img src="assets/mascot/icon.png" alt="">
+    <h1>${esc(W.title)}</h1>
+    <p>${esc(W.subtitle)}</p>
+    <p>${esc(W.intro)}</p>
+    <div class="credit">${esc(C.meta.credits)}<br>app by @stonym0ntana</div>
+  </header>`;
+  for (const b of C.blocks) {
+    h += `<section><h2><span class="dot" style="background:${tints[b.tint] || '#CCC3D1'}"></span>${esc(b.title)} · ${esc(b.subtitle)}</h2>
+      <p class="intro">${esc(b.intro)}</p>`;
+    for (const p of b.practices) {
+      h += `<div class="practice">
+        <h3>${esc(p.title)}</h3><div class="mins">≈ ${p.minutes} мин</div>
+        <div class="why">${esc(p.why)}</div>
+        <ol>${p.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+        <div class="alt"><b>если не можется — альтернатива: ${esc(p.alt.title)}</b>${p.alt.steps.map(s => esc(s)).join(' · ')}</div>
+        <div class="master">${esc(p.master)}</div>
+        <div class="write">${esc(W.write_here)}</div><div class="lines"></div>
+      </div>`;
+    }
+    h += `</section>`;
+  }
+  /* affirmations */
+  const aff = (C.blocks.find(b => b.id === 'base')?.practices.find(p => p.id === 'affirm')?.extras?.affirmations) || [];
+  if (aff.length) {
+    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>фразы, которые держат</h2>
+      <p class="intro">вычеркни, что не твоё, допиши свои. это твоя страница.</p>` +
+      aff.map(a => `<div class="affirm">${esc(a)}</div>`).join('') +
+      `<div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
+  }
+  /* crisis plan */
+  h += `<section><h2><span class="dot" style="background:#AFB8CD"></span>мой кризисный план</h2>
+    <p class="intro">заполняется в штиль. читается в шторм.</p>` +
+    W.crisis_fields.map(f => `<div class="practice"><h3>${esc(f)}</h3><div class="lines short"></div></div>`).join('') + `</section>`;
+  /* sensory profile */
+  h += `<section><h2><span class="dot" style="background:#8D8B4C"></span>мой сенсорный профиль</h2>
+    <p class="intro">восемь чувств: отметь, где гипер (слишком много), гипо (мало) и ровно.</p>
+    <table class="sens"><tr><th>чувство</th><th>гипер</th><th>гипо</th><th>ровно</th><th>пример из жизни</th></tr>` +
+    W.sensory_senses.map(s => `<tr><td>${esc(s)}</td><td>☐</td><td>☐</td><td>☐</td><td style="min-width:160px"></td></tr>`).join('') +
+    `</table><div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
+  h += `<footer>дибитишка · напечатано с любовью · app by @stonym0ntana</footer>`;
+  document.getElementById('page').innerHTML = h;
+})();
+</script>
+</body>
+</html>

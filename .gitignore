@@ -1,0 +1,6 @@
+_source/
+node_modules/
+dist/
+.DS_Store
+bot/db.json
+bot/content.export.json
