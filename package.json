@@ -12,7 +12,8 @@
     "bot": "node bot/src/index.js",
     "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "verify": "npm run check && npm run smoke"
+    "port": "node scripts/port-clash.mjs",
+    "verify": "npm run check && npm run smoke && npm run port"
   },
   "dependencies": {
     "grammy": "^1.30.0",

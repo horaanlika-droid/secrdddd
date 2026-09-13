@@ -1,8 +1,15 @@
 name: GitHub Pages
 
+# Публикует папку app/ как сайт.
+# ВАЖНО: этот workflow срабатывает, только если в Settings → Pages →
+# Build and deployment → Source выбран «GitHub Actions». Если там стоит
+# «Deploy from a branch» (main, /), сайт собирает Jekyll из корня
+# репозитория — тогда работает корневой index.html (редирект в app/).
+# Оба режима дают один результат: открывается приложение, а не README.
+
 on:
   push:
-    branches: [ main, arena/01a09add-secrdddd ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -20,9 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: проверяем, что публиковать есть что
+        run: |
+          test -f app/index.html || { echo "нет app/index.html — публиковать нечего"; exit 1; }
+          test -f app/content/content.json || echo "предупреждение: нет app/content/content.json"
+          echo "публикуем $(find app -type f | wc -l) файлов из app/"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: app
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -32,3 +45,21 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: проверяем, что открывается приложение, а не README
+        run: |
+          url="${{ steps.deployment.outputs.page_url }}"
+          echo "жду $url"
+          body=""
+          for i in $(seq 1 18); do
+            body="$(curl -sL --max-time 20 "$url" || true)"
+            if [ -n "$body" ]; then break; fi
+            sleep 10
+          done
+          if [ -z "$body" ]; then echo "сайт не ответил за 3 минуты"; exit 1; fi
+          if echo "$body" | grep -q "app/index.html"; then
+            echo "ок: $url ведёт в приложение"
+          else
+            echo "на $url открывается НЕ приложение. Первые строки:"
+            echo "$body" | head -30
+            exit 1
+          fi

@@ -65,24 +65,62 @@ docker compose logs -f # смотрим, что [bot] polling started
 > docker compose down && docker compose build --no-cache && docker compose up -d
 > ```
 
+### Порт: автоочистка при деплое
+
+Если на `PORT` осталась наша прошлая копия (деплой не дождался остановки прошлого
+процесса), бот не падает с `EADDRINUSE`, а разбирается сам (`bot/src/port.js`):
+
+```
+[port] прошлый процесс бота (pid 42: node bot/src/index.js) держит порт — прошу освободить
+[port] pid 42 освободил порт
+[http] API on :8080
+```
+
+Правила простые: свою прошлую копию останавливаем (SIGTERM → 5 с → SIGKILL),
+**чужой процесс не трогаем никогда** — вместо этого берём следующий свободный порт
+и громко об этом пишем. `PORT_STRICT=1` запрещает скакать по портам (осмысленно
+в Docker, где проброшен ровно один порт).
+
+По SIGTERM/SIGINT база пишется сразу (`flush()`), сервер закрывается, порт
+освобождается — деплой не теряет данные и не оставляет порт занятым.
+
 ### Проверки (чтобы это не вернулось)
 
 ```bash
 npm run check   # зависимости резолвятся, lockfile не разошёлся, точка входа
-                # не импортирует grammy напрямую, .dockerignore ничего не потерял
+                # не импортирует grammy напрямую, .dockerignore ничего не потерял,
+                # корень Pages ведёт в app/, порт чистится через acquirePort
 npm run smoke   # бот реально поднимается и отвечает на /health и /content.json
-npm run verify  # и то, и другое
+npm run port    # деплой на занятый порт: своя копия уходит, чужая не страдает
+npm run verify  # всё вместе
 ```
 
 То же самое делает CI: `.github/workflows/ci.yml` на каждый пуш и PR.
 Отдельная джоба `self-heal` воспроизводит аварию — удаляет `node_modules`
-и проверяет, что бот поставит их сам и поднимется.
+и проверяет, что бот поставит их сам и поднимется. А `pages.yml` после публикации
+открывает сайт и проверяет, что там приложение, а не README.
 
 ## 2. GitHub Pages
 
-1. В репозитории: Settings → Pages → Source: **GitHub Actions**.
-2. Пуш в `main` (или в рабочую ветку) — workflow `.github/workflows/pages.yml` опубликует папку `app/`.
+1. В репозитории: Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+2. Пуш в `main` — workflow `.github/workflows/pages.yml` опубликует папку `app/`
+   и сам проверит, что по адресу открывается приложение, а не README.
 3. URL вида `https://<user>.github.io/<repo>/` — это веб-версия.
+
+> **Если по адресу сайта открывается текст README, а не приложение**
+>
+> Значит Pages стоит в режиме «Deploy from a branch» (ветка `main`, папка `/`):
+> тогда сайт собирает Jekyll из **корня репозитория**, а не из `app/`.
+> Проверить: Settings → Pages → Build and deployment → Source.
+>
+> Починка в репозитории уже есть и работает в обоих режимах:
+> корневой `index.html` мгновенно редиректит в `app/index.html` (сохраняя `?query`
+> и `#hash` — во фрагменте Telegram передаёт `tgWebAppData`), а `.nojekyll`
+> отключает обработку Jekyll. Так что даже в legacy-режиме откроется приложение.
+>
+> Режим **GitHub Actions** всё равно лучше (публикуется только `app/`, без PDF,
+> Dockerfile и исходников бота), но для его включения нужен один клик в настройках:
+> Source → **GitHub Actions** → Save. Терминал не нужен.
 
 ## 3. Привязка к Telegram
 

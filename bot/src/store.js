@@ -20,11 +20,20 @@ try {
 } catch (e) { console.error('[db] read error, starting fresh:', e.message); }
 
 let t;
+const writeNow = () => {
+  clearTimeout(t);
+  t = null;
+  try { fs.writeFileSync(FILE, JSON.stringify(db)); return true; }
+  catch (e) { console.error('[db] write error:', e.message); return false; }
+};
 export const save = () => {
   clearTimeout(t);
   t = setTimeout(() => {
     try { fs.writeFileSync(FILE, JSON.stringify(db)); } catch (e) { console.error('[db] write error:', e.message); }
   }, 250);
 };
+/** Немедленная запись: зовётся при SIGTERM, чтобы деплой не потерял данные
+    (обычный save() отложен на 250 мс и при быстром останове не успевает). */
+export const flush = () => (t ? writeNow() : true);
 export const getDB = () => db;
 export const resetDB = (v) => { db = v; save(); };

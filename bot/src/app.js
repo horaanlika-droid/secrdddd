@@ -14,7 +14,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDB, save, resetDB } from './store.js';
+import { getDB, save, resetDB, flush } from './store.js';
+import { acquirePort } from './port.js';
 import { removeWhiteBackground } from './bgremove.js';
 import * as tribute from './tribute.js';
 
@@ -278,7 +279,7 @@ const json = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' });
   res.end(JSON.stringify(obj));
 };
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
   const u = new URL(req.url, 'http://x');
   if (req.method === 'GET' && u.pathname === '/health') return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length });
@@ -334,7 +335,30 @@ http.createServer(async (req, res) => {
     return;
   }
   json(res, 404, { ok: false });
-}).listen(PORT, '0.0.0.0', () => console.log(`[http] API on :${PORT}`));
+});
+
+/* ---------- HTTP API: порт занимаем сами, при нужде чистя его ----------
+   Если на порту осталась наша прошлая копия (деплой не дождался остановки),
+   acquirePort попросит её уйти и займёт порт сам. */
+const ACTUAL_PORT = await acquirePort(server, PORT);
+console.log(`[http] API on :${ACTUAL_PORT}`);
+
+/* ---------- аккуратный выход: деплой не должен терять данные ----------
+   save() отложен на 250 мс, поэтому при SIGTERM пишем базу сразу,
+   закрываем сервер (порт освобождается) и только потом выходим. */
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[bot] ${signal} — сохраняю базу и освобождаю порт ${ACTUAL_PORT}`);
+  flush();
+  const done = () => process.exit(0);
+  try { await bot.stop(); } catch { /* polling может быть уже мёртв */ }
+  server.close(done);
+  setTimeout(done, 3000).unref(); // если кто-то держит соединение — уходим сами
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
 /* ---------- планировщик напоминаний ---------- */
 setInterval(() => {

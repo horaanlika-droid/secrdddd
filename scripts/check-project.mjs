@@ -305,6 +305,60 @@ for (const [label, lock, pkg, dir] of [
   const files = exists(wf) ? fs.readdirSync(wf) : [];
   if (!files.some((f) => /check|ci|test/i.test(f))) bad('нет CI-workflow с проверками', 'добавь .github/workflows/ci.yml');
   else ok(`CI-workflow на месте: ${files.join(', ')}`);
+
+  // ветки arena/* — временные, триггер на них протухнет сразу после мерджа
+  for (const f of files) {
+    const text = read(path.join(wf, f));
+    const stale = [...text.matchAll(/branches:\s*\[([^\]]*)\]/g)]
+      .flatMap((m) => m[1].split(',').map((s) => s.trim().replace(/['"]/g, '')))
+      .filter((b) => b && b !== 'main');
+    if (stale.length) bad(`${f}: триггер на непостоянную ветку`, stale.join(', ') + ' — оставь только main');
+    else if (/branches:/.test(text)) ok(`${f}: триггер только на постоянные ветки`);
+  }
+}
+
+/* ---------- 11. GitHub Pages: сайт, а не README ---------- */
+{
+  const rootIndex = read(path.join(ROOT, 'index.html'));
+  if (!rootIndex) {
+    bad('в корне нет index.html',
+      'Pages в режиме «Deploy from a branch» собирает корень репозитория: ' +
+      'без index.html Jekyll покажет README.md вместо приложения');
+  } else {
+    if (!rootIndex.includes('app/index.html')) bad('index.html в корне не ведёт в app/index.html');
+    else ok('index.html в корне ведёт в app/index.html');
+    if (!/location\.replace|http-equiv="refresh"/.test(rootIndex)) bad('index.html в корне не делает редирект');
+    else ok('index.html в корне редиректит на приложение');
+    if (!/location\.hash/.test(rootIndex)) bad('index.html в корне теряет #hash', 'Telegram Mini App передаёт tgWebAppData во фрагменте');
+    else ok('index.html в корне сохраняет query и hash (важно для Telegram)');
+  }
+  if (!exists(path.join(ROOT, '.nojekyll'))) bad('нет .nojekyll', 'без него Jekyll обрабатывает корень и может показать README');
+  else ok('.nojekyll на месте — Jekyll отключён');
+  if (!exists(path.join(ROOT, 'app', 'index.html'))) bad('нет app/index.html — приложению нечем открываться');
+  else ok('app/index.html на месте');
+
+  const pages = read(path.join(ROOT, '.github', 'workflows', 'pages.yml'));
+  if (!pages) bad('нет .github/workflows/pages.yml');
+  else {
+    if (!/path:\s*app/.test(pages)) bad('pages.yml публикует не папку app');
+    else ok('pages.yml публикует app/');
+  }
+}
+
+/* ---------- 12. порт: автоочистка и аккуратный выход ---------- */
+{
+  const app = read(path.join(BOT, 'src', 'app.js'));
+  const store = read(path.join(BOT, 'src', 'store.js'));
+  if (!exists(path.join(BOT, 'src', 'port.js'))) bad('нет bot/src/port.js — порт при деплое не чистится');
+  else ok('bot/src/port.js на месте');
+  if (!/acquirePort\(/.test(app)) bad('bot/src/app.js не зовёт acquirePort', 'иначе EADDRINUSE снова уронит деплой');
+  else ok('bot/src/app.js занимает порт через acquirePort');
+  if (!/\.listen\(PORT/.test(app)) ok('bot/src/app.js не слушает порт в лоб (есть очистка)');
+  else bad('bot/src/app.js слушает PORT напрямую', 'так EADDRINUSE убивает старт — нужен acquirePort');
+  if (!/SIGTERM/.test(app)) bad('bot/src/app.js не обрабатывает SIGTERM', 'деплой оборвёт процесс и потеряет несохранённую базу');
+  else ok('bot/src/app.js обрабатывает SIGTERM');
+  if (!/export const flush/.test(store)) bad('bot/src/store.js не отдаёт flush()', 'отложенный save() не успеет записать базу при останове');
+  else ok('bot/src/store.js отдаёт flush() для немедленной записи');
 }
 
 /* ---------- итог ---------- */

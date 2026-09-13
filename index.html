@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- ============================================================
+     дибитишка · корневая страница GitHub Pages
+     ------------------------------------------------------------
+     Зачем этот файл: если в Settings → Pages стоит «Deploy from a
+     branch» (main, корень), Jekyll собирает сайт из корня репозитория.
+     Без index.html в корне он рендерит README.md — и на сайте открывается
+     текст ридми вместо приложения.
+
+     Этот файл гарантирует, что по адресу
+       https://horaanlika-droid.github.io/secrdddd/
+     всегда открывается само приложение из app/ — при любом режиме
+     Pages. Редирект мгновенный и сохраняет query и hash: Telegram
+     Mini App передаёт init-данные во фрагменте (#tgWebAppData=...),
+     терять их нельзя.
+     ============================================================ -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F1EA">
+<title>дибитишка</title>
+<link rel="icon" type="image/png" href="app/assets/mascot/icon.png">
+<meta http-equiv="refresh" content="0; url=app/index.html">
+<script>
+  // сохраняем ?query и #hash — во фрагменте приходит tgWebAppData
+  location.replace('app/index.html' + location.search + location.hash);
+</script>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: grid; place-items: center; gap: 14px;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #4A4458;
+    background: radial-gradient(120% 120% at 20% 0%, #F3EEF7 0%, #F5F1EA 55%, #EAF1EC 100%);
+  }
+  img { width: 92px; height: auto; }
+  a { color: #7A6BA8; }
+  p { margin: 0; opacity: .8; }
+</style>
+</head>
+<body>
+  <img src="app/assets/mascot/hello.png" alt="дибитишка">
+  <p>открываю приложение…</p>
+  <p><a href="app/index.html">дибитишка — открыть вручную</a></p>
+</body>
+</html>
