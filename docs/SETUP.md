@@ -16,6 +16,21 @@
 
 Запуск: `npm install && npm start` в папке `bot/`.
 
+### Или в Docker (рекомендуется, если бот живёт в контейнере)
+
+Всё, что нужно боту (grammy, jpeg-js, pngjs), ставится при сборке образа —
+зависимости не теряются при перезапуске/пересборке:
+
+```bash
+cp .env.example .env   # вписать TG_TOKEN, ADMIN_IDS, (TRIBUTE_API)
+docker compose up -d --build
+docker compose logs -f # смотрим, что [bot] polling started
+```
+
+Данные (пользователи, контент, напоминания) лежат в томе `bot-data` (`/data/db.json`) —
+переживают пересборку. Без compose: `docker build -t dibitishka-bot .` и `docker run`
+(см. комментарий в `Dockerfile`).
+
 ## 2. GitHub Pages
 
 1. В репозитории: Settings → Pages → Source: **GitHub Actions**.

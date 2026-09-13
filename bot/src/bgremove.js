@@ -1,8 +1,16 @@
 /* Вырезание белого/светлого фона у картинок для рассылок.
    Чистый JS (jpeg-js + pngjs), без нативных зависимостей —
-   ставится на любой бот-хостинг. */
-import JPEG from 'jpeg-js';
-import { PNG } from 'pngjs';
+   ставится на любой бот-хостинг.
+   Зависимости подгружаются лениво: если их нет в node_modules,
+   остальной бот работает, а только эта функция отвечает понятной ошибкой. */
+
+let decoders;
+async function loadDecoders() {
+  if (decoders) return decoders;
+  const [jpeg, png] = await Promise.all([import('jpeg-js'), import('pngjs')]);
+  decoders = { JPEG: jpeg.default ?? jpeg, PNG: png.PNG };
+  return decoders;
+}
 
 const isBg = (rgba, o) => {
   if (rgba[o + 3] === 0) return true;
@@ -14,8 +22,16 @@ const isBg = (rgba, o) => {
 /**
  * Принимает Buffer картинки (png или jpeg), возвращает Buffer PNG
  * с прозрачным фоном: заливка с краёв по светлому фону.
+ * Если в node_modules нет jpeg-js/pngjs — бросает ошибку с подсказкой,
+ * но не роняет процесс: вызывающий код ловит её и шлёт картинку как есть.
  */
-export function removeWhiteBackground(buf, isPng = false) {
+export async function removeWhiteBackground(buf, isPng = false) {
+  let JPEG, PNG;
+  try {
+    ({ JPEG, PNG } = await loadDecoders());
+  } catch (e) {
+    throw new Error(`нет пакетов jpeg-js/pngjs (выполните npm install в bot/): ${e.message}`);
+  }
   let w, h, rgba;
   if (isPng) {
     const png = PNG.sync.read(buf);

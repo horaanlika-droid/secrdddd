@@ -249,8 +249,11 @@ async function sendBroadcast(ctx, cutBg) {
       const ab = await r.arrayBuffer();
       photoBuf = Buffer.from(ab);
       const isPng = /\.png$/i.test(f.file_path || '');
-      if (cutBg) photoBuf = removeWhiteBackground(photoBuf, isPng);
-    } catch (e) { console.error('[broadcast] photo error', e.message); }
+      if (cutBg) photoBuf = await removeWhiteBackground(photoBuf, isPng);
+    } catch (e) {
+      console.error('[broadcast] photo error', e.message);
+      if (cutBg && photoBuf) ctx.reply(`вырезать фон не удалось (${e.message}). отправляю картинку как есть.`).catch(() => {});
+    }
   }
   let ok = 0, fail = 0;
   for (const u of Object.values(db.users)) {
