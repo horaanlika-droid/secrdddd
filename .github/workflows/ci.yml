@@ -1,0 +1,89 @@
+name: checks
+
+# Проверки на будущие конфликты: падают ДО деплоя, если зависимости
+# потерялись, lockfile разошёлся с package.json, точка входа снова
+# импортирует grammy напрямую или образ не собирается.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deps:
+    name: зависимости и структура
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            bot/package-lock.json
+            package-lock.json
+
+      # npm ci падает сам, если package.json и package-lock.json разошлись
+      - name: зависимости бота
+        working-directory: bot
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: зависимости корня (для хостов, ставящих в корне репозитория)
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: все зависимости резолвятся из bot/src
+        run: node bot/src/ensure-deps.js --check
+
+      - name: проверка проекта на будущие конфликты
+        run: node scripts/check-project.mjs
+
+  smoke:
+    name: бот поднимается
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: bot/package-lock.json
+      - name: зависимости
+        working-directory: bot
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: смоук-тест (/health и /content.json)
+        run: node scripts/smoke.mjs
+
+  self-heal:
+    name: бот сам ставит зависимости
+    # воспроизводит аварию «Cannot find package 'grammy'»: node_modules нет
+    # вовсе — точка входа обязана поставить их сама и подняться
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: убеждаемся, что зависимостей нет
+        run: |
+          rm -rf bot/node_modules node_modules
+          node bot/src/ensure-deps.js --check && { echo "ожидался провал проверки"; exit 1; } || echo "ок: зависимостей нет, как в аварии"
+      - name: запуск с нуля — бот ставит зависимости сам
+        run: node scripts/smoke.mjs
+      - name: после автоустановки проверка чистая
+        run: node bot/src/ensure-deps.js --check
+
+  docker:
+    name: образ собирается
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build (внутри — проверка зависимостей и смоук-тест)
+        run: docker build -t dibitishka-bot .
