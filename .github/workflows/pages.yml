@@ -2,7 +2,7 @@ name: GitHub Pages
 
 on:
   push:
-    branches: [ main, arena/01a09add-secrdddd ]
+    branches: [ main, arena/01a09add-secrdddd, arena/01a09b80-secrdddd ]
   workflow_dispatch:
 
 permissions:

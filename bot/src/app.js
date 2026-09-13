@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDB, save, resetDB } from './store.js';
 import { removeWhiteBackground } from './bgremove.js';
+import { freePort } from './free-port.js';
 import * as tribute from './tribute.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -278,7 +279,7 @@ const json = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' });
   res.end(JSON.stringify(obj));
 };
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
   const u = new URL(req.url, 'http://x');
   if (req.method === 'GET' && u.pathname === '/health') return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length });
@@ -334,7 +335,38 @@ http.createServer(async (req, res) => {
     return;
   }
   json(res, 404, { ok: false });
-}).listen(PORT, '0.0.0.0', () => console.log(`[http] API on :${PORT}`));
+});
+
+/* ---------- авто-очистка порта при деплое ----------
+   Если порт ещё держит процесс с прошлого запуска (старый npm start,
+   упавший не до конца контейнер и т.п.), freePort остановит его —
+   и новый запуск с первого раза занимает порт вместо EADDRINUSE. */
+let httpRetries = 0;
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE' && httpRetries < 2) {
+    httpRetries++;
+    console.error(`[http] порт ${PORT} заняли в долю секунды (EADDRINUSE) — чищу снова и повторяю (попытка ${httpRetries}/2)`);
+    setTimeout(() => {
+      takePort().catch((err) => {
+        console.error('[http] ' + err.message);
+        process.exit(1);
+      });
+    }, 500);
+    return;
+  }
+  console.error('[http] ' + e.message +
+    (e.code === 'EADDRINUSE' ? ` — не удалось освободить, закрой процесс вручную: fuser -k ${PORT}/tcp` : ''));
+  process.exit(1);
+});
+async function takePort() {
+  const freed = await freePort(PORT);
+  if (freed.length) console.log(`[port] порт ${PORT} освобождён до старта: pid ${freed.join(', ')}`);
+  server.listen(PORT, '0.0.0.0', () => console.log(`[http] API on :${PORT}`));
+}
+takePort().catch((e) => {
+  console.error('[http] ' + e.message);
+  process.exit(1);
+});
 
 /* ---------- планировщик напоминаний ---------- */
 setInterval(() => {
