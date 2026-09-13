@@ -12,3 +12,7 @@ docs
 README.md
 .github
 IMG_*
+# секреты не должны попадать в контекст сборки и в образ
+.env
+.env.*
+!.env.example

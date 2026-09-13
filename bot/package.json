@@ -5,7 +5,10 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "check": "node src/ensure-deps.js --check",
+    "fixdeps": "node src/ensure-deps.js",
+    "smoke": "node ../scripts/smoke.mjs"
   },
   "dependencies": {
     "grammy": "^1.30.0",

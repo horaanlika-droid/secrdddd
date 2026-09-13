@@ -1,0 +1,22 @@
+{
+  "name": "dibitishka",
+  "version": "1.0.0",
+  "private": true,
+  "description": "дибитишка: веб-приложение (app/) и телеграм-бот (bot/). Корневой package.json нужен хостам, которые ставят зависимости в корне репозитория, — node найдёт их из bot/src поиском вверх по папкам.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bot/src/index.js",
+    "bot": "node bot/src/index.js",
+    "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "verify": "npm run check && npm run smoke"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  }
+}

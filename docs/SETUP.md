@@ -15,6 +15,7 @@
 и веб-версия получит живой контент, проверку кодов входа и синхронизацию напоминаний.
 
 Запуск: `npm install && npm start` в папке `bot/`.
+(Забыл `npm install` — не страшно: бот сам поставит недостающее при старте, см. ниже.)
 
 ### Или в Docker (рекомендуется, если бот живёт в контейнере)
 
@@ -31,18 +32,51 @@ docker compose logs -f # смотрим, что [bot] polling started
 переживают пересборку. Без compose: `docker build -t dibitishka-bot .` и `docker run`
 (см. комментарий в `Dockerfile`).
 
-> **Если видишь `ERR_MODULE_NOT_FOUND: Cannot find package 'grammy'`**
-> значит образ собрался без зависимостей (старый кэш). Пересобери без кэша:
+> **Про `ERR_MODULE_NOT_FOUND: Cannot find package 'grammy'`**
+>
+> Раньше эта ошибка означала перезапуск контейнера по кругу: статический
+> `import { Bot } from 'grammy'` стоял первой строкой точки входа, и процесс
+> умирал до того, как выполнялась хоть одна наша строчка.
+>
+> Теперь это закрыто в коде, терминал не нужен:
+>
+> 1. **Точка входа ничего не импортирует.** `bot/src/index.js` сначала зовёт
+>    `bot/src/ensure-deps.js`, и только потом грузит приложение (`bot/src/app.js`).
+> 2. **Бот ставит зависимости сам.** Если grammy/pngjs/jpeg-js не резолвятся,
+>    `ensure-deps` пробует по очереди: `npm ci` → `npm install` → `npm install <пакеты>`
+>    в `bot/`, то же в корне репозитория, а если папка доступна только на чтение —
+>    ставит во временную папку и подключает её через ESM-хук. В логе это выглядит так:
+>    ```
+>    [deps] не хватает: grammy, jpeg-js, pngjs
+>    [deps] ставлю сам — терминал не нужен
+>    [deps] пробую: npm ci (bot/)
+>    [deps] готово: grammy, jpeg-js, pngjs
+>    [http] API on :8080
+>    ```
+> 3. **Сборка образа не проходит без зависимостей.** В `Dockerfile` после `npm ci`
+>    стоит `node bot/src/ensure-deps.js --check`, а затем `node scripts/smoke.mjs` —
+>    образ реально поднимается и отвечает на `/health` ещё до деплоя.
+>
+> Если бот всё же не стартует и в логе `[deps] ✗` — значит npm не смог поставить
+> пакеты (обычно нет сети или нет прав на запись). Тогда один раз вручную:
 > ```bash
-> docker compose down
-> docker compose build --no-cache
-> docker compose up -d
-> docker compose logs -f   # должен быть [bot] polling started и [http] API on :8080
-> # или без compose:
-> docker build --no-cache -t dibitishka-bot . && docker run -d --name dibitishka-bot --restart unless-stopped -e TG_TOKEN=... -e ADMIN_IDS=... -p 8080:8080 -v dibitishka-data:/data dibitishka-bot
+> cd bot && npm ci && npm start
+> # или пересобрать образ без кэша
+> docker compose down && docker compose build --no-cache && docker compose up -d
 > ```
-> Без Docker: зайди в `bot/` и поставь зависимости вручную `cd bot && npm ci` (или `npm install`), затем `npm start`.
-> Проверь что `bot/node_modules/grammy/package.json` существует.
+
+### Проверки (чтобы это не вернулось)
+
+```bash
+npm run check   # зависимости резолвятся, lockfile не разошёлся, точка входа
+                # не импортирует grammy напрямую, .dockerignore ничего не потерял
+npm run smoke   # бот реально поднимается и отвечает на /health и /content.json
+npm run verify  # и то, и другое
+```
+
+То же самое делает CI: `.github/workflows/ci.yml` на каждый пуш и PR.
+Отдельная джоба `self-heal` воспроизводит аварию — удаляет `node_modules`
+и проверяет, что бот поставит их сам и поднимется.
 
 ## 2. GitHub Pages
 
@@ -86,7 +120,9 @@ docker compose logs -f # смотрим, что [bot] polling started
 
 ```
 app/        веб-приложение (Pages + Mini App): index.html, workbook.html (печать), config.js
-bot/        бот grammY: src/index.js, src/bgremove.js, src/tribute.js, src/store.js
+bot/        бот grammY: src/index.js (точка входа + гарант зависимостей), src/app.js
+            (логика бота), src/ensure-deps.js, src/bgremove.js, src/tribute.js, src/store.js
+scripts/    проверки: check-project.mjs (будущие конфликты), smoke.mjs (бот поднимается)
 _source/    извлечённый текст оригинальной тетради (вне git, рабочая заметка)
 ```
 
