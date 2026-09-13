@@ -31,6 +31,19 @@ docker compose logs -f # смотрим, что [bot] polling started
 переживают пересборку. Без compose: `docker build -t dibitishka-bot .` и `docker run`
 (см. комментарий в `Dockerfile`).
 
+> **Если видишь `ERR_MODULE_NOT_FOUND: Cannot find package 'grammy'`**
+> значит образ собрался без зависимостей (старый кэш). Пересобери без кэша:
+> ```bash
+> docker compose down
+> docker compose build --no-cache
+> docker compose up -d
+> docker compose logs -f   # должен быть [bot] polling started и [http] API on :8080
+> # или без compose:
+> docker build --no-cache -t dibitishka-bot . && docker run -d --name dibitishka-bot --restart unless-stopped -e TG_TOKEN=... -e ADMIN_IDS=... -p 8080:8080 -v dibitishka-data:/data dibitishka-bot
+> ```
+> Без Docker: зайди в `bot/` и поставь зависимости вручную `cd bot && npm ci` (или `npm install`), затем `npm start`.
+> Проверь что `bot/node_modules/grammy/package.json` существует.
+
 ## 2. GitHub Pages
 
 1. В репозитории: Settings → Pages → Source: **GitHub Actions**.
