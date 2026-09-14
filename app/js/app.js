@@ -77,6 +77,7 @@ const defaultState = {
   web_user: null,
   mood_entries: [],
   tasks: {},
+  picked: {},                // примеры из практик, которые человек отметил своими: "practiceId:extrasKey" → [тексты]
   game: {
     total_points: 0,
     alt_count: 0,
@@ -93,6 +94,7 @@ const state = Object.assign({}, defaultState, persisted, {
   merch_notify: Array.isArray(persisted.merch_notify) ? persisted.merch_notify : defaultState.merch_notify,
   mood_entries: Array.isArray(persisted.mood_entries) ? persisted.mood_entries : defaultState.mood_entries,
   tasks: Object.assign({}, defaultState.tasks, persisted.tasks || {}),
+  picked: Object.assign({}, defaultState.picked, persisted.picked || {}),
   game: Object.assign({}, defaultState.game, persisted.game || {}, {
     scales: Object.assign({}, defaultState.game.scales, persisted.game?.scales || {}),
     badges: Object.assign({}, defaultState.game.badges, persisted.game?.badges || {})
@@ -869,6 +871,90 @@ function screenBlock(id) {
   return scr;
 }
 
+/* ---------- примеры к практике (p.extras) ----------
+   Часть практик в тексте шагов прямо отсылает к примерам: «прочитай примеры
+   ниже», «выбери одну фразу из примеров», «подбери слова-названия». Сами
+   примеры лежат в content.json в поле extras — без этого блока шаг просит то,
+   чего на экране нет. Рендерим любой extras: массив строк или группы
+   «название группы → список». */
+const EXTRAS_META = {
+  affirmations: { title: 'Примеры фраз', note: 'Нажми на фразу — она отметится как твоя и скопируется.', pick: true },
+  words: { title: 'Слова-названия', note: 'Можно брать отсюда или найти свои. Нажми — слово скопируется.', pick: true },
+  senses: { title: 'Примеры по чувствам', note: 'Чужие примеры — чтобы легче вспомнить свои.' },
+  examples: { title: 'Примеры', note: '' }
+};
+const extrasMeta = (key) => EXTRAS_META[key] || { title: 'Примеры', note: '' };
+const pickedKey = (p, key) => `${p.id}:${key}`;
+
+function copyText(text) {
+  const ok = () => toast('Скопировано. Можно вставить в заметку или на заставку.');
+  const fallback = () => {
+    try {
+      const ta = el('textarea', { style: 'position:fixed;left:-9999px;top:0' });
+      ta.value = text;
+      document.body.append(ta);
+      ta.select();
+      const done = document.execCommand('copy');
+      ta.remove();
+      done ? ok() : toast('Скопировать не вышло — просто перепиши словами.');
+    } catch (e) { toast('Скопировать не вышло — просто перепиши словами.'); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(ok).catch(fallback);
+  } else fallback();
+}
+
+function examplesCard(p, key, value) {
+  const groups = Array.isArray(value) ? [{ label: null, list: value }]
+    : Object.entries(value || {}).filter(([, v]) => Array.isArray(v)).map(([label, list]) => ({ label, list }));
+  if (!groups.length) return null;
+  const meta = extrasMeta(key);
+  const storeKey = pickedKey(p, key);
+  const chosen = Array.isArray(state.picked[storeKey]) ? state.picked[storeKey] : [];
+  const card = el('div', { class: 'card tinted soft t-' + (p.block?.tint || 'sky') });
+  card.append(el('p', { class: 'cap' }, meta.title));
+
+  const count = el('p', { class: 'mins ex-count' }, '');
+  const syncCount = () => {
+    count.textContent = chosen.length
+      ? `Отмечено: ${chosen.length}. Можно переписать своими словами.`
+      : 'Отметь одну-две, на которые тело отзывается теплом.';
+  };
+
+  for (const grp of groups) {
+    if (grp.label) card.append(el('p', { class: 'ex-group' }, grp.label));
+    const ul = el('ul', { class: 'examples' + (meta.pick ? ' pick' : '') });
+    for (const text of grp.list) {
+      const mark = meta.pick ? el('span', { class: 'ex-mark' }, chosen.includes(text) ? '✓' : '') : null;
+      const li = el('li', { class: chosen.includes(text) ? 'on' : '' }, mark, el('span', { class: 'ex-text' }, text));
+      if (meta.pick) {
+        li.addEventListener('click', () => {
+          const i = chosen.indexOf(text);
+          if (i >= 0) chosen.splice(i, 1); else chosen.push(text);
+          state.picked[storeKey] = chosen;
+          save();
+          haptic('light');
+          const on = chosen.includes(text);
+          li.classList.toggle('on', on);
+          mark.textContent = on ? '✓' : '';
+          copyText(text);
+          syncCount();
+        });
+      }
+      ul.append(li);
+    }
+    card.append(ul);
+  }
+  if (meta.note) card.append(el('p', { class: 'mins' }, meta.note));
+  if (meta.pick) { card.append(count); syncCount(); }
+  return card;
+}
+
+/* карточки примеров практики в том же порядке, в каком они лежат в content.json */
+const practiceExamples = (p) => Object.entries(p.extras || {})
+  .map(([key, value]) => examplesCard(p, key, value))
+  .filter(Boolean);
+
 function screenPractice(id) {
   renderTabbar(null);
   const p = findPractice(id);
@@ -885,6 +971,8 @@ function screenPractice(id) {
 
   scr.append(el('div', { class: 'sect' }, 'Как делать'));
   scr.append(el('ol', { class: 'steps' }, p.steps.map(s => el('li', {}, s))));
+  // примеры из p.extras — сразу под шагами: шаги на них ссылаются («примеры ниже»)
+  for (const card of practiceExamples(p)) scr.append(card);
   scr.append(el('p', { class: 'mins' }, `≈ ${p.minutes} мин · за практику даются очки и рост шкал`));
 
   const altBox = el('div', { class: 'hidden' });

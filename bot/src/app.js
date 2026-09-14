@@ -143,14 +143,38 @@ bot.command('help', (ctx) => ctx.reply(
   (isAdmin(ctx) ? '\nАдмин: /admin' : '')
 ));
 
+/* Примеры к практике (p.extras) — те же, что показывает веб. Без них шаги вроде
+   «прочитай примеры ниже» и «выбери одну фразу из примеров» ведут в пустоту. */
+const EXTRAS_TITLES = {
+  affirmations: 'Примеры фраз',
+  words: 'Слова-названия',
+  senses: 'Примеры по чувствам',
+  examples: 'Примеры'
+};
+const practiceExamplesText = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
+  const lines = Array.isArray(val)
+    ? val.map((v) => `· ${v}`)
+    : Object.entries(val || {})
+      .filter(([, list]) => Array.isArray(list))
+      .map(([group, list]) => `${group}: ${list.join(', ')}`);
+  return lines.length ? `${EXTRAS_TITLES[key] || 'Примеры'}:\n${lines.join('\n')}` : '';
+}).filter(Boolean).join('\n\n');
+
 bot.command('today', async (ctx) => {
   getUser(ctx);
   save();
   const p = todayPractice();
   const img = MASCOT('calm');
   const text = `Практика дня · блок «${p.block.title}»\n\n${p.title} · ≈ ${p.minutes} мин\n\n${p.why}\n\nШаги:\n${p.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nНе можется? Альтернатива: ${p.alt.title} — ${p.alt.steps.join(' · ')}`;
-  if (img) await ctx.replyWithPhoto(img, { caption: text });
-  else await ctx.reply(text);
+  const examples = practiceExamplesText(p);
+  const full = examples ? `${text}\n\n${examples}` : text;
+  // подпись к фото в Telegram — максимум 1024 символа, поэтому длинные примеры уходят вторым сообщением
+  if (img) {
+    if (full.length <= 1024) await ctx.replyWithPhoto(img, { caption: full });
+    else { await ctx.replyWithPhoto(img, { caption: text }); await ctx.reply(examples); }
+  } else {
+    await ctx.reply(full);
+  }
 });
 
 bot.command('code', (ctx) => {

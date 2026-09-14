@@ -82,6 +82,14 @@
   .practice ol li:before{content:counter(step); position:absolute; left:0; top:1px; width:23px; height:23px;
     border-radius:50%; background:var(--card-2); border:1px solid var(--line-2); color:var(--ink-2);
     font-size:12px; font-weight:800; display:grid; place-items:center}
+  /* ---------- примеры к практике (extras) ---------- */
+  .extras{margin-top:12px; background:var(--card-2); border:1px solid var(--line-2);
+    border-radius:16px; padding:12px 14px; break-inside:avoid; page-break-inside:avoid}
+  .extras > b{display:block; margin-bottom:6px; font-size:11.5px; font-weight:800;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+  .extras .ex-g{margin:8px 0 2px; font-size:12.5px; font-weight:800; color:var(--ink-2)}
+  .extras .ex-i{position:relative; padding-left:14px; margin:3px 0; font-size:13.8px; color:#3E4C6B; line-height:1.5}
+  .extras .ex-i:before{content:"·"; position:absolute; left:2px; color:var(--ink-3); font-weight:800}
   .alt{background:var(--t-peony); border-radius:16px; padding:11px 14px; margin-top:12px; font-size:13.6px; color:#5A4240; line-height:1.55}
   .alt b{display:block; color:#6B403B; margin-bottom:2px}
   .master{margin-top:12px; font-size:13.4px; color:var(--grass); font-weight:700}
@@ -117,7 +125,7 @@
     header.cover{border-radius:0; box-shadow:none; border:0; padding:0 0 18px; background:transparent}
     header.cover .intro{background:transparent; border:0; padding:0 4px}
     section{margin-top:0}
-    .practice, .field, .affirm, table.sens{box-shadow:none; border-color:#C7D3E8}
+    .practice, .field, .affirm, table.sens, .extras{box-shadow:none; border-color:#C7D3E8}
     .practice h3, section > h2{color:#0B1F4D}
     .alt{background:#FBEDE6}
     .practice ol li:before{background:#F2F6FE; border-color:#C7D3E8}
@@ -133,6 +141,25 @@
 <div class="page" id="page">Загружаю тетрадь…</div>
 <script>
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* Примеры к практике (p.extras) печатаем прямо в карточке: шаги ссылаются на
+   «примеры ниже», и на бумаге листать вперёд-назад неудобно. */
+const EX_TITLES = {
+  affirmations: 'Примеры фраз',
+  words: 'Слова-названия',
+  senses: 'Примеры по чувствам',
+  examples: 'Примеры'
+};
+const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
+  const groups = Array.isArray(val) ? [['', val]]
+    : Object.entries(val || {}).filter(([, list]) => Array.isArray(list));
+  if (!groups.length) return '';
+  return `<div class="extras"><b>${esc(EX_TITLES[key] || 'Примеры')}</b>` +
+    groups.map(([label, list]) =>
+      (label ? `<div class="ex-g">${esc(label)}</div>` : '') +
+      list.map(v => `<div class="ex-i">${esc(v)}</div>`).join('')
+    ).join('') + '</div>';
+}).join('');
 
 (async () => {
   let C = null;
@@ -191,6 +218,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
         <span class="mins">≈ ${p.minutes} мин</span>
         <p class="why">${esc(p.why)}</p>
         <ol>${p.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+        ${extrasHtml(p)}
         <div class="alt"><b>если не можется — альтернатива: ${esc(p.alt.title)}</b>${p.alt.steps.map(s => esc(s)).join(' · ')}</div>
         <div class="master">${esc(p.master)}</div>
         <div class="write">${esc(W.write_here)}</div><div class="lines"></div>
