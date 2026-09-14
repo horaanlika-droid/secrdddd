@@ -16,6 +16,9 @@ window.DIBI_CONFIG = {
   // Подписка: цифры для пейвола. Сам платёж создаёт бот через Tribute API.
   subscription: { price_ru: "200 ₽", period: "в месяц", trial_days: 7 },
 
+  // Донат разработчикам — разовая поддержка через Tribute (ссылка-приложение).
+  donate_url: "https://t.me/tribute/app?startapp=dLSm",
+
   // Соцсети (заглушки — замени на свои)
   social: {
     telegram: "https://t.me/your_channel",

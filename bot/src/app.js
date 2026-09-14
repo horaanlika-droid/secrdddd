@@ -111,7 +111,7 @@ bot.command('start', async (ctx) => {
   if (!u.trial_start) u.trial_start = Date.now();
   save();
   const img = MASCOT('hello');
-  const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, мини-игра и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${PRICE} ₽ в месяц. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
+  const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, дневник эмоций, письменные задания, чат поддержки и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${PRICE} ₽ в месяц. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
   if (img) await ctx.replyWithPhoto(img, { caption: text });
   else await ctx.reply(text);
 });
@@ -458,6 +458,17 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+  if (req.method === 'GET' && u.pathname === '/me') {
+    const uid = Number(u.searchParams.get('user_id'));
+    const user = db.users[uid];
+    if (!user) return json(res, 404, { ok: false });
+    return json(res, 200, {
+      ok: true,
+      premium_until: user.premium_until || 0,
+      trial_start: user.trial_start || 0,
+      is_premium: isPremium(user)
+    });
   }
   if (req.method === 'POST' && u.pathname === '/me/reminder') {
     let body = '';
