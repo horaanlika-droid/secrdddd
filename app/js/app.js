@@ -117,6 +117,17 @@ const trialDaysLeft = () => {
   return Math.max(0, Math.ceil((TRIAL_MS - (Date.now() - state.trial_started_at)) / 86400000));
 };
 
+/* ---------- тарифы подписки: 1 мес 200 ₽ · 3 мес 500 ₽ · 6 мес 900 ₽ ---------- */
+const PLANS = () => (Array.isArray(CFG.subscription?.plans) && CFG.subscription.plans.length)
+  ? CFG.subscription.plans
+  : [{ id: 'm1', title: '1 месяц', per: 'в месяц', price_ru: '200 ₽', days: 30, note: '200 ₽ в месяц' }];
+let pickedPlanId = null;
+const pickedPlan = () => {
+  const plans = PLANS();
+  return plans.find(p => p.id === pickedPlanId) || plans[0];
+};
+const plansLine = () => PLANS().map(p => `${p.price_ru} / ${p.title}`).join(' · ');
+
 /* ---------- content ---------- */
 let CONTENT = null;
 const API_BASE = (CFG.bot_public_url || '').trim().replace(/\/$/, '');
@@ -624,7 +635,7 @@ function screenWelcome() {
   const foot = el('div', { class: 'onboard-foot' }, dots, nextBtn);
   const cta = el('button', { class: 'btn onboard-cta hidden' }, 'Начать бесплатную неделю', el('span', { class: 'arr' }, '→'));
   const note = el('p', { class: 'onboard-note' },
-    `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`
+    `Первая неделя бесплатно, потом ${plansLine()}.`
   );
   const finish = () => {
     state.onboarded = true;
@@ -650,25 +661,58 @@ function screenWelcome() {
   return scr;
 }
 
+/* Выбор периода подписки: три карточки-тарифа, выбранный подсвечивается. */
+function planPicker() {
+  const plans = PLANS();
+  if (!plans.some(p => p.id === pickedPlanId)) pickedPlanId = plans[0].id;
+  const wrap = el('div', { class: 'plans' });
+  const rows = plans.map(p => {
+    const row = el('button', {
+      class: 'plan' + (p.id === pickedPlanId ? ' on' : ''), type: 'button',
+      onclick: () => {
+        pickedPlanId = p.id; haptic('light');
+        rows.forEach(r => r.el.classList.toggle('on', r.id === p.id));
+      }
+    },
+      el('span', { class: 'plan-main' },
+        el('b', {}, p.title, p.badge ? el('span', { class: 'plan-badge' }, p.badge) : null),
+        el('span', {}, p.note || p.per || '')),
+      el('span', { class: 'plan-price' }, p.price_ru),
+      el('span', { class: 'plan-dot' }, '')
+    );
+    return { id: p.id, el: row };
+  });
+  rows.forEach(r => wrap.append(r.el));
+  return wrap;
+}
+
 function paywallCard(scr) {
   const c = el('div', { class: 'card soft' });
   c.append(
     mascot('hug', mline('paywall')),
     el('h3', { style: 'margin-top:12px' }, 'Подписка Дибитишки'),
-    el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · первая неделя бесплатно. Оплата идёт через Tribute прямо из бота.`),
-    el('button', { class: 'btn', style: 'margin-top:10px', onclick: openPay }, 'Оформить подписку')
+    el('p', {}, `Первая неделя бесплатно. Дальше — выбери период, как удобнее: ${plansLine()}. Оплата идёт через Tribute прямо из бота.`),
+    planPicker(),
+    el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => openPay() }, 'Оформить подписку')
   );
   scr.append(c);
 }
 
-function openPay() {
+function openPay(planId) {
   haptic('medium');
-  const u = CFG.bot_username ? `https://t.me/${CFG.bot_username}?start=pay` : 'https://t.me/';
+  if (planId) pickedPlanId = planId;
   sheet((sh, close) => {
+    const payBtn = el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
+      const p = pickedPlan();
+      const u = CFG.bot_username ? `https://t.me/${CFG.bot_username}?start=pay_${p.id}` : 'https://t.me/';
+      try { tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u); } catch (e) { window.open(u); }
+      close();
+    } }, 'Оплатить в Telegram');
     sh.append(
       mascot('hug', 'Оплата живёт в боте: он создаст ссылку Tribute и сам активирует подписку.'),
-      el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}. Первая неделя — бесплатно, она уже идёт с момента первого входа.`),
-      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => { try { tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u); } catch (e) { window.open(u); } close(); } }, 'Оплатить в Telegram'),
+      el('p', {}, `Выбери период — первая неделя уже бесплатная, она идёт с момента первого входа. ${plansLine()}.`),
+      planPicker(),
+      payBtn,
       el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); toast('Напиши боту /start, если подписка уже есть.'); } }, 'У меня уже есть подписка')
     );
   });
@@ -1239,7 +1283,7 @@ function screenProfile() {
   const subRows = [];
   subRows.push(el('div', { class: 'row' },
     el('span', { class: 'ric c-grass' }, icon('card')),
-    el('span', { class: 'rmain' }, el('b', {}, (state.premium_until || 0) > Date.now() ? 'Подписка активна' : state.trial_started_at && dl > 0 ? `Бесплатная неделя: ещё ${dl} дн.` : 'Подписка не активна'), el('span', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · Tribute`))
+    el('span', { class: 'rmain' }, el('b', {}, (state.premium_until || 0) > Date.now() ? 'Подписка активна' : state.trial_started_at && dl > 0 ? `Бесплатная неделя: ещё ${dl} дн.` : 'Подписка не активна'), el('span', {}, `${plansLine()} · Tribute`))
   ));
   if (!isPremium() || dl !== Infinity) subRows.push(el('button', { class: 'row', onclick: openPay },
     el('span', { class: 'ric c-rose' }, icon('lock')),

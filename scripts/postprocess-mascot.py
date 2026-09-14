@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Air · Glow mascot pack.
+"""Build the mascot pack (original IMG_0966 style: matte droplet-hood, white face).
 
 Sources: app/assets/mascot/_gen/{hello,calm,hug,proud,peek}.png
 Outputs: 1024×1024 PNGs in app/assets/mascot and mirrored bot/assets/mascot.
@@ -20,14 +20,28 @@ def run(*args: str) -> None:
     subprocess.run(["convert", *map(str, args)], check=True)
 
 
+def size_of(path: Path) -> tuple[int, int]:
+    out = subprocess.check_output(["convert", str(path), "-format", "%w %h", "info:"])
+    w, h = out.decode().split()
+    return int(w), int(h)
+
+
 def build_pose(name: str) -> Path:
     source, target = SRC / f"{name}.png", OUT / f"{name}.png"
     if not source.exists():
         raise SystemExit(f"Missing source: {source.relative_to(ROOT)}")
-    # Preserve transparency, trim accidental empty margins, and keep a generous glow-safe inset.
-    run(source, "-alpha", "on", "-fuzz", "2%", "-transparent", "#fefefe",
-        "-fuzz", "2%", "-transparent", "#eeeeee", "-trim", "+repage", "-resize", "820x820>",
-        "-gravity", "center", "-background", "none", "-extent", "1024x1024", target)
+    # Фон убираем ЗАЛИВКОЙ С КРАЁВ (floodfill от четырёх углов), а не глобальным
+    # -transparent: у маскота из IMG_0966 лицо снежно-белое, и глобальный knockout
+    # пробивал бы в нём дырки. Floodfill до лица не добирается — оно замкнуто
+    # контуром капюшона. Дальше: trim случайных полей и glow-safe inset 1024×1024.
+    w, h = size_of(source)
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    args: list[str] = [source, "-alpha", "on", "-fuzz", "8%", "-fill", "none"]
+    for x, y in corners:
+        args += ["-draw", f"color {x},{y} floodfill"]
+    args += ["-trim", "+repage", "-resize", "820x820>",
+             "-gravity", "center", "-background", "none", "-extent", "1024x1024", target]
+    run(*args)
     return target
 
 

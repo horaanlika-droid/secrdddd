@@ -14,7 +14,16 @@ window.DIBI_CONFIG = {
   bot_public_url: "",
 
   // Подписка: цифры для пейвола. Сам платёж создаёт бот через Tribute API.
-  subscription: { price_ru: "200 ₽", period: "в месяц", trial_days: 7 },
+  // plans — три периода: 1 месяц 200 ₽, 3 месяца 500 ₽, 6 месяцев 900 ₽.
+  // id совпадают с тарифами бота (bot/src/app.js: PLANS) и deep-link ?start=pay_<id>.
+  subscription: {
+    price_ru: "200 ₽", period: "в месяц", trial_days: 7,
+    plans: [
+      { id: "m1", title: "1 месяц", per: "в месяц", price_ru: "200 ₽", days: 30, note: "200 ₽ в месяц" },
+      { id: "m3", title: "3 месяца", per: "за 3 месяца", price_ru: "500 ₽", days: 90, note: "≈167 ₽ в месяц · выгода 100 ₽", badge: "выгоднее" },
+      { id: "m6", title: "6 месяцев", per: "за 6 месяцев", price_ru: "900 ₽", days: 180, note: "150 ₽ в месяц · выгода 300 ₽", badge: "максимум" }
+    ]
+  },
 
   // Донат разработчикам — разовая поддержка через Tribute (ссылка-приложение).
   donate_url: "https://t.me/tribute/app?startapp=dLSm",

@@ -12,18 +12,22 @@ const KEY = () => process.env.TRIBUTE_API || '';
 
 export const tributeConfigured = () => !!KEY();
 
-/** Создать ссылку на оплату подписки. Возвращает { url } или null. */
-export async function createSubscriptionLink(userId, amountRub = 200, period = 'month') {
+/** Создать ссылку на оплату подписки на выбранный тариф.
+    plan: { id: 'm1'|'m3'|'m6', label, price, days } (см. PLANS в bot/src/app.js).
+    Возвращает { url } или null. */
+export async function createSubscriptionLink(userId, plan = { id: 'm1', label: '1 месяц', price: 200, days: 30 }) {
   if (!tributeConfigured()) return null;
+  const amountRub = plan.price || 200;
+  const periodDays = plan.days || 30;
   try {
     const r = await fetch(`${BASE}/v1/payments/links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KEY()}` },
       body: JSON.stringify({
         amount: amountRub * 100, currency: 'RUB',
-        description: 'Дибитишка · подписка на месяц',
-        payload: JSON.stringify({ user_id: userId, period }),
-        type: 'subscription', period_days: 30, trial_days: 0
+        description: `Дибитишка · подписка ${plan.label || 'на месяц'}`,
+        payload: JSON.stringify({ user_id: userId, plan: plan.id || 'm1', days: periodDays }),
+        type: 'subscription', period_days: periodDays, trial_days: 0
       })
     });
     if (!r.ok) { console.error('[tribute] link error', r.status, await r.text()); return null; }
