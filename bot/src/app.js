@@ -212,17 +212,40 @@ bot.command('status', (ctx) => {
   ctx.reply(`Профиль: ${u.name}\nПодписка: ${left}\nНапоминания: ${u.reminder.on ? u.reminder.time : 'выкл'}`);
 });
 
-/* Оплата выбранного тарифа: создаёт ссылку Tribute на нужный период. */
+/* Оплата выбранного тарифа: отдаёт ссылку Tribute (статичную из кабинета
+   или динамическую через Shops API) кнопкой. Без настроенных ссылок честно
+   говорит владельцу, что именно вписать — вместо битой ссылки. */
+const payHelpForOwner = () => (
+  'Владелец ещё не вставил ссылки Tribute: нужны TRIBUTE_M1_URL / TRIBUTE_M3_URL / ' +
+  'TRIBUTE_M6_URL (ссылки на товары из кабинета Tribute) или режим TRIBUTE_SHOP=1. ' +
+  'Как заполнить — раздел «Tribute после запуска» в docs/SETUP.md.'
+);
+function payKeyboard(plan, url) {
+  return new InlineKeyboard().url(`💳 Оплатить ${plan.price} ₽ · ${plan.label}`, url);
+}
 async function payFlow(ctx, plan) {
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
   save();
   if (!tribute.tributeConfigured()) {
-    return ctx.reply('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и эта кнопка оживёт. Первая неделя у тебя уже идёт — практикуй спокойно.');
+    return ctx.reply(
+      'Оплата пока подключается, первая неделя у тебя уже идёт — практикуй спокойно. ' +
+      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он вставит ссылки Tribute.')
+    );
   }
   const link = await tribute.createSubscriptionLink(u.id, plan);
-  if (!link?.url) return ctx.reply('Не смог создать ссылку Tribute. Попробуй позже или напиши владельцу приложения.');
-  ctx.reply(`Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\nОплата: ${link.url}\nПосле оплаты я активирую подписку сам на ${plan.days} дн.`);
+  if (!link?.url) {
+    console.error('[pay] нет ссылки Tribute для тарифа', plan.id, JSON.stringify(tribute.tributeStatus()));
+    return ctx.reply(
+      'Не смог создать ссылку Tribute. Попробуй позже' +
+      (isAdmin(ctx) ? '. ' + payHelpForOwner() + ' Подробности — в логах бота ([tribute]).' : ' или напиши владельцу приложения.')
+    );
+  }
+  ctx.reply(
+    `Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\n` +
+    `Жми кнопку ниже — откроется оплата Tribute. После оплаты я активирую подписку сам на ${plan.days} дн.`,
+    { reply_markup: payKeyboard(plan, link.url) }
+  );
 }
 
 bot.command('pay', async (ctx) => {
@@ -234,7 +257,7 @@ bot.command('pay', async (ctx) => {
   }
   const kb = new InlineKeyboard();
   PLANS.forEach(p => kb.text(`${p.label} — ${p.price} ₽`, 'pay:' + p.id).row());
-  ctx.reply(`Подписка Дибитишки: ${plansLine()}.\nВыбери срок — сделаю ссылку Tribute. После оплаты я активирую подписку сам.`, { reply_markup: kb });
+  ctx.reply(`Подписка Дибитишки: ${plansLine()}.\nВыбери срок — дам ссылку Tribute. После оплаты я активирую подписку сам.`, { reply_markup: kb });
 });
 
 /* кнопки тарифов в /pay */
@@ -244,14 +267,27 @@ bot.on('callback_query:data', async (ctx) => {
   const plan = planById(data.slice(4));
   await ctx.answerCallbackQuery();
   if (!tribute.tributeConfigured()) {
-    return ctx.editMessageText('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и кнопки оживут. Первая неделя у тебя уже идёт — практикуй спокойно.').catch(() => {});
+    return ctx.editMessageText(
+      'Оплата пока подключается, первая неделя у тебя уже идёт — практикуй спокойно. ' +
+      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он вставит ссылки Tribute.')
+    ).catch(() => {});
   }
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
   save();
   const link = await tribute.createSubscriptionLink(u.id, plan);
-  if (!link?.url) return ctx.editMessageText('Не смог создать ссылку Tribute. Попробуй позже или напиши владельцу приложения.').catch(() => {});
-  ctx.editMessageText(`Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\nОплата: ${link.url}\nПосле оплаты я активирую подписку сам на ${plan.days} дн.`).catch(() => {});
+  if (!link?.url) {
+    console.error('[pay] нет ссылки Tribute для тарифа', plan.id, JSON.stringify(tribute.tributeStatus()));
+    return ctx.editMessageText(
+      'Не смог создать ссылку Tribute. Попробуй позже' +
+      (isAdmin(ctx) ? '. ' + payHelpForOwner() : ' или напиши владельцу приложения.')
+    ).catch(() => {});
+  }
+  ctx.editMessageText(
+    `Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\n` +
+    `Жми кнопку ниже — откроется оплата Tribute. После оплаты я активирую подписку сам на ${plan.days} дн.`,
+    { reply_markup: payKeyboard(plan, link.url) }
+  ).catch(() => {});
 });
 
 /* ---------- админ ---------- */
@@ -267,8 +303,33 @@ bot.command('admin', (ctx) => {
     '/import — ответить этим сообщением на файл content.json\n' +
     '/users — статистика\n' +
     '/grant <id> [дней] — выдать подписку вручную\n' +
-    '/ai — статус живого чата (OpenAI)'
+    '/ai — статус живого чата (OpenAI)\n' +
+    '/tribute — статус оплаты (ссылки, ключ, вебхук)'
   );
+});
+
+bot.command('tribute', async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  const st = tribute.tributeStatus();
+  const mark = (v) => v ? '✅' : '⛔';
+  const lines = [
+    'Оплата Tribute:',
+    `${mark(st.key)} ключ TRIBUTE_API ${st.key ? '' : '(нужен для проверки вебхуков)'}`,
+    `${mark(st.urls.m1)} ссылка на 1 месяц (TRIBUTE_M1_URL)`,
+    `${mark(st.urls.m3)} ссылка на 3 месяца (TRIBUTE_M3_URL)`,
+    `${mark(st.urls.m6)} ссылка на 6 месяцев (TRIBUTE_M6_URL)`,
+    st.shop ? '🔧 режим Shops API: включён (TRIBUTE_SHOP=1)' : null,
+    '',
+    st.ok ? 'Пейвол работает: /pay выдаёт ссылки.' : 'Пейвол НЕ работает: вставь ссылки на бот-хосте и перезапусти бота.'
+  ].filter(Boolean);
+  if (st.key) {
+    const chk = await tribute.checkApiKey();
+    lines.push(chk.ok
+      ? 'Ключ живой: Tribute отвечает ✅ (вебхук проверяется по подписи)'
+      : `Ключ НЕ проходит у Tribute (${chk.reason}): подписки не активируются! Перевыпусти ключ в кабинете.`);
+  }
+  lines.push('Вебхук в кабинете Tribute должен смотреть на: https://<адрес бота>/tribute/webhook');
+  ctx.reply(lines.join('\n'));
 });
 
 bot.command('ai', (ctx) => {
@@ -578,7 +639,7 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
 
   if (req.method === 'GET' && u.pathname === '/health') {
-    return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length, ai: ai.aiConfigured() });
+    return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length, ai: ai.aiConfigured(), tribute: tribute.tributeStatus() });
   }
   if (req.method === 'GET' && u.pathname === '/chat/status') {
     return json(res, 200, { ok: true, ai: ai.aiConfigured() });
@@ -674,25 +735,71 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && u.pathname === '/tribute/webhook') {
     let body = '';
-    req.on('data', c => body += c);
+    req.on('data', c => { body += c; if (body.length > 256000) req.destroy(); });
     req.on('end', () => {
-      try {
-        const j = JSON.parse(body || '{}');
-        // payload может прийти и строкой — Tribute кладёт туда { user_id, plan, days }
-        const pl = typeof j.payload === 'string' ? JSON.parse(j.payload || '{}') : (j.payload || {});
-        const uid = Number(pl.user_id || j.user_id);
-        const user = db.users[uid];
-        if (user && (j.status === 'succeeded' || j.paid)) {
-          const plan = PLANS.find(p => p.id === (pl.plan || j.plan));
-          const days = Number(pl.days || j.days || (plan && plan.days) || 30);
-          user.premium_until = Math.max(Date.now(), user.premium_until || 0) + days * 86400000;
-          save();
-          bot.api.sendMessage(uid, `Оплата прошла! Подписка активна на ${days} дн. (${plan ? plan.label : 'месяц'}). Спасибо, что держишь меня в форме 💧`).catch(() => {});
-        }
-        return json(res, 200, { ok: true });
-      } catch (e) {
-        return json(res, 400, { ok: false });
+      // 1) подпись: Tribute подписывает сырое тело ключом (HMAC-SHA256 → trbt-signature)
+      const sig = tribute.verifySignature(body, req.headers['trbt-signature'] || '');
+      if (!sig.ok) {
+        console.error('[tribute] webhook: неверная подпись — проверь TRIBUTE_API и URL вебхука в кабинете');
+        return json(res, 401, { ok: false, error: sig.reason || 'bad_signature' });
       }
+      if (sig.skipped) console.error('[tribute] webhook: принят БЕЗ проверки подписи — впиши TRIBUTE_API!');
+      // 2) формат: { name, created_at, sent_at, payload }
+      let j;
+      try { j = JSON.parse(body || '{}'); }
+      catch (e) { return json(res, 400, { ok: false, error: 'bad_json' }); }
+      const name = j.name || '';
+      const p = (j.payload && typeof j.payload === 'object') ? j.payload : {};
+      // 3) дедуп: Tribute шлёт ретраи до суток, если не получил 200
+      const dkey = tribute.webhookDedupeKey(j);
+      if (dkey) {
+        db.tribute_seen = db.tribute_seen || {};
+        if (db.tribute_seen[dkey]) return json(res, 200, { ok: true, dup: true });
+        db.tribute_seen[dkey] = Date.now();
+        const keys = Object.keys(db.tribute_seen);
+        if (keys.length > 2000) for (const k of keys.slice(0, keys.length - 2000)) delete db.tribute_seen[k];
+        save();
+      }
+      // 4) возвраты и отмены подписку не дают — только шумим админам в лог
+      if (name === 'digital_product_refunded' || name === 'cancelled_subscription') {
+        console.error(`[tribute] ${name}: telegram_user_id=${p.telegram_user_id || '?'} product/subscription=${p.product_id || p.subscription_id || '?'}`);
+        for (const aid of ADMINS) {
+          bot.api.sendMessage(aid, `Tribute: ${name === 'cancelled_subscription' ? 'отмена подписки' : 'возврат товара'} — пользователь ${p.telegram_user_id || '?'}, доступ оставлен до конца срока.`).catch(() => {});
+        }
+        return json(res, 200, { ok: true, ignored: name });
+      }
+      if (!tribute.isPaidEvent(name)) return json(res, 200, { ok: true, ignored: name || 'empty' });
+      // 5) покупатель: ищем по telegram_user_id; мог оплатить раньше, чем нажал /start, —
+      // тогда заводим запись сами, иначе подписка «потеряется» (такого пользователя нет в базе)
+      const uid = Number(p.telegram_user_id || p.user_id);
+      if (!uid) return json(res, 200, { ok: true, ignored: 'no_user' });
+      let user = db.users[uid];
+      if (!user) {
+        user = db.users[uid] = {
+          id: uid,
+          name: p.telegram_username ? String(p.telegram_username) : 'друг',
+          username: p.telegram_username ? String(p.telegram_username) : '',
+          joined: Date.now(),
+          trial_start: Date.now(),
+          premium_until: 0,
+          reminder: { on: false, time: '09:00', tz: 3 }
+        };
+        console.log(`[tribute] ${name}: новый пользователь ${uid} создан из вебхука`);
+      }
+      // 6) активация: expires_at из вебхука точнее всего; иначе — дни по карте товаров
+      const exp = p.expires_at ? Date.parse(p.expires_at) : NaN;
+      let days = 0;
+      if (Number.isFinite(exp) && exp > Date.now()) {
+        user.premium_until = Math.max(user.premium_until || 0, exp);
+      } else {
+        days = tribute.daysForTributePayload(p);
+        user.premium_until = Math.max(Date.now(), user.premium_until || 0) + days * 86400000;
+      }
+      save();
+      const until = new Date(user.premium_until).toLocaleDateString('ru-RU');
+      console.log(`[tribute] ${name}: ${uid} → подписка до ${until}${days ? ` (+${days} дн.)` : ' (по expires_at)'}`);
+      bot.api.sendMessage(uid, `Оплата прошла! Подписка активна до ${until}. Спасибо, что держишь меня в форме 💧`).catch(() => {});
+      return json(res, 200, { ok: true });
     });
     return;
   }
