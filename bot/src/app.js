@@ -28,6 +28,15 @@ const ADMINS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim(
 const PORT = Number(process.env.PORT || 8080);
 const PRICE = 200;
 const TRIAL_DAYS = 7;
+/* Тарифы подписки: 1 месяц 200 ₽, 3 месяца 500 ₽, 6 месяцев 900 ₽.
+   id совпадают с app/config.js (subscription.plans) и deep-link ?start=pay_<id>. */
+const PLANS = [
+  { id: 'm1', label: '1 месяц', price: 200, days: 30 },
+  { id: 'm3', label: '3 месяца', price: 500, days: 90 },
+  { id: 'm6', label: '6 месяцев', price: 900, days: 180 },
+];
+const planById = (id) => PLANS.find(p => p.id === id) || PLANS[0];
+const plansLine = () => PLANS.map(p => `${p.label} — ${p.price} ₽`).join(', ');
 const APP_DIR = path.join(__dirname, '..', '..', 'app');
 
 if (!TOKEN) {
@@ -113,8 +122,11 @@ bot.command('start', async (ctx) => {
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
   save();
+  // deep-link из веб-версии: ?start=pay_m1|pay_m3|pay_m6 — сразу ведём к оплате тарифа
+  const payload = String(ctx.match || '').trim();
+  if (payload.startsWith('pay_')) return payFlow(ctx, planById(payload.slice(4)));
   const img = MASCOT('hello');
-  const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, дневник эмоций, письменные задания, чат поддержки и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${PRICE} ₽ в месяц. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
+  const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, дневник эмоций, письменные задания, чат поддержки и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${plansLine()}. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
   if (img) await ctx.replyWithPhoto(img, { caption: text });
   else await ctx.reply(text);
 });
@@ -176,6 +188,19 @@ bot.command('status', (ctx) => {
   ctx.reply(`Профиль: ${u.name}\nПодписка: ${left}\nНапоминания: ${u.reminder.on ? u.reminder.time : 'выкл'}`);
 });
 
+/* Оплата выбранного тарифа: создаёт ссылку Tribute на нужный период. */
+async function payFlow(ctx, plan) {
+  const u = getUser(ctx);
+  if (!u.trial_start) u.trial_start = Date.now();
+  save();
+  if (!tribute.tributeConfigured()) {
+    return ctx.reply('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и эта кнопка оживёт. Первая неделя у тебя уже идёт — практикуй спокойно.');
+  }
+  const link = await tribute.createSubscriptionLink(u.id, plan);
+  if (!link?.url) return ctx.reply('Не смог создать ссылку Tribute. Попробуй позже или напиши владельцу приложения.');
+  ctx.reply(`Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\nОплата: ${link.url}\nПосле оплаты я активирую подписку сам на ${plan.days} дн.`);
+}
+
 bot.command('pay', async (ctx) => {
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
@@ -183,9 +208,26 @@ bot.command('pay', async (ctx) => {
   if (!tribute.tributeConfigured()) {
     return ctx.reply('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и эта кнопка оживёт. Первая неделя у тебя уже идёт — практикуй спокойно.');
   }
-  const link = await tribute.createSubscriptionLink(u.id, PRICE);
-  if (!link?.url) return ctx.reply('Не смог создать ссылку Tribute. Попробуй позже или напиши владельцу приложения.');
-  ctx.reply(`Подписка Дибитишки: ${PRICE} ₽ в месяц.\nОплата: ${link.url}\nПосле оплаты я активирую подписку сам.`);
+  const kb = new InlineKeyboard();
+  PLANS.forEach(p => kb.text(`${p.label} — ${p.price} ₽`, 'pay:' + p.id).row());
+  ctx.reply(`Подписка Дибитишки: ${plansLine()}.\nВыбери срок — сделаю ссылку Tribute. После оплаты я активирую подписку сам.`, { reply_markup: kb });
+});
+
+/* кнопки тарифов в /pay */
+bot.on('callback_query:data', async (ctx) => {
+  const data = ctx.callbackQuery.data || '';
+  if (!data.startsWith('pay:')) return;
+  const plan = planById(data.slice(4));
+  await ctx.answerCallbackQuery();
+  if (!tribute.tributeConfigured()) {
+    return ctx.editMessageText('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и кнопки оживут. Первая неделя у тебя уже идёт — практикуй спокойно.').catch(() => {});
+  }
+  const u = getUser(ctx);
+  if (!u.trial_start) u.trial_start = Date.now();
+  save();
+  const link = await tribute.createSubscriptionLink(u.id, plan);
+  if (!link?.url) return ctx.editMessageText('Не смог создать ссылку Tribute. Попробуй позже или напиши владельцу приложения.').catch(() => {});
+  ctx.editMessageText(`Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\nОплата: ${link.url}\nПосле оплаты я активирую подписку сам на ${plan.days} дн.`).catch(() => {});
 });
 
 /* ---------- админ ---------- */
@@ -590,12 +632,16 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       try {
         const j = JSON.parse(body || '{}');
-        const uid = Number(j.payload?.user_id || j.user_id);
+        // payload может прийти и строкой — Tribute кладёт туда { user_id, plan, days }
+        const pl = typeof j.payload === 'string' ? JSON.parse(j.payload || '{}') : (j.payload || {});
+        const uid = Number(pl.user_id || j.user_id);
         const user = db.users[uid];
         if (user && (j.status === 'succeeded' || j.paid)) {
-          user.premium_until = Math.max(Date.now(), user.premium_until || 0) + 30 * 86400000;
+          const plan = PLANS.find(p => p.id === (pl.plan || j.plan));
+          const days = Number(pl.days || j.days || (plan && plan.days) || 30);
+          user.premium_until = Math.max(Date.now(), user.premium_until || 0) + days * 86400000;
           save();
-          bot.api.sendMessage(uid, 'Оплата прошла! Подписка активна на месяц. Спасибо, что держишь меня в форме 💧').catch(() => {});
+          bot.api.sendMessage(uid, `Оплата прошла! Подписка активна на ${days} дн. (${plan ? plan.label : 'месяц'}). Спасибо, что держишь меня в форме 💧`).catch(() => {});
         }
         return json(res, 200, { ok: true });
       } catch (e) {
