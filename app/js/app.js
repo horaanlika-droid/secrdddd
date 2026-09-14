@@ -156,7 +156,7 @@ const daySeed = () => Math.floor(Date.now() / 86400000);
 function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const bg = dark ? '#15130F' : '#F6F4EF';
+  const bg = dark ? '#0A1428' : '#EDF3FE';
   document.querySelector('meta[name=theme-color]').content = bg;
   try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
 }
@@ -438,12 +438,10 @@ function heroPoster({ greet, dateStr }) {
   const lvl = levelInfo();
   const streak = streakCount();
   return el('section', { class: 'hero' },
-    el('div', { class: 'hero-top' },
-      el('div', { class: 'hero-copy' },
-        el('div', { class: 'eyebrow' }, greet + ' · Дибитишка'),
-        el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
-        el('p', { class: 'hero-date' }, dateStr)
-      ),
+    el('div', { class: 'hero-pill' }, greet),
+    el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
+    el('p', { class: 'hero-date' }, dateStr),
+    el('div', { class: 'hero-mascot-wrap' },
       el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
     ),
     el('div', { class: 'xp' },
@@ -504,7 +502,7 @@ function levelCard() {
   return el('div', { class: 'level-card' },
     el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
     el('div', { class: 'level-copy' },
-      el('div', { class: 'brand-script' }, lvl.title),
+      el('div', { class: 'level-title' }, lvl.title),
       el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до уровня «${LEVEL_TITLES[lvl.level % LEVEL_TITLES.length]}» ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
       el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
     )
@@ -541,43 +539,46 @@ function route() {
 function screenWelcome() {
   renderTabbar(null);
   const slides = [
-    ['hello', 'Привет! Я Дибитишка', 'Я живу рядом, когда чувств слишком много. Будем собирать опору маленькими шагами — без стыда и гонки.'],
+    ['hello', 'Привет! Я рядом', 'Я живу рядом, когда чувств слишком много. Будем собирать опору маленькими шагами — без стыда и гонки.'],
     ['calm', 'Дневник, задания и чат', 'Отмечай эмоции — соберётся твой график пути. Пиши письменные опоры, а в трудный момент чат напомнит, кто ты и что тебя держит.'],
     ['proud', 'Медленно — тоже вперёд', 'Прогресс отмечаю бережно: за практики, честность с собой и даже за моменты, когда выбираешь путь помягче.']
   ];
+  const pills = ['Маленький спутник спокойствия', 'Шкала опыта и уровни', 'Без давления и оценки'];
   let i = 0;
-  const scr = el('div', { class: 'screen' });
-  const poster = el('section', { class: 'poster hero-poster' });
-  const copy = el('div', { class: 'poster-copy wide' });
-  const eyebrow = el('div', { class: 'eyebrow' });
-  const brand = el('div', { class: 'brand-script big' }, 'Дибитишка');
-  const title = el('h1', { class: 'poster-title' });
-  const text = el('p', { class: 'poster-text' });
-  const img = el('img', { class: 'poster-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' });
-  const dots = el('div', { class: 'chips', style: 'justify-content:center' });
-  const btn = el('button', { class: 'btn' });
-  copy.append(eyebrow, brand, title, text);
-  poster.append(el('i', { class: 'poster-bubble b1' }), el('i', { class: 'poster-bubble b2' }), copy, img);
-  const draw = () => {
-    img.src = `assets/mascot/${slides[i][0]}.png`;
-    eyebrow.textContent = i === 0 ? 'Маленький спутник спокойствия' : i === 1 ? 'Шкала опыта и уровни' : 'Без давления и оценки';
-    title.textContent = slides[i][1];
-    text.textContent = slides[i][2];
-    dots.innerHTML = '';
-    slides.forEach((_, k) => dots.append(el('button', { class: 'chip' + (k === i ? ' on' : ''), style: 'padding:5px 12px', onclick: () => { i = k; draw(); } }, '•')));
-    btn.textContent = i < slides.length - 1 ? 'Дальше' : 'Начать бесплатную неделю';
-  };
-  btn.onclick = () => {
-    haptic('medium');
-    if (i < slides.length - 1) { i++; draw(); return; }
+  const scr = el('div', { class: 'screen onboard' });
+  const pill = el('div', { class: 'onboard-pill' });
+  const title = el('h1', { class: 'onboard-title' });
+  const text = el('p', { class: 'onboard-text' });
+  const img = el('img', { class: 'onboard-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' });
+  const wrap = el('div', { class: 'onboard-mascot-wrap' }, img);
+  const dots = el('div', { class: 'dots' });
+  const nextBtn = el('button', { class: 'round-btn', 'aria-label': 'Дальше' }, '→');
+  const foot = el('div', { class: 'onboard-foot' }, dots, nextBtn);
+  const cta = el('button', { class: 'btn onboard-cta hidden' }, 'Начать бесплатную неделю', el('span', { class: 'arr' }, '→'));
+  const note = el('p', { class: 'onboard-note' },
+    `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`,
+    el('br'), 'app by @stonym0ntana');
+  const finish = () => {
     state.onboarded = true;
     if (!state.trial_started_at) state.trial_started_at = Date.now();
     save();
     go('');
   };
+  const draw = () => {
+    img.src = `assets/mascot/${slides[i][0]}.png`;
+    pill.textContent = pills[i];
+    title.textContent = slides[i][1];
+    text.textContent = slides[i][2];
+    dots.innerHTML = '';
+    slides.forEach((_, k) => dots.append(el('button', { class: 'dot' + (k === i ? ' on' : ''), 'aria-label': 'Слайд ' + (k + 1), onclick: () => { i = k; draw(); } })));
+    const last = i === slides.length - 1;
+    foot.classList.toggle('hidden', last);
+    cta.classList.toggle('hidden', !last);
+  };
+  nextBtn.onclick = () => { haptic('medium'); if (i < slides.length - 1) { i++; draw(); } };
+  cta.onclick = () => { haptic('medium'); finish(); };
   draw();
-  scr.append(poster, dots, el('div', { style: 'height:16px' }), btn,
-    el('p', { class: 'foot' }, `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`, el('br'), 'app by @stonym0ntana'));
+  scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note);
   return scr;
 }
 
@@ -669,7 +670,7 @@ function screenToday() {
     el('div', { class: 'poster-copy wide' },
       el('h3', {}, 'Поговорить с Дибитишкой'),
       el('p', {}, 'Совет в трудный момент и напоминание, кто ты — из твоих же записей.'),
-      el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => go('chat') }, 'Открыть чат')
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('chat') }, 'Открыть чат', el('span', { class: 'arr' }, '→'))
     ),
     el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
   ));

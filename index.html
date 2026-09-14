@@ -9,19 +9,21 @@
 <link rel="icon" type="image/png" href="app/assets/mascot/icon.png">
 <style>
   body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #F6F4EF; color: #4a423a;
+         background: radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.9), transparent 70%),
+                     linear-gradient(180deg, #D7E4FA, #F4F8FF); color: #0B1F4D;
          font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .card { text-align: center; padding: 24px; }
-  .name { font-size: 30px; font-weight: 700; letter-spacing: .02em; }
-  .drop { font-size: 34px; line-height: 1; }
-  .hint { color: #9b9085; font-size: 14px; margin-top: 12px; }
-  .hint a { color: #5A7BD6; }
+  .card { text-align: center; padding: 32px; }
+  .hero { width: 200px; height: auto; margin: 0 auto;
+          filter: drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(47,125,246,.32));
+          animation: float 5.5s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
+  .hint { color: #5A6B8C; font-size: 15px; margin-top: 26px; line-height: 1.7; }
+  .hint a { color: #2F7DF6; }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="drop">💧</div>
-  <div class="name">дибитишка</div>
+  <img class="hero" src="app/assets/mascot/hello.png" alt="">
   <p class="hint">открываю приложение…<br>
   если не перешло — <a href="app/">войди в приложение</a></p>
 </div>
