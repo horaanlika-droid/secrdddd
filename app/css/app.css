@@ -792,7 +792,7 @@ html{color-scheme: light}
 .sect.tight{margin-top:26px}
 
 /* --- график настроения: стал выше по профилю, чуть крупнее --- */
-.mood-card{padding:24px 22px 20px}
+.mood-card{padding:24px 22px 20px; margin-bottom:30px}
 .mood-card h3{margin-bottom:2px}
 .mood-graph{margin-top:14px}
 .mood-svg{height:132px}

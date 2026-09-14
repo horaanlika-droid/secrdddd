@@ -1032,14 +1032,20 @@ const loadChatHistory = () => { try { return JSON.parse(localStorage.getItem(cha
 const saveChatHistory = (h) => { try { localStorage.setItem(chatHistoryKey, JSON.stringify(h.slice(-20))); } catch (e) {} };
 async function aiReply(text, history) {
   const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
-  const r = await fetch(apiUrl('/chat'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
-  });
-  const j = await r.json();
-  if (j && j.ok && j.text) return { text: j.text, live: true };
-  if (j && j.ai === false) { AI_STATUS = false; return null; }
-  return { text: (j && j.text) || 'Что-то с моим голосом сейчас не так. Попробуй ещё раз через минуту.', live: true, error: true };
+  try {
+    const r = await fetch(apiUrl('/chat'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
+    });
+    const j = await r.json();
+    if (j && j.ok && j.text) return { text: j.text, live: true };
+    if (j && j.ai === false) { AI_STATUS = false; return null; }
+    // при ошибке API (rate_limit/timeout/сеть) сигналим наверх — там вызовем chatReply()
+    // из локальной памяти пользователя: ответ получится живой, из его же записей
+    return { error: true };
+  } catch (e) {
+    return { error: true };
+  }
 }
 
 function screenChat() {
@@ -1087,12 +1093,16 @@ function screenChat() {
     input.disabled = true; sendBtn.disabled = true;
     aiReply(v, history).then((r) => {
       typing.remove();
-      if (!r) { setFoot(); return push(chatReply(v), 'bot'); }
-      push(r.text, 'bot');
-      if (!r.error) {
-        history.push({ role: 'user', content: v }, { role: 'assistant', content: r.text });
-        history = history.slice(-20); saveChatHistory(history);
+      if (!r || r.error) {
+        // либо AI выключен совсем, либо временно перегружен — отвечаем из локальной памяти
+        const local = chatReply(v);
+        push(local, 'bot');
+        if (!r) setFoot();
+        return;
       }
+      push(r.text, 'bot');
+      history.push({ role: 'user', content: v }, { role: 'assistant', content: r.text });
+      history = history.slice(-20); saveChatHistory(history);
     }).catch(() => { typing.remove(); push(chatReply(v), 'bot'); })
       .finally(() => { input.disabled = false; sendBtn.disabled = false; input.focus(); });
   };
