@@ -6,7 +6,7 @@
 по связности), а не глобальным порогом: серебристая пружина на обложке тоже
 светлая, и глобальный knockout пробил бы в ней дырки.
 
-Результат: app/assets/workbook/dbt-diary.png (1024×1024, прозрачный фон,
+Результат: app/assets/workbook/dbt-diary.png (768×768, прозрачный фон,
 персонаж отсутствует — на обложке только наивная бабл-надпись «DBT diary»).
 
 Запуск:  python3 scripts/make-workbook-art.py
@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "scripts" / "art-src" / "dbt-diary-src.png"
 OUT_DIR = ROOT / "app" / "assets" / "workbook"
 OUT = OUT_DIR / "dbt-diary.png"
-CANVAS = 1024
-CONTENT_BOX = 820
+CANVAS = 768  # хватает с запасом: на экране картинка не крупнее 252 CSS px (×2 DPI)
+CONTENT_BOX = int(CANVAS * 0.8)  # поля вокруг картинки — как air-отступы в приложении
 FUZZ = 26  # насколько «белым» должен быть пиксель, чтобы считаться фоном
 
 
@@ -89,10 +89,37 @@ def read_png(path: Path):
 def write_png(path: Path, width: int, height: int, rgba: bytearray) -> None:
     import zlib
 
+    # адаптивный выбор фильтра по строке — заметно уменьшает вес гладких градиентов
     raw = bytearray()
+    stride = width * 4
+    prev = bytearray(stride)
     for y in range(height):
-        raw.append(0)
-        raw += rgba[y * width * 4:(y + 1) * width * 4]
+        line = rgba[y * stride:(y + 1) * stride]
+        best, best_score, best_filtered = 0, None, None
+        for filt in range(5):
+            out = bytearray(stride)
+            for i in range(stride):
+                a = line[i - 4] if i >= 4 else 0
+                b = prev[i]
+                c = prev[i - 4] if i >= 4 else 0
+                x = line[i]
+                if filt == 1:
+                    x -= a
+                elif filt == 2:
+                    x -= b
+                elif filt == 3:
+                    x -= (a + b) >> 1
+                elif filt == 4:
+                    pp = a + b - c
+                    pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                    x -= a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                out[i] = x & 0xFF
+            score = sum(v if v < 128 else 256 - v for v in out)
+            if best_score is None or score < best_score:
+                best, best_score, best_filtered = filt, score, out
+        raw.append(best)
+        raw += best_filtered
+        prev = line
 
     def chunk(kind: bytes, body: bytes) -> bytes:
         return (len(body).to_bytes(4, "big") + kind + body
