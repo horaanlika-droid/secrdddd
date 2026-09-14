@@ -21,7 +21,7 @@ export async function createSubscriptionLink(userId, amountRub = 200, period = '
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KEY()}` },
       body: JSON.stringify({
         amount: amountRub * 100, currency: 'RUB',
-        description: 'дибитишка · подписка на месяц',
+        description: 'Дибитишка · подписка на месяц',
         payload: JSON.stringify({ user_id: userId, period }),
         type: 'subscription', period_days: 30, trial_days: 0
       })
