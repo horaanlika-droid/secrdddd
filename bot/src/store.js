@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE = process.env.DB_FILE || path.join(__dirname, '..', 'db.json');
 
 const seed = () => ({
-  users: {},        // id -> { id, name, username, joined, trial_start, premium_until, reminder:{on,time,tz}, web_codes_used }
+  users: {},        // id -> { id, name, username, joined, trial_start, premium_until, reminder:{on,time,tz}, chat:[...] (память чата в TG), web_chat:[...] (память чата в вебе) }
   codes: {},        // code -> { user_id, exp }
   content: null,    // рабочая копия контента (редактируется админами)
   broadcast: null,  // черновик рассылки админа

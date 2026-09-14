@@ -644,3 +644,7 @@ a{color:inherit}
   .hero-phrase.long{font-size:22px}
 }
 html{color-scheme: light}
+
+/* живой чат: индикатор «печатает» */
+.msg.typing .bubble{opacity:.6; animation:dibi-typing 1s ease-in-out infinite}
+@keyframes dibi-typing{0%,100%{opacity:.35}50%{opacity:.8}}
