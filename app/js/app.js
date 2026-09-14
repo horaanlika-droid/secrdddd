@@ -156,7 +156,7 @@ const daySeed = () => Math.floor(Date.now() / 86400000);
 function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const bg = dark ? '#15130F' : '#F6F4EF';
+  const bg = dark ? '#0A1428' : '#EDF3FE';
   document.querySelector('meta[name=theme-color]').content = bg;
   try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
 }
@@ -438,12 +438,10 @@ function heroPoster({ greet, dateStr }) {
   const lvl = levelInfo();
   const streak = streakCount();
   return el('section', { class: 'hero' },
-    el('div', { class: 'hero-top' },
-      el('div', { class: 'hero-copy' },
-        el('div', { class: 'eyebrow' }, greet + ' · Дибитишка'),
-        el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
-        el('p', { class: 'hero-date' }, dateStr)
-      ),
+    el('div', { class: 'hero-pill' }, greet),
+    el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
+    el('p', { class: 'hero-date' }, dateStr),
+    el('div', { class: 'hero-mascot-wrap' },
       el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
     ),
     el('div', { class: 'xp' },
@@ -504,7 +502,7 @@ function levelCard() {
   return el('div', { class: 'level-card' },
     el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
     el('div', { class: 'level-copy' },
-      el('div', { class: 'brand-script' }, lvl.title),
+      el('div', { class: 'level-title' }, lvl.title),
       el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до уровня «${LEVEL_TITLES[lvl.level % LEVEL_TITLES.length]}» ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
       el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
     )
@@ -548,23 +546,22 @@ function screenWelcome() {
   let i = 0;
   const scr = el('div', { class: 'screen' });
   const poster = el('section', { class: 'poster hero-poster' });
-  const copy = el('div', { class: 'poster-copy wide' });
+  const copy = el('div', { class: 'poster-copy' });
   const eyebrow = el('div', { class: 'eyebrow' });
-  const brand = el('div', { class: 'brand-script big' }, 'Дибитишка');
   const title = el('h1', { class: 'poster-title' });
   const text = el('p', { class: 'poster-text' });
   const img = el('img', { class: 'poster-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' });
-  const dots = el('div', { class: 'chips', style: 'justify-content:center' });
+  const dots = el('div', { class: 'dots' });
   const btn = el('button', { class: 'btn' });
-  copy.append(eyebrow, brand, title, text);
-  poster.append(el('i', { class: 'poster-bubble b1' }), el('i', { class: 'poster-bubble b2' }), copy, img);
+  copy.append(eyebrow, title, text);
+  poster.append(copy, img);
   const draw = () => {
     img.src = `assets/mascot/${slides[i][0]}.png`;
     eyebrow.textContent = i === 0 ? 'Маленький спутник спокойствия' : i === 1 ? 'Шкала опыта и уровни' : 'Без давления и оценки';
     title.textContent = slides[i][1];
     text.textContent = slides[i][2];
     dots.innerHTML = '';
-    slides.forEach((_, k) => dots.append(el('button', { class: 'chip' + (k === i ? ' on' : ''), style: 'padding:5px 12px', onclick: () => { i = k; draw(); } }, '•')));
+    slides.forEach((_, k) => dots.append(el('button', { class: 'dot' + (k === i ? ' on' : ''), 'aria-label': 'Слайд ' + (k + 1), onclick: () => { i = k; draw(); } })));
     btn.textContent = i < slides.length - 1 ? 'Дальше' : 'Начать бесплатную неделю';
   };
   btn.onclick = () => {
