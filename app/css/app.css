@@ -3,7 +3,8 @@
    По референсу IMG_0955: максимум воздуха, serif-заголовки,
    крупный светящийся персонаж по центру, лёгкий футуризм
    в духе официальных приложений App Store.
-   Текстового логотипа нет — только персонаж и типографика.
+   Локап «Дибитишка» — PNG без подложки, просветы внутри букв залиты в тон фона.
+   Две палитры: голубая (по умолчанию) и розовая — см. :root[data-palette="pink"].
    ============================================================ */
 
 :root{
@@ -20,8 +21,8 @@
   --ink:#0B1F4D;
   --ink-2:#5A6B8C;
   --ink-3:#9AA7C7;
-  --line:rgba(11,31,77,.10);
-  --line-2:rgba(11,31,77,.055);
+  --line:rgba(var(--ink-rgb),.10);
+  --line-2:rgba(var(--ink-rgb),.055);
   --accent:#2F7DF6;
   --accent-deep:#1D5FD0;
   --accent-soft:#E4EDFD;
@@ -29,14 +30,27 @@
   --warm:#D8A4AF;
   --ok:#7C8A4E;
   --warn:#B0763C;
+  --ink-rgb:11,31,77;                    /* текст/линии: rgb от --ink */
   --glass:rgba(255,255,255,.74);
-  --glass-line:rgba(11,31,77,.08);
-  --shadow:0 1px 2px rgba(11,31,77,.04), 0 24px 56px rgba(47,125,246,.14);
-  --shadow-sm:0 1px 2px rgba(11,31,77,.04), 0 10px 28px rgba(47,125,246,.10);
-  --shadow-accent:0 14px 32px rgba(47,125,246,.38), inset 0 1px 0 rgba(255,255,255,.28);
-  --halo:radial-gradient(closest-side, rgba(190,210,252,.9), rgba(226,190,228,.42), transparent 72%);
+  --glass-line:rgba(var(--ink-rgb),.08);
+  --shadow:0 1px 2px rgba(var(--ink-rgb),.04), 0 24px 56px rgba(var(--accent-rgb),.14);
+  --shadow-sm:0 1px 2px rgba(var(--ink-rgb),.04), 0 10px 28px rgba(var(--accent-rgb),.10);
+  --shadow-accent:0 14px 32px rgba(var(--accent-rgb),.38), inset 0 1px 0 rgba(255,255,255,.28);
+  --halo:radial-gradient(closest-side, rgba(var(--halo-a),.9), rgba(var(--halo-b),.42), transparent 72%);
   --tint-lavender:#EFF0FA; --tint-leaf:#F3F2E4; --tint-grass:#F0F1E1;
   --tint-sky:#E9EFFB; --tint-peony:#FBF0EA; --tint-rose:#FAEBEF;
+
+  /* палитра «голубая» — значения для мест, где цвет задан через rgba()/градиент.
+     розовая тема переопределяет ровно этот блок (см. :root[data-palette="pink"]) */
+  --accent-rgb:47,125,246;         /* #2F7DF6 — для теней и подложек */
+  --accent-a:#3B86F7;              /* верх кнопки */
+  --accent-b:#2470E8;              /* низ кнопки */
+  --accent-glow:122,165,248;
+  --halo-a:190,210,252; --halo-b:226,190,228;   /* мягкое свечение под персонажем */
+  --blob-a:143,167,232;            /* большое мягкое пятно слева сверху */
+  --blob-b:216,164,175;            /* тёплый розовый блик справа снизу */
+  --page-1:#D7E4FA; --page-2:#EBF2FE; --page-3:#F8FBFF;   /* фон-небо */
+  color-scheme:light;
 }
 
 /* light-only: dark theme disabled — force light palette */
@@ -49,19 +63,19 @@
   --ink:#0B1F4D;
   --ink-2:#5A6B8C;
   --ink-3:#9AA7C7;
-  --line:rgba(11,31,77,.10);
-  --line-2:rgba(11,31,77,.055);
+  --line:rgba(var(--ink-rgb),.10);
+  --line-2:rgba(var(--ink-rgb),.055);
   --accent:#2F7DF6;
   --accent-deep:#1D5FD0;
   --accent-soft:#E4EDFD;
   --accent-ink:#FFFFFF;
   --warm:#D8A4AF;
   --glass:rgba(255,255,255,.74);
-  --glass-line:rgba(11,31,77,.08);
-  --shadow:0 1px 2px rgba(11,31,77,.04), 0 24px 56px rgba(47,125,246,.14);
-  --shadow-sm:0 1px 2px rgba(11,31,77,.04), 0 10px 28px rgba(47,125,246,.10);
-  --shadow-accent:0 14px 32px rgba(47,125,246,.38), inset 0 1px 0 rgba(255,255,255,.28);
-  --halo:radial-gradient(closest-side, rgba(190,210,252,.9), rgba(226,190,228,.42), transparent 72%);
+  --glass-line:rgba(var(--ink-rgb),.08);
+  --shadow:0 1px 2px rgba(var(--ink-rgb),.04), 0 24px 56px rgba(var(--accent-rgb),.14);
+  --shadow-sm:0 1px 2px rgba(var(--ink-rgb),.04), 0 10px 28px rgba(var(--accent-rgb),.10);
+  --shadow-accent:0 14px 32px rgba(var(--accent-rgb),.38), inset 0 1px 0 rgba(255,255,255,.28);
+  --halo:radial-gradient(closest-side, rgba(var(--halo-a),.9), rgba(var(--halo-b),.42), transparent 72%);
   --tint-lavender:#EFF0FA; --tint-leaf:#F3F2E4; --tint-grass:#F0F1E1;
   --tint-sky:#E9EFFB; --tint-peony:#FBF0EA; --tint-rose:#FAEBEF;
   --ok:#7C8A4E; --warn:#B0763C;
@@ -90,13 +104,13 @@ a{color:inherit}
 #bg-blobs{position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden;
   background:
     radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.9), transparent 70%),
-    linear-gradient(180deg, #D7E4FA 0%, #EBF2FE 45%, #F8FBFF 100%)}
+    linear-gradient(180deg, var(--page-1) 0%, var(--page-2) 45%, var(--page-3) 100%)}
 /* dark bg disabled */
 #bg-blobs i{position:absolute; border-radius:50%; filter:blur(110px); opacity:.6; transition:opacity .4s}
 #bg-blobs .b1{width:66vmax;height:66vmax; left:-25vmax; top:-31vmax;
-  background:radial-gradient(circle at 45% 45%, rgba(143,167,232,.9), transparent 62%)}
+  background:radial-gradient(circle at 45% 45%, rgba(var(--blob-a),.9), transparent 62%)}
 #bg-blobs .b2{width:58vmax;height:58vmax; right:-23vmax; bottom:-25vmax;
-  background:radial-gradient(circle at 55% 55%, rgba(216,164,175,.6), transparent 60%)}
+  background:radial-gradient(circle at 55% 55%, rgba(var(--blob-b),.6), transparent 60%)}
 /* dark blobs disabled */
 
 /* ---------- splash: только персонаж, без текстового логотипа ---------- */
@@ -104,7 +118,7 @@ a{color:inherit}
   position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
   background:
     radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.9), transparent 70%),
-    linear-gradient(180deg, #D7E4FA 0%, #F2F6FE 55%, #EAF1FD 100%);
+    linear-gradient(180deg, var(--page-1) 0%, var(--page-2) 55%, var(--page-3) 100%);
   transition:opacity .45s ease, visibility .45s;
 }
 /* dark splash disabled */
@@ -113,7 +127,7 @@ a{color:inherit}
 .splash-inner::before{content:""; position:absolute; top:-56px; left:50%; transform:translateX(-50%);
   width:380px; height:380px; background:var(--halo); filter:blur(10px); pointer-events:none}
 .splash-icon{position:relative; width:168px; height:168px; border-radius:44px; overflow:hidden;
-  box-shadow:0 0 0 12px rgba(255,255,255,.55), 0 34px 80px rgba(47,125,246,.42);
+  box-shadow:0 0 0 12px rgba(255,255,255,.55), 0 34px 80px rgba(var(--accent-rgb),.42);
   animation:breathe 3.6s ease-in-out infinite; background:#fff}
 .splash-icon img{width:100%;height:100%;object-fit:cover}
 .splash-title{position:relative; margin:30px 0 0; font-family:var(--serif);
@@ -159,29 +173,30 @@ a{color:inherit}
 [data-theme="dark"] .hero{border-color:var(--glass-line)}
 .hero::before{content:""; position:absolute; inset:0; pointer-events:none;
   background:
-    radial-gradient(120% 52% at 50% 0%, rgba(143,167,232,.35), transparent 62%),
+    radial-gradient(120% 52% at 50% 0%, rgba(var(--blob-a),.35), transparent 62%),
     radial-gradient(90% 42% at 50% 40%, rgba(255,255,255,.85), transparent 70%)}
 [data-theme="dark"] .hero::before{background:radial-gradient(120% 55% at 50% 0%, rgba(122,165,248,.22), transparent 65%)}
 /* тонкая стеклянная кромка сверху — iOS-блик */
 .hero::after{content:""; position:absolute; top:0; left:8%; right:8%; height:1px;
   background:linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent)}
-/* ---------- hero brand / daily phrase (v22.1 · v23: голубая подложка) ---------- */
-/* Логотип-локап «Дибитишка» больше не лежит белым прямоугольником: под ним
-   мягкая голубая плашка в тон приложения (--accent-soft → небо). */
+/* ---------- hero brand / daily phrase (v24: логотип без подложки) ---------- */
+/* Плашки под локапом больше нет: PNG вырезан начисто, а замкнутые просветы
+   внутри букв (д, б, к, а) залиты точно в тон фона — см. scripts/logo_holes.py.
+   Для розовой темы подставляется второй файл с розовым тоном заливки. */
 .hero-brand{
   width:min(88%, 338px);
   height:auto;
   margin:2px auto 16px;
   display:block;
-  padding:18px 16px 16px;
-  border-radius:34px;
-  background:linear-gradient(168deg, #EFF5FF 0%, #DDE8FC 58%, #D2E0FA 100%);
-  border:1px solid rgba(255,255,255,.92);
-  box-shadow:0 20px 46px rgba(47,125,246,.16), inset 0 1px 0 rgba(255,255,255,.95);
-  filter:drop-shadow(0 8px 22px rgba(143,167,232,.16));
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  filter:drop-shadow(0 10px 24px rgba(var(--accent-rgb),.16));
 }
 @media (max-width:420px){
-  .hero-brand{width:min(92%, 320px); padding:16px 12px 14px; border-radius:30px}
+  .hero-brand{width:min(92%, 320px)}
 }
 .hero-phrase{
   margin:6px auto 8px;
@@ -215,7 +230,7 @@ a{color:inherit}
 .hero-mascot-wrap::before{content:""; position:absolute; inset:-18% -26%;
   background:var(--halo); filter:blur(14px)}
 .hero-mascot{position:relative; width:min(74vw, 310px); height:auto; max-height:38dvh; object-fit:contain; animation:float 5.5s ease-in-out infinite;
-  filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(47,125,246,.32))}
+  filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(var(--accent-rgb),.32))}
 [data-theme="dark"] .hero-mascot{filter:drop-shadow(0 0 40px rgba(122,165,248,.35)) drop-shadow(0 26px 34px rgba(0,0,0,.55)) brightness(1.06)}
 
 /* ---------- XP / уровень ---------- */
@@ -229,8 +244,8 @@ a{color:inherit}
 .xp-nums{font-size:13px; color:var(--ink-3); font-variant-numeric:tabular-nums; font-weight:600}
 .xp-track{height:12px; border-radius:999px; background:var(--line-2); overflow:hidden}
 .xp-fill{display:block; height:100%; border-radius:inherit;
-  background:linear-gradient(90deg, #8FB4F8, var(--accent) 60%, var(--accent-deep));
-  box-shadow:0 0 14px rgba(47,125,246,.5);
+  background:linear-gradient(90deg, rgba(var(--accent-glow),1), var(--accent) 60%, var(--accent-deep));
+  box-shadow:0 0 14px rgba(var(--accent-rgb),.5);
   width:0%; transition:width .6s cubic-bezier(.22,.9,.3,1)}
 .xp-foot{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; font-size:13.5px; color:var(--ink-2)}
 .xp-foot b{color:var(--ink); font-weight:700}
@@ -261,7 +276,7 @@ a{color:inherit}
 .onboard-mascot-wrap::before{content:""; position:absolute; inset:-20% -28%;
   background:var(--halo); filter:blur(16px)}
 .onboard-mascot{position:relative; width:296px; height:auto; animation:float 5.5s ease-in-out infinite;
-  filter:drop-shadow(0 0 48px rgba(255,255,255,.95)) drop-shadow(0 28px 38px rgba(47,125,246,.32))}
+  filter:drop-shadow(0 0 48px rgba(255,255,255,.95)) drop-shadow(0 28px 38px rgba(var(--accent-rgb),.32))}
 [data-theme="dark"] .onboard-mascot{filter:drop-shadow(0 0 44px rgba(122,165,248,.35)) drop-shadow(0 28px 38px rgba(0,0,0,.55)) brightness(1.06)}
 .onboard-spacer{flex:1; min-height:28px}
 .onboard-foot{width:100%; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:30px}
@@ -290,7 +305,7 @@ a{color:inherit}
 .poster-title{margin:12px 0 12px; font-size:32px; line-height:1.05; font-weight:800; letter-spacing:-.03em}
 .poster-text{font-size:16px; color:var(--ink-2); margin:0; line-height:1.65; max-width:26ch}
 .poster-mascot{position:absolute; right:6px; bottom:6px; width:min(52%, 236px); height:auto; z-index:1; background:transparent; transform:translateZ(0);
-  image-rendering:-webkit-optimize-contrast; filter:drop-shadow(0 0 22px rgba(255,255,255,.9)) drop-shadow(0 18px 28px rgba(47,125,246,.28)); will-change:transform}
+  image-rendering:-webkit-optimize-contrast; filter:drop-shadow(0 0 22px rgba(255,255,255,.9)) drop-shadow(0 18px 28px rgba(var(--accent-rgb),.28)); will-change:transform}
 .poster-mini{min-height:224px; background:var(--card); overflow:hidden; backdrop-filter:none; -webkit-backdrop-filter:none; border:1px solid var(--line-2)}
 .poster-mini .poster-copy{max-width:60%}
 .poster-mini .poster-mascot{width:min(52%, 220px); right:4px; bottom:4px}
@@ -299,7 +314,7 @@ a{color:inherit}
 /* точки онбординга */
 .dots{display:flex; gap:8px; justify-content:center; align-items:center; margin:20px 0 6px}
 .dot{width:8px; height:8px; border-radius:99px; background:var(--line); padding:0; transition:all .25s}
-.dot.on{width:28px; background:var(--accent); box-shadow:0 0 10px rgba(47,125,246,.5)}
+.dot.on{width:28px; background:var(--accent); box-shadow:0 0 10px rgba(var(--accent-rgb),.5)}
 
 /* ---------- списки ---------- */
 .group{background:var(--card); border:1px solid var(--line-2); border-radius:24px; box-shadow:var(--shadow-sm); overflow:hidden}
@@ -307,7 +322,7 @@ a{color:inherit}
 .group .row + .row{border-top:1px solid var(--line-2)}
 .group .row:active{background:var(--card-2)}
 .row .ric{width:42px;height:42px;border-radius:15px; display:flex;align-items:center;justify-content:center; flex:none; color:#fff;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 4px 10px rgba(11,31,77,.12)}
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 4px 10px rgba(var(--ink-rgb),.12)}
 .row .ric svg{width:21px;height:21px}
 .row .rmain{flex:1; min-width:0}
 .row .rmain b{display:block; font-weight:700; font-size:16px; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -326,7 +341,7 @@ a{color:inherit}
 
 /* ---------- кнопки ---------- */
 .btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; min-height:58px; border-radius:20px;
-  background:linear-gradient(180deg, #3B86F7, #2470E8); color:#fff; font-size:17px; font-weight:700; letter-spacing:-.01em;
+  background:linear-gradient(180deg, var(--accent-a), var(--accent-b)); color:#fff; font-size:17px; font-weight:700; letter-spacing:-.01em;
   transition:transform .12s ease, opacity .2s, filter .2s; box-shadow:var(--shadow-accent); padding:0 20px}
 [data-theme="dark"] .btn{background:linear-gradient(180deg, #8FB0FA, #6B93F2); color:#0A1428}
 .btn:active{transform:scale(.98); filter:brightness(.97)}
@@ -334,7 +349,7 @@ a{color:inherit}
 .btn.secondary{background:var(--card); color:var(--accent-deep); border:1px solid var(--line); box-shadow:var(--shadow-sm)}
 [data-theme="dark"] .btn.secondary{color:var(--accent)}
 .btn.ghost{background:transparent; color:var(--accent); box-shadow:none; min-height:48px; font-weight:700}
-.btn.warm{background:linear-gradient(180deg,#E3B3BD,#D198A4); color:#4A2530; box-shadow:0 12px 28px rgba(216,164,175,.4)}
+.btn.warm{background:linear-gradient(180deg,#E3B3BD,#D198A4); color:#4A2530; box-shadow:0 12px 28px rgba(var(--blob-b),.4)}
 .btn svg{width:20px;height:20px}
 .btn .arr{font-size:19px; font-weight:800; line-height:1}
 .btnrow{display:flex; gap:10px; margin-top:18px}
@@ -346,8 +361,8 @@ a{color:inherit}
   font-size:14.5px; color:var(--ink-2); transition:transform .12s, background .2s, color .2s, box-shadow .2s;
   font-weight:650; box-shadow:var(--shadow-sm)}
 .chip:active{transform:scale(.96)}
-.chip.on{background:linear-gradient(180deg, #3B86F7, #2470E8); border-color:transparent; color:#fff;
-  box-shadow:0 8px 20px rgba(47,125,246,.35)}
+.chip.on{background:linear-gradient(180deg, var(--accent-a), var(--accent-b)); border-color:transparent; color:#fff;
+  box-shadow:0 8px 20px rgba(var(--accent-rgb),.35)}
 [data-theme="dark"] .chip.on{background:linear-gradient(180deg, #8FB0FA, #6B93F2); color:#0A1428}
 
 /* ---------- маскот + реплика ---------- */
@@ -363,7 +378,7 @@ a{color:inherit}
 @media (max-width:420px){ .mascot-wrap.peeking{--peek-size:190px; --peek-dip:.12} .mascot-wrap.peeking .bubble{font-size:16px} }
 .mascot{width:210px; height:210px; object-fit:contain; object-position:center; flex:none;
   animation:float 5.5s ease-in-out infinite;
-  filter:drop-shadow(0 0 34px rgba(255,255,255,.9)) drop-shadow(0 20px 28px rgba(47,125,246,.28))}
+  filter:drop-shadow(0 0 34px rgba(255,255,255,.9)) drop-shadow(0 20px 28px rgba(var(--accent-rgb),.28))}
 [data-theme="dark"] .mascot{filter:drop-shadow(0 0 30px rgba(122,165,248,.3)) drop-shadow(0 20px 28px rgba(0,0,0,.5)) brightness(1.06)}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 .bubble{position:relative; background:var(--glass-card);
@@ -393,7 +408,7 @@ a{color:inherit}
 .ring svg{transform:rotate(-90deg)}
 .ring .track{stroke:var(--line)}
 .ring .bar{stroke:var(--accent); stroke-linecap:round; transition:stroke-dashoffset .6s cubic-bezier(.22,.9,.3,1);
-  filter:drop-shadow(0 0 5px rgba(47,125,246,.5))}
+  filter:drop-shadow(0 0 5px rgba(var(--accent-rgb),.5))}
 .ring b{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800}
 
 /* статус практики */
@@ -406,7 +421,7 @@ a{color:inherit}
 #tabbar{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(env(safe-area-inset-bottom,0px) + 16px); z-index:30;
   width:min(520px, calc(100% - 32px)); display:flex; gap:2px; padding:10px;
   background:var(--glass); backdrop-filter:blur(28px) saturate(180%); -webkit-backdrop-filter:blur(28px) saturate(180%);
-  border:1px solid var(--glass-line); border-radius:30px; box-shadow:0 16px 44px rgba(11,31,77,.18)}
+  border:1px solid var(--glass-line); border-radius:30px; box-shadow:0 16px 44px rgba(var(--ink-rgb),.18)}
 #tabbar button{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 0 6px;
   color:var(--ink-3); font-size:11.5px; font-weight:700; letter-spacing:.02em; border-radius:20px; transition:color .2s, background .2s}
 #tabbar button svg{width:24px;height:24px}
@@ -418,7 +433,7 @@ a{color:inherit}
 .sheet-veil{position:fixed; inset:0; z-index:40; background:rgba(11,20,45,.35); backdrop-filter:blur(3px); opacity:0; transition:opacity .28s}
 .sheet{position:fixed; left:0; right:0; bottom:0; z-index:41; margin:0 auto; max-width:560px; background:var(--bg);
   border-radius:32px 32px 0 0; border:1px solid var(--glass-line); border-bottom:0;
-  padding:12px 28px calc(env(safe-area-inset-bottom,0px) + 30px); box-shadow:0 -16px 50px rgba(11,31,77,.2);
+  padding:12px 28px calc(env(safe-area-inset-bottom,0px) + 30px); box-shadow:0 -16px 50px rgba(var(--ink-rgb),.2);
   transform:translateY(100%); transition:transform .32s cubic-bezier(.22,.9,.3,1); max-height:86dvh; overflow:auto}
 .sheet-veil.on{opacity:1}
 .sheet.on{transform:none}
@@ -451,7 +466,7 @@ a{color:inherit}
 
 /* тост */
 .toast{position:fixed; left:50%; transform:translateX(-50%) translateY(20px); bottom:calc(env(safe-area-inset-bottom,0px) + 112px);
-  z-index:50; background:rgba(11,31,77,.92); color:#fff; padding:14px 22px; border-radius:999px; font-size:14.5px; font-weight:600;
+  z-index:50; background:rgba(var(--ink-rgb),.92); color:#fff; padding:14px 22px; border-radius:999px; font-size:14.5px; font-weight:600;
   opacity:0; transition:.3s; pointer-events:none; box-shadow:var(--shadow); max-width:88%; text-align:center;
   backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px)}
 .toast.on{opacity:1; transform:translateX(-50%)}
@@ -464,7 +479,7 @@ a{color:inherit}
 
 /* всплывающий «+N XP» */
 .gain{position:fixed; z-index:56; font-weight:800; font-size:19px; color:var(--accent-deep); pointer-events:none;
-  text-shadow:0 2px 12px rgba(47,125,246,.35); animation:gainUp 1.2s cubic-bezier(.22,.9,.3,1) forwards}
+  text-shadow:0 2px 12px rgba(var(--accent-rgb),.35); animation:gainUp 1.2s cubic-bezier(.22,.9,.3,1) forwards}
 [data-theme="dark"] .gain{color:var(--accent)}
 @keyframes gainUp{from{opacity:0; transform:translateY(8px) scale(.9)}20%{opacity:1; transform:translateY(0) scale(1.05)}to{opacity:0; transform:translateY(-46px) scale(1)}}
 
@@ -496,10 +511,6 @@ a{color:inherit}
 .scale-fill{position:absolute; inset:0 auto 0 0; width:0%; border-radius:999px; transition:width .5s cubic-bezier(.22,.9,.3,1)}
 .scale-meta{display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12.5px; color:var(--ink-2)}
 .scale-meta b{font-size:14px; color:var(--ink)}
-.scale-card.awareness .scale-fill{background:linear-gradient(90deg, #C6B8D8, #8FA7E8)}
-.scale-card.care .scale-fill{background:linear-gradient(90deg, #F4D8DF, #D8A4AF)}
-.scale-card.resilience .scale-fill{background:linear-gradient(90deg, #C1BC77, #8D8B4C)}
-.scale-card.sensory .scale-fill{background:linear-gradient(90deg, #A9BCE0, #5B8DEF)}
 
 /* ---------- значки ---------- */
 .badge-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
@@ -516,15 +527,15 @@ a{color:inherit}
 .level-card{display:flex; align-items:center; gap:20px; padding:21px; border-radius:26px; margin-bottom:26px;
   background:var(--card); border:1px solid var(--line-2); box-shadow:var(--shadow-sm)}
 .level-orb{width:86px; height:86px; border-radius:50%; display:grid; place-items:center; flex:none;
-  background:radial-gradient(circle at 34% 28%, #A9C2FF, #2F7DF6 72%);
-  box-shadow:0 12px 28px rgba(47,125,246,.4), inset 0 2px 6px rgba(255,255,255,.4)}
-.level-orb b{font-size:28px; letter-spacing:-.04em; color:#fff; text-shadow:0 2px 8px rgba(11,31,77,.3)}
+  background:radial-gradient(circle at 34% 28%, rgba(var(--accent-glow),1), var(--accent) 72%);
+  box-shadow:0 12px 28px rgba(var(--accent-rgb),.4), inset 0 2px 6px rgba(255,255,255,.4)}
+.level-orb b{font-size:28px; letter-spacing:-.04em; color:#fff; text-shadow:0 2px 8px rgba(var(--ink-rgb),.3)}
 .level-copy{flex:1; min-width:0}
 .level-title{font-size:23px; font-weight:800; letter-spacing:-.022em}
 .level-copy p{margin:4px 0 12px; color:var(--ink-2); font-size:13.5px; line-height:1.5}
 .level-track{height:9px; border-radius:999px; background:var(--line-2); overflow:hidden}
 .level-track i{display:block; height:100%; border-radius:inherit;
-  background:linear-gradient(90deg, #8FB4F8, var(--accent) 60%, var(--accent-deep)); width:0%}
+  background:linear-gradient(90deg, rgba(var(--accent-glow),1), var(--accent) 60%, var(--accent-deep)); width:0%}
 
 /* ---------- чат поддержки ---------- */
 .chat-screen{display:flex; flex-direction:column}
@@ -534,8 +545,8 @@ a{color:inherit}
 .msg.bot{align-self:flex-start}
 .msg .bubble{padding:15px 18px; border-radius:24px; font-size:16px; line-height:1.6; white-space:pre-wrap; box-shadow:var(--shadow-sm)}
 .msg.bot .bubble{background:var(--card); border:1px solid var(--line-2); border-bottom-left-radius:7px; color:var(--ink)}
-.msg.me .bubble{background:linear-gradient(180deg, #3B86F7, #2470E8); color:#fff; border:0; border-bottom-right-radius:7px;
-  box-shadow:0 8px 20px rgba(47,125,246,.3)}
+.msg.me .bubble{background:linear-gradient(180deg, var(--accent-a), var(--accent-b)); color:#fff; border:0; border-bottom-right-radius:7px;
+  box-shadow:0 8px 20px rgba(var(--accent-rgb),.3)}
 [data-theme="dark"] .msg.me .bubble{background:linear-gradient(180deg, #8FB0FA, #6B93F2); color:#0A1428}
 .chat-hints{justify-content:center}
 .chat-input{display:flex; gap:10px; margin-top:14px; position:sticky; bottom:calc(env(safe-area-inset-bottom,0px) + 104px); background:transparent}
@@ -543,7 +554,7 @@ a{color:inherit}
   border:1px solid var(--line); border-radius:22px; padding:16px 18px; outline:none; box-shadow:var(--shadow-sm)}
 .chat-field:focus{border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft)}
 .chat-send{flex:none; width:58px; height:58px; border-radius:22px; display:flex; align-items:center; justify-content:center;
-  background:linear-gradient(180deg, #3B86F7, #2470E8); color:#fff; box-shadow:var(--shadow-accent)}
+  background:linear-gradient(180deg, var(--accent-a), var(--accent-b)); color:#fff; box-shadow:var(--shadow-accent)}
 [data-theme="dark"] .chat-send{background:linear-gradient(180deg, #8FB0FA, #6B93F2); color:#0A1428}
 .chat-send svg{width:22px; height:22px}
 
@@ -648,11 +659,11 @@ a{color:inherit}
 
 /* ---------- chat mascot laconic ---------- */
 .chat-mascot-header{display:flex; align-items:center; gap:14px; margin:10px 0 8px}
-.chat-mascot-small{width:58px; height:58px; object-fit:contain; flex:none; filter:drop-shadow(0 6px 14px rgba(47,125,246,.22))}
+.chat-mascot-small{width:58px; height:58px; object-fit:contain; flex:none; filter:drop-shadow(0 6px 14px rgba(var(--accent-rgb),.22))}
 .chat-feed.with-mascot{position:relative}
 .chat-bubble-row{display:flex; align-items:flex-end; gap:10px}
 .chat-bubble-row .chat-avatar{width:36px; height:36px; object-fit:contain; flex:none; border-radius:50%; background:var(--card); border:1px solid var(--line-2); padding:3px}
-.chat-illustration{position:absolute; right:6px; bottom:76px; width:96px; height:96px; opacity:.92; pointer-events:none; filter:drop-shadow(0 8px 18px rgba(47,125,246,.18))}
+.chat-illustration{position:absolute; right:6px; bottom:76px; width:96px; height:96px; opacity:.92; pointer-events:none; filter:drop-shadow(0 8px 18px rgba(var(--accent-rgb),.18))}
 @media (max-width:420px){ .chat-illustration{width:78px; height:78px; bottom:72px} }
 
 /* ---------- mood note ---------- */
@@ -665,13 +676,13 @@ a{color:inherit}
 .mood-entry-note{margin-top:8px; padding:10px 12px; border-radius:12px; background:var(--card-2); color:var(--ink-2); font-size:13.8px; line-height:1.5; white-space:pre-wrap; border:1px solid var(--line-2)}
 .mood-entry-note:empty{display:none}
 
-/* ---------- splash wordmark (v23: голубая подложка вместо белой) ---------- */
+/* ---------- splash wordmark (v24: локап лежит на фоне, без плашки) ---------- */
+/* Подложки нет: у PNG вырезан фон, а просветы внутри букв залиты в тон фона
+   (logo-wordmark.png — голубая тема, logo-wordmark-pink.png — розовая). */
 .splash-wordmark{width:min(86vw, 350px); height:auto; display:block;
-  padding:22px 18px 20px; border-radius:38px;
-  background:linear-gradient(168deg, #EFF5FF 0%, #DDE8FC 58%, #D2E0FA 100%);
-  border:1px solid rgba(255,255,255,.92);
-  box-shadow:0 24px 56px rgba(47,125,246,.2), inset 0 1px 0 rgba(255,255,255,.95);
-  filter:drop-shadow(0 8px 20px rgba(47,125,246,.14))}
+  padding:0; border:0; border-radius:0; background:none; box-shadow:none;
+  filter:drop-shadow(0 10px 26px rgba(var(--accent-rgb),.16));
+  animation:breathe 4.6s ease-in-out infinite}
 .splash-tagline{position:relative; color:var(--ink-2); font-size:15px; line-height:1.5; text-align:center; max-width:300px}
 .splash-inner{gap:16px}
 
@@ -693,5 +704,129 @@ html{color-scheme: light}
 .workbook-art-wrap{position:relative; display:grid; place-items:center; margin:24px 0 12px}
 .workbook-art-wrap::before{content:""; position:absolute; inset:-14% -6%; background:var(--halo); filter:blur(16px)}
 .workbook-art{position:relative; width:min(62vw, 252px); height:auto; animation:float 6s ease-in-out infinite;
-  filter:drop-shadow(0 22px 32px rgba(47,125,246,.24))}
+  filter:drop-shadow(0 22px 32px rgba(var(--accent-rgb),.24))}
 @media (max-width:420px){ .workbook-art{width:min(58vw, 212px)} }
+
+/* ============================================================
+   v24 · палитры: «голубая» (по умолчанию) и «розовая»
+   Переключается атрибутом <html data-palette="pink"> — см. applyPalette()
+   в app/js/app.js, выбор в профиле («Оформление»), хранится в localStorage.
+   Меняются ровно токены: фон, чернила, акцент, тени, пятна, тон заливки
+   просветов в логотипе. Светлая подложка/карточки остаются белыми.
+   ============================================================ */
+:root[data-palette="pink"]{
+  --bg:#FCEFF5;
+  --bg-2:#F8E2EC;
+  --card-2:#FDF6FA;
+  --ink:#4C1F37;
+  --ink-2:#8C5C73;
+  --ink-3:#C39BAE;
+  --ink-rgb:76,31,55;
+  --accent:#E4568F;
+  --accent-deep:#C13A73;
+  --accent-soft:#FBE2ED;
+  --accent-rgb:228,86,143;
+  --accent-a:#F074A5;
+  --accent-b:#DD4C86;
+  --accent-glow:247,169,197;
+  --warm:#8FA7E8;                    /* «тёплый» в розовой теме — наоборот голубой */
+  --ok:#7C8A4E; --warn:#B0763C;
+  --halo-a:250,206,227; --halo-b:205,215,250;
+  --blob-a:241,166,199;              /* розовое пятно сверху слева */
+  --blob-b:183,201,245;              /* голубой блик снизу справа */
+  --page-1:#FBE4EE; --page-2:#FDF1F6; --page-3:#FFF9FC;
+  --tint-lavender:#F5EAF7; --tint-sky:#EDE9F9;
+  --tint-peony:#FCEAE6; --tint-rose:#FBE3EC;
+  --tint-leaf:#F7F0E7; --tint-grass:#F4F1E6;
+}
+
+/* розовое небо на прелоадинге и под экраном */
+:root[data-palette="pink"] #bg-blobs,
+:root[data-palette="pink"] #splash{
+  background:
+    radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.94), transparent 70%),
+    linear-gradient(180deg, var(--page-1) 0%, var(--page-2) 50%, var(--page-3) 100%);
+}
+/* маскот и арты чуть теплее — чтобы не спорили с розовым */
+:root[data-palette="pink"] .hero-mascot,
+:root[data-palette="pink"] .onboard-mascot,
+:root[data-palette="pink"] .mascot{filter:drop-shadow(0 20px 34px rgba(var(--accent-rgb),.26)) saturate(.96) hue-rotate(-8deg)}
+:root[data-palette="pink"] .splash-art{box-shadow:0 28px 90px rgba(214,120,158,.26), inset 0 1px rgba(255,255,255,.9)}
+:root[data-palette="pink"] .badge-card .emoji{filter:saturate(.94) hue-rotate(-6deg)}
+:root[data-palette="pink"] .level-orb{box-shadow:0 12px 28px rgba(var(--accent-rgb),.4), inset 0 2px 6px rgba(255,255,255,.45)}
+:root[data-palette="pink"] .btn.warm{background:linear-gradient(180deg,#9FB8EE,#7E93C2); color:#1F2E4C; box-shadow:0 12px 28px rgba(126,147,194,.42)}
+:root[data-palette="pink"] .badge{background:var(--tint-sky); color:#2F4C7A}
+
+/* переключатель палитры в профиле */
+.palette-pick{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+.palette-opt{position:relative; display:flex; flex-direction:column; gap:10px; align-items:flex-start;
+  padding:16px; border-radius:22px; border:1.5px solid var(--line-2); background:var(--card);
+  box-shadow:var(--shadow-sm); transition:transform .12s ease, border-color .2s, box-shadow .2s; text-align:left}
+.palette-opt:active{transform:scale(.985)}
+.palette-opt .swatch{display:flex; gap:6px}
+.palette-opt .swatch i{width:26px; height:26px; border-radius:50%; box-shadow:inset 0 1px 0 rgba(255,255,255,.5), 0 3px 8px rgba(var(--ink-rgb),.14)}
+.palette-opt .swatch i:nth-child(2){width:20px; height:20px; margin-top:6px; opacity:.9}
+.palette-opt .swatch i:nth-child(3){width:14px; height:14px; margin-top:10px; opacity:.75}
+.palette-opt b{font-size:15.5px; letter-spacing:-.01em}
+.palette-opt span{font-size:12.8px; color:var(--ink-2); line-height:1.4}
+.palette-opt .tick{position:absolute; top:14px; right:14px; width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center; background:var(--accent); color:var(--accent-ink);
+  opacity:0; transform:scale(.6); transition:opacity .2s, transform .2s}
+.palette-opt .tick svg{width:14px; height:14px; stroke-width:2.6}
+.palette-opt.on{border-color:var(--accent); box-shadow:0 1px 2px rgba(var(--ink-rgb),.04), 0 14px 34px rgba(var(--accent-rgb),.22)}
+.palette-opt.on .tick{opacity:1; transform:none}
+.sw-sky i:nth-child(1){background:linear-gradient(135deg,#8FB8FB,#2F7DF6)}
+.sw-sky i:nth-child(2){background:#B9D3FA}
+.sw-sky i:nth-child(3){background:#E9F1FD}
+.sw-peony i:nth-child(1){background:linear-gradient(135deg,#F794BC,#E4568F)}
+.sw-peony i:nth-child(2){background:#F9C4DA}
+.sw-peony i:nth-child(3){background:#FCEFF5}
+
+
+/* ============================================================
+   v24 · цвет вместо иконок
+   Иконки навыков убраны: блоки и шкалы различаются цветом —
+   у карточки появляется цветная кромка, заголовок и заливка
+   шкалы держат тот же тон. Работает в обеих палитрах.
+   ============================================================ */
+.sect.tight{margin-top:26px}
+
+/* --- график настроения: стал выше по профилю, чуть крупнее --- */
+.mood-card{padding:24px 22px 20px}
+.mood-card h3{margin-bottom:2px}
+.mood-graph{margin-top:14px}
+.mood-svg{height:132px}
+
+/* --- шкалы роста в профиле: своя палитра у каждой шкалы --- */
+.scale-card{position:relative; overflow:hidden; padding-left:25px;
+  background:var(--sc-bg); border:1px solid var(--sc-line); box-shadow:0 1px 2px rgba(var(--ink-rgb),.03), 0 12px 30px var(--sc-glow)}
+.scale-card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:8px;
+  background:linear-gradient(180deg, var(--sc-lite), var(--sc))}
+.scale-card .top b{color:var(--sc-ink)}
+.scale-card .scale-track{background:rgba(var(--ink-rgb),.075)}
+.scale-card .scale-fill{background:linear-gradient(90deg, var(--sc-lite), var(--sc))}
+.scale-card .scale-meta b{color:var(--sc-ink)}
+.scale-card.awareness {--sc:#8FA7E8; --sc-lite:#C9BFE0; --sc-bg:#F2F2FC; --sc-line:rgba(143,167,232,.36); --sc-ink:#4C4A85; --sc-glow:rgba(143,167,232,.16)}
+.scale-card.care      {--sc:#D8A4AF; --sc-lite:#F4D8DF; --sc-bg:#FCF0F3; --sc-line:rgba(216,164,175,.44); --sc-ink:#8E4C5F; --sc-glow:rgba(216,164,175,.18)}
+.scale-card.resilience{--sc:#8D8B4C; --sc-lite:#C6C184; --sc-bg:#F5F4E8; --sc-line:rgba(141,139,76,.32); --sc-ink:#5B5834; --sc-glow:rgba(183,178,121,.18)}
+.scale-card.sensory   {--sc:#5B8DEF; --sc-lite:#A9BCE0; --sc-bg:#EEF4FE; --sc-line:rgba(91,141,239,.30); --sc-ink:#2A5CA8; --sc-glow:rgba(91,141,239,.16)}
+
+/* --- карточки блоков навыков: цветная кромка и заголовок в тон --- */
+.block-card{padding-left:26px}
+.block-card::before{content:""; position:absolute; left:0; top:16px; bottom:16px; width:9px;
+  border-radius:0 10px 10px 0; background:linear-gradient(180deg, var(--bc-lite), var(--bc)); box-shadow:0 6px 14px var(--bc-glow)}
+.block-card h3{color:var(--bc-ink)}
+.t-peony.block-card  {--bc:#E0A88F; --bc-lite:#F3CDBB; --bc-ink:#8B4A2E; --bc-glow:rgba(224,168,143,.4)}
+.t-lavender.block-card{--bc:#A89CC8; --bc-lite:#C9BFE0; --bc-ink:#4A3A66; --bc-glow:rgba(168,156,200,.4)}
+.t-sky.block-card    {--bc:#7E93C2; --bc-lite:#A9BCE0; --bc-ink:#2F4C7A; --bc-glow:rgba(126,147,194,.4)}
+.t-leaf.block-card   {--bc:#B7B279; --bc-lite:#D6D2A0; --bc-ink:#5B5834; --bc-glow:rgba(183,178,121,.4)}
+.t-grass.block-card  {--bc:#8D8B4C; --bc-lite:#B6B478; --bc-ink:#3E3C1F; --bc-glow:rgba(141,139,76,.4)}
+
+/* --- строки со списком блоков (тетрадь): цвет вместо иконки --- */
+.group .row.row-tint{padding-left:18px; box-shadow:inset 4px 0 0 var(--bc)}
+.group .row.row-tint b{color:var(--bc-ink)}
+.row-tint.cbar-peony  {--bc:#E0A88F; --bc-ink:#8B4A2E}
+.row-tint.cbar-lavender{--bc:#A89CC8; --bc-ink:#4A3A66}
+.row-tint.cbar-sky    {--bc:#7E93C2; --bc-ink:#2F4C7A}
+.row-tint.cbar-leaf   {--bc:#B7B279; --bc-ink:#5B5834}
+.row-tint.cbar-grass  {--bc:#8D8B4C; --bc-ink:#3E3C1F}

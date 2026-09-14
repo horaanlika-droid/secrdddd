@@ -68,6 +68,7 @@ const defaultState = {
   trial_started_at: null,
   premium_until: 0,
   theme: 'light',
+  palette: 'blue',          // «голубая» / «розовая» — см. applyPalette()
   mastered: {},
   done: {},
   mood: {},
@@ -163,13 +164,37 @@ const findPractice = (id) => allPractices().find(p => p.id === id);
 const pick = (arr, seed) => arr[seed % arr.length];
 const daySeed = () => Math.floor(Date.now() / 86400000);
 
-/* ---------- theme ---------- */
-function applyTheme() {
-  document.documentElement.dataset.theme = 'light';
-  const bg = '#EDF3FE';
+/* ---------- тема и палитра (голубая / розовая) ---------- */
+/* Тема одна — светлая; «розовая» — это палитра: переопределяются токены в
+   css/app.css (:root[data-palette="pink"]). У локапа два файла: просветы внутри
+   букв залиты в тон фона своей палитры, поэтому подложка под логотипом не нужна. */
+const PALETTES = {
+  blue: { title: 'Голубая', note: 'Небо и мягкий синий', bg: '#EDF3FE', logo: 'assets/brand/logo-wordmark.png' },
+  pink: { title: 'Розовая', note: 'Пудра, пион, тёплый свет', bg: '#FCEFF5', logo: 'assets/brand/logo-wordmark-pink.png' }
+};
+const paletteId = () => (PALETTES[state.palette] ? state.palette : 'blue');
+const brandLogo = () => PALETTES[paletteId()].logo;
+
+function applyPalette() {
+  const p = PALETTES[paletteId()];
+  document.documentElement.dataset.palette = paletteId();
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.content = bg;
-  try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
+  if (meta) meta.content = p.bg;
+  try { tg && tg.setHeaderColor && tg.setHeaderColor(p.bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(p.bg); } catch (e) {}
+  // локап на прелоаде живёт в index.html — меняем картинку под палитру
+  document.querySelectorAll('img[data-brand-logo]').forEach(img => { img.src = p.logo; });
+}
+function setPalette(id) {
+  if (!PALETTES[id] || id === paletteId()) return;
+  state.palette = id;
+  save();
+  haptic('light');
+  applyPalette();
+  render();
+}
+function applyTheme() {
+  document.documentElement.dataset.theme = 'light';   // светлая — как договорились в правках
+  applyPalette();
 }
 
 /* ---------- helpers ---------- */
@@ -458,7 +483,7 @@ function rewardPractice(p, isAlt) {
   for (const def of SCALE_DEFS) {
     const raw = reward[def.key] ? Math.round(reward[def.key] * mult) : 0;
     const actual = gainScale(def.key, raw);
-    if (actual > 0) gained.push(`${def.emoji} +${actual} ${def.title.toLowerCase()}`);
+    if (actual > 0) gained.push(`+${actual} ${def.title.toLowerCase()}`);   // иконки убраны — шкала узнаётся по цвету
   }
   const pts = Math.round((reward.points || 10) * mult);
   const lvl = addPoints(pts);
@@ -493,7 +518,7 @@ function heroPoster({ dateStr }) {
   const phrase = dailyPhrase();
   const isLong = phrase.length > 48;
   return el('section', { class: 'hero' },
-    el('img', { class: 'hero-brand', src: 'assets/brand/logo-800.png', alt: 'Дибитишка' }),
+    el('img', { class: 'hero-brand', src: brandLogo(), alt: 'Дибитишка', 'data-brand-logo': '' }),
     el('div', { class: 'hero-phrase' + (isLong ? ' long' : '') }, phrase),
     el('p', { class: 'hero-date' }, dateStr),
     el('div', { class: 'hero-mascot-wrap' },
@@ -522,7 +547,7 @@ function scaleBoard(title = 'Шкалы роста') {
     const pct = scalePct(def.key) * 100;
     board.append(el('div', { class: `scale-card ${def.tint}` },
       el('div', { class: 'top' },
-        el('div', {}, el('b', {}, `${def.emoji} ${def.title}`), el('span', {}, def.hint)),
+        el('div', {}, el('b', {}, def.title), el('span', {}, def.hint)),
         el('b', {}, `${val}/${def.max}`)
       ),
       el('div', { class: 'scale-track' }, el('i', { class: 'scale-fill', style: `width:${pct}%` })),
@@ -808,11 +833,11 @@ function screenSkills() {
   for (const b of CONTENT.blocks) {
     const total = b.practices.length;
     const master = b.practices.filter(p => state.mastered[p.id]).length;
-    const card = el('div', { class: `card tinted soft t-${b.tint}`, onclick: () => go('skills/' + b.id), style: 'cursor:pointer' });
+    const card = el('div', { class: `card tinted soft t-${b.tint} block-card`, onclick: () => go('skills/' + b.id), style: 'cursor:pointer' });
     const top = el('div', { style: 'display:flex;align-items:center;gap:14px' });
-    const ic = el('span', { class: 'ric c-' + b.tint, style: 'width:44px;height:44px;border-radius:14px;color:' + (b.tint === 'peony' ? '#6B403B' : '#fff') }, icon(b.icon));
-    top.append(ic, el('div', { style: 'flex:1' }, el('h3', { style: 'margin:0' }, b.title), el('p', { style: 'margin:4px 0 0' }, b.subtitle)), ring(total ? master / total : 0));
-    card.append(top, el('p', { style: 'margin:12px 0 0' }, master ? `Освоено ${master} из ${total}` : `${total} практик · начни с любой`));
+    top.append(el('div', { style: 'flex:1' }, el('h3', { style: 'margin:0' }, b.title), el('p', { style: 'margin:4px 0 0' }, b.subtitle)), ring(total ? master / total : 0));
+    card.append(top, el('p', { style: 'margin:12px 0 0' },
+      master ? `Освоено ${master} из ${total}` : `${total} практик · начни с любой`));
     scr.append(card);
   }
   return scr;
@@ -1206,8 +1231,7 @@ function screenWorkbook() {
   scr.append(card);
   scr.append(el('div', { class: 'sect' }, 'Что внутри'));
   scr.append(el('div', { class: 'group' }, CONTENT.blocks.map(b =>
-    el('div', { class: 'row' },
-      el('span', { class: 'ric c-' + b.tint, style: 'color:' + (b.tint === 'peony' ? '#6B403B' : '#fff') }, icon(b.icon)),
+    el('div', { class: 'row row-tint cbar-' + b.tint },
       el('span', { class: 'rmain' }, el('b', {}, b.title), el('span', {}, `${b.practices.length} практик · поля «Пиши здесь»`))
     ))
   ));
@@ -1250,6 +1274,17 @@ function screenProfile() {
   const name = TG_MODE ? (tg.initDataUnsafe.user.first_name + (tg.initDataUnsafe.user.last_name ? ' ' + tg.initDataUnsafe.user.last_name : '')) : state.web_user ? state.web_user.name : null;
   scr.append(mascot('cozy', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
   scr.append(levelCard());
+
+  // график настроения поднят в верх профиля — сразу под шкалой уровня
+  scr.append(el('div', { class: 'sect tight' }, 'График настроения'));
+  const graphCard = el('div', { class: 'card soft mood-card' });
+  graphCard.append(
+    el('h3', {}, 'Это лишь точка на пути'),
+    moodGraph(14),
+    el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => go('diary') }, 'Открыть дневник эмоций')
+  );
+  scr.append(graphCard);
+
   scr.append(el('div', { class: 'stats-grid' },
     el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(levelInfo().points)), el('span', {}, 'Очков роста')),
     el('div', { class: 'stat-pill' }, el('i', {}, '🔥'), el('b', {}, String(streakCount())), el('span', {}, plural(streakCount(), 'день', 'дня', 'дней'))),
@@ -1257,15 +1292,6 @@ function screenProfile() {
   ));
   scr.append(scaleBoard('Твой прогресс'));
   scr.append(badgeBoard());
-
-  scr.append(el('div', { class: 'sect' }, 'График настроения'));
-  const graphCard = el('div', { class: 'card soft' });
-  graphCard.append(
-    el('h3', {}, 'Это лишь точка на пути'),
-    moodGraph(14),
-    el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => go('diary') }, 'Открыть дневник эмоций')
-  );
-  scr.append(graphCard);
 
   scr.append(el('div', { class: 'sect' }, 'Мои задания'));
   const tasks = CONTENT.tasks || [];
@@ -1311,8 +1337,20 @@ function screenProfile() {
   }, t)));
   scr.append(el('div', { class: 'group' }, remRow), times, el('p', { class: 'mins', style: 'margin:6px 4px' }, 'Пуши присылает бот в Telegram.'));
 
-  // оформление — только светлое (выбор темы скрыт)
-  // светлая тема зафиксирована в applyTheme()
+  scr.append(el('div', { class: 'sect' }, 'Оформление'));
+  const pick = el('div', { class: 'palette-pick' });
+  for (const [id, p] of Object.entries(PALETTES)) {
+    pick.append(el('button', {
+      class: `palette-opt${id === paletteId() ? ' on' : ''}`, onclick: () => setPalette(id),
+      'aria-pressed': id === paletteId() ? 'true' : 'false'
+    },
+      el('span', { class: `swatch sw-${id === 'pink' ? 'peony' : 'sky'}` }, el('i'), el('i'), el('i')),
+      el('b', {}, p.title),
+      el('span', {}, p.note),
+      el('span', { class: 'tick', 'aria-hidden': 'true' }, icon('check'))
+    ));
+  }
+  scr.append(pick, el('p', { class: 'mins', style: 'margin:8px 4px' }, 'Тема всегда светлая — цвет выбирай под настроение.'));
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
