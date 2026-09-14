@@ -387,7 +387,6 @@ function moodGraph(days = 14) {
     : 'Пока нет записей — отметь эмоцию на главной, и здесь появится твой путь.');
   return el('div', { class: 'mood-graph' }, svg, labels, caption);
 }
-const LEVEL_TITLES = ['Капелька', 'Ручеёк', 'Озеро', 'Река', 'Море', 'Океан'];
 const plural = (n, one, few, many) => {
   const m10 = n % 10, m100 = n % 100;
   if (m10 === 1 && m100 !== 11) return one;
@@ -399,7 +398,7 @@ const levelInfo = () => {
   const points = state.game.total_points || 0;
   const level = Math.floor(points / need) + 1;
   const inLevel = points % need;
-  return { level, need, points, inLevel, pct: inLevel / need, title: LEVEL_TITLES[(level - 1) % LEVEL_TITLES.length], toNext: need - inLevel };
+  return { level, need, points, inLevel, pct: inLevel / need, toNext: need - inLevel };
 };
 function addPoints(n) {
   const before = levelInfo().level;
@@ -466,7 +465,7 @@ function rewardPractice(p, isAlt) {
   if (isAlt) state.game.alt_count = (state.game.alt_count || 0) + 1;
   save();
   reviewBadges(true);
-  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl}!`); }
   gain('+' + pts + ' XP');
   return { gained, pts };
 }
@@ -484,7 +483,7 @@ function rewardMastery(p) {
   const lvl = addPoints(reward.points || 18);
   save();
   reviewBadges(true);
-  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl}!`); }
   gain('+' + (reward.points || 18) + ' XP');
 }
 
@@ -502,7 +501,7 @@ function heroPoster({ dateStr }) {
     ),
     el('div', { class: 'xp' },
       el('div', { class: 'xp-head' },
-        el('span', { class: 'level-pill' }, `Уровень ${lvl.level} · ${lvl.title}`),
+        el('span', { class: 'level-pill' }, `Уровень ${lvl.level}`),
         el('span', { class: 'xp-nums' }, `${lvl.inLevel} / ${lvl.need} XP`)
       ),
       el('div', { class: 'xp-track' }, el('i', { class: 'xp-fill', style: `width:${Math.round(lvl.pct * 100)}%` })),
@@ -558,8 +557,7 @@ function levelCard() {
   return el('div', { class: 'level-card' },
     el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
     el('div', { class: 'level-copy' },
-      el('div', { class: 'level-title' }, lvl.title),
-      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до уровня «${LEVEL_TITLES[lvl.level % LEVEL_TITLES.length]}» ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
+      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до следующего уровня ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
       el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
     )
   );
@@ -804,7 +802,7 @@ function screenSkills() {
   const scr = el('div', { class: 'screen' });
   scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'Пять блоков · проходи в своём порядке')));
   scr.append(el('div', { class: 'mascot-wrap peeking' },
-    el('img', { class: 'mascot', src: 'assets/mascot/peek.png', alt: 'Дибитишка' }),
+    el('img', { class: 'mascot', src: 'assets/mascot/star.png', alt: 'Дибитишка' }),
     el('div', { class: 'bubble' }, 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.')
   ));
   for (const b of CONTENT.blocks) {
@@ -952,7 +950,7 @@ function buildChatContext() {
     name: TG_MODE ? tg.initDataUnsafe.user.first_name : state.web_user?.name || null,
     mastered, filled,
     whoami: byId('who_am_i'), anchors: byId('anchors'), crisis: byId('crisis_plan'),
-    streak: streakCount(), level: lvl.level, levelTitle: lvl.title,
+    streak: streakCount(), level: lvl.level,
     moodNow: last ? MOODS[last.value] : null,
     moodCount: moodEntriesCount()
   };
@@ -970,7 +968,7 @@ function chatReply(text) {
       if (ctx.whoami) parts.push(`Ты писал(а) о себе: «${clipText(ctx.whoami)}»`);
       if (ctx.anchors) parts.push(`Твои якоря: «${clipText(ctx.anchors)}»`);
       if (ctx.mastered.length) parts.push(`Ты умеешь: ${ctx.mastered.slice(0, 4).join(' · ')}`);
-      reply = `Ты — не этот момент${name}. Ты — тот, кто держался ${ctx.streak} ${plural(ctx.streak, 'день', 'дня', 'дней')} подряд и дошёл до уровня «${ctx.levelTitle}».\n\n${parts.join('\n')}\n\nЕсли сейчас тяжело — это волна, а ты глубже любой волны. 💧`;
+      reply = `Ты — не этот момент${name}. Ты — тот, кто держался ${ctx.streak} ${plural(ctx.streak, 'день', 'дня', 'дней')} подряд и дошёл до уровня ${ctx.level}.\n\n${parts.join('\n')}\n\nЕсли сейчас тяжело — это волна, а ты глубже любой волны. 💧`;
     } else {
       reply = `Пока тут мало записей${name}, но это поправимо. Заполни в профиле задания «Кто я, когда мне хорошо» и «Мои якоря» — и я буду напоминать тебе о тебе твоими же словами.`;
     }
@@ -1023,12 +1021,12 @@ function screenChat() {
   renderTabbar('chat');
   const scr = el('div', { class: 'screen chat-screen' });
   scr.append(el('div', { class: 'chat-mascot-header' },
-    el('img', { class: 'chat-mascot-small', src: 'assets/mascot/calm.png', alt: 'Дибитишка' }),
+    el('img', { class: 'chat-mascot-small', src: 'assets/mascot/question.png', alt: 'Дибитишка' }),
     el('div', {}, el('h1', { class: 'ltitle', style: 'margin:0' }, 'Чат', el('small', {}, 'Поддержка в трудный момент — и напоминание, кто ты')))
   ));
   const feed = el('div', { class: 'chat-feed', id: 'chat-feed' });
   // laconic mascot illustration
-  const deco = el('img', { class: 'chat-illustration', src: 'assets/mascot/peek.png', alt: '', 'aria-hidden': 'true' });
+  const deco = el('img', { class: 'chat-illustration', src: 'assets/mascot/question.png', alt: '', 'aria-hidden': 'true' });
   feed.append(deco);
   const inputRow = el('div', { class: 'chat-input' });
   const input = el('input', { class: 'chat-field', id: 'chat-field', placeholder: 'Напиши, что сейчас…', maxlength: 400 });
@@ -1183,7 +1181,7 @@ function screenWorkbook() {
   const w = CONTENT.workbook;
   const full = isPremium();
   scr.append(el('h1', { class: 'ltitle' }, 'Тетрадь', el('small', {}, w.subtitle)));
-  scr.append(mascot('calm', mline('workbook')));
+  scr.append(mascot('notebook', mline('workbook')));
   const card = el('div', { class: 'card soft' });
   card.append(
     el('h3', {}, w.title),
@@ -1247,7 +1245,7 @@ function screenProfile() {
   const scr = el('div', { class: 'screen' });
   scr.append(el('h1', { class: 'ltitle' }, 'Профиль', el('small', {}, 'Подписка, вход, напоминания и твой прогресс')));
   const name = TG_MODE ? (tg.initDataUnsafe.user.first_name + (tg.initDataUnsafe.user.last_name ? ' ' + tg.initDataUnsafe.user.last_name : '')) : state.web_user ? state.web_user.name : null;
-  scr.append(mascot('hello', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
+  scr.append(mascot('cozy', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
   scr.append(levelCard());
   scr.append(el('div', { class: 'stats-grid' },
     el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(levelInfo().points)), el('span', {}, 'Очков роста')),
