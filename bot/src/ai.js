@@ -31,7 +31,7 @@ const clip = (s, n = 400) => { s = String(s || '').replace(/\s+/g, ' ').trim(); 
 export function describeUser(ctx = {}) {
   const lines = [];
   if (ctx.name) lines.push(`Имя: ${clip(ctx.name, 60)}.`);
-  if (ctx.level != null) lines.push(`Уровень в приложении: ${ctx.level}${ctx.levelTitle ? ` («${clip(ctx.levelTitle, 40)}»)` : ''}.`);
+  if (ctx.level != null) lines.push(`Уровень в приложении: ${ctx.level}.`);
   if (ctx.streak != null) lines.push(`Серия дней подряд: ${ctx.streak}.`);
   if (ctx.moodNow) lines.push(`Последняя отметка в дневнике эмоций: ${clip(typeof ctx.moodNow === 'object' ? (ctx.moodNow.label || ctx.moodNow.title || JSON.stringify(ctx.moodNow)) : ctx.moodNow, 80)}.`);
   if (ctx.moodCount) lines.push(`Записей в дневнике эмоций: ${ctx.moodCount}.`);
