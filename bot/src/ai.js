@@ -24,6 +24,20 @@ const MAX_INPUT = 2000;
 
 export const aiConfigured = () => !!KEY();
 
+/* ---------- «модель перегружена» — тоже не ответ ---------- */
+/* Иногда вместо ответа прилетает служебная фраза: «Меня сейчас слишком много
+   спрашивают — подожди чуть-чуть и напиши ещё раз». Человеку её показывать
+   не нужно: считаем это ошибкой, а вызывающий код отвечает из локальной
+   памяти (bot/src/local-reply.js и chatReply в вебе). Те же правила в
+   app/js/app.js → looksBusy(). */
+const BUSY_RE = /(слишком много спрашивают|too many requests|rate ?limit|перегруж|overload|temporarily unavailable|временно недоступ|попробу(?:й|уйте)\s+(?:чуть[- ]?)?позже|try again later|quota|квот[аы])/i;
+export function isBusyText(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;                 // пустой ответ — считаем, что не получилось
+  if (t.length > 480) return false;    // длинный содержательный ответ — это не отписка
+  return BUSY_RE.test(t);
+}
+
 /* ---------- контекст пользователя → текст для модели ---------- */
 const clip = (s, n = 400) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -99,6 +113,10 @@ export async function complete({ userText, history = [], userContext = {}, chann
     const j = await r.json();
     const out = j?.choices?.[0]?.message?.content;
     if (!out) return { error: 'empty' };
+    if (isBusyText(out)) {
+      console.warn('[ai] вместо ответа пришла отписка про перегрузку — отвечаем локально');
+      return { error: 'rate_limit' };
+    }
     return { text: String(out).trim(), model: j.model || MODEL() };
   } catch (e) {
     console.error('[ai] ' + (e?.name === 'AbortError' ? 'timeout' : e?.message || e));
@@ -111,7 +129,7 @@ export async function complete({ userText, history = [], userContext = {}, chann
 /** Понятная человеку фраза, когда модель недоступна (тон Дибитишки). */
 export function fallbackLine(err) {
   if (err === 'bad_key') return 'Ключ к моему «живому» голосу не подошёл. Владельцу приложения: проверь OPENAI_API_KEY на бот-хосте.';
-  if (err === 'rate_limit') return 'Меня сейчас слишком много спрашивают — подожди чуть-чуть и напиши ещё раз. Я тут.';
+  if (err === 'rate_limit') return 'Я тут и слышу тебя. Просто отвечаю чуть медленнее обычного — напиши ещё раз через минуту, я никуда не ухожу. 💧';
   if (err === 'timeout') return 'Я задумалась дольше обычного и не успела. Попробуй ещё раз — коротко, одной фразой.';
   return 'Что-то с моим голосом сейчас не так. Давай пока по-простому: выдох длиннее вдоха, три раза. И напиши мне снова через минуту.';
 }

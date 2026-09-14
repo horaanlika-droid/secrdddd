@@ -21,6 +21,7 @@ import { removeWhiteBackground } from './bgremove.js';
 import { freePort } from './free-port.js';
 import * as tribute from './tribute.js';
 import * as ai from './ai.js';
+import { localReply } from './local-reply.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.TG_TOKEN || '';
@@ -347,8 +348,10 @@ bot.on('message:text', async (ctx) => {
   const text = ctx.message.text || '';
   if (text.startsWith('/')) return; // неизвестная команда — молчим, чтобы не спорить с grammY
   if (!ai.aiConfigured()) {
+    // Живого голоса нет — отвечаем из локальной памяти, а не отпиской про ключ.
     const p = todayPractice();
-    return ctx.reply(`Я тут. Живой разговор со мной включится, когда владелец впишет OPENAI_API_KEY на бот-хосте. А пока: /today — практика дня (${p.title}), /code — код для веба.`).catch(() => {});
+    const local = localReply(text, { name: u.name, premium: isPremium(u), todayPractice: p.title });
+    return ctx.reply(`${local}\n\nЖивой разговор включится, когда владелец впишет OPENAI_API_KEY на бот-хосте. А пока: /today — практика дня (${p.title}), /code — код для веба.`).catch(() => {});
   }
   await ctx.replyWithChatAction('typing').catch(() => {});
   const typing = setInterval(() => ctx.replyWithChatAction('typing').catch(() => {}), 4000);
@@ -360,7 +363,18 @@ bot.on('message:text', async (ctx) => {
       channel: 'telegram'
     });
     clearInterval(typing);
-    if (!res || res.error) return ctx.reply(ai.fallbackLine(res?.error)).catch(() => {});
+    if (!res || res.error) {
+      // Перегрузка (429), таймаут, сеть или отписка модели про «слишком много
+      // спрашивают» — не показываем её человеку: отвечаем из локальной памяти.
+      console.warn('[chat] живой чат недоступен (' + (res?.error || 'unknown') + ') — отвечаем локально');
+      const ctxNow = { name: u.name, premium: isPremium(u), todayPractice: todayPractice()?.title };
+      const hint = res?.error === 'bad_key' ? '\n\nВладельцу: OPENAI_API_KEY на бот-хосте не подошёл — проверь ключ.' : '';
+      const out = localReply(text, ctxNow);
+      u.chat = ai.pushHistory(u.chat, 'user', text);
+      u.chat = ai.pushHistory(u.chat, 'assistant', out);
+      save();
+      return ctx.reply(out + hint).catch(() => {});
+    }
     u.chat = ai.pushHistory(u.chat, 'user', text);
     u.chat = ai.pushHistory(u.chat, 'assistant', res.text);
     save();
@@ -564,7 +578,12 @@ const server = http.createServer(async (req, res) => {
         }
         userContext.todayPractice = todayPractice()?.title;
         const out = await ai.complete({ userText: msg, history: hist, userContext, channel: 'web' });
-        if (!out || out.error) return json(res, 200, { ok: false, ai: true, error: out?.error || 'unknown', text: ai.fallbackLine(out?.error) });
+        if (!out || out.error) {
+          // Живой ответ не получился (перегрузка, таймаут, нет ключа у модели) —
+          // отдаём ответ из локальной памяти вместо служебной фразы.
+          console.warn('[chat] живой чат недоступен (' + (out?.error || 'unknown') + ') — отдаём локальный ответ');
+          return json(res, 200, { ok: false, ai: true, local: true, error: out?.error || 'unknown', text: localReply(msg, userContext) });
+        }
         if (user) {
           user.web_chat = ai.pushHistory(user.web_chat, 'user', msg);
           user.web_chat = ai.pushHistory(user.web_chat, 'assistant', out.text);

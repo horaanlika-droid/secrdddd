@@ -796,6 +796,8 @@ html{color-scheme: light}
 .mood-card h3{margin-bottom:2px}
 .mood-graph{margin-top:14px}
 .mood-svg{height:132px}
+/* --- воздух между графиком настроения и блоками сразу под ним --- */
+.mood-card + .stats-grid{margin-top:28px}
 
 /* --- шкалы роста в профиле: своя палитра у каждой шкалы --- */
 .scale-card{position:relative; overflow:hidden; padding-left:25px;

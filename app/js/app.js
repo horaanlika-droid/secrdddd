@@ -1027,19 +1027,46 @@ async function checkAi() {
   } catch (e) { AI_STATUS = false; }
   return AI_STATUS;
 }
+/* Если живой чат недоступен — нет ключа, 429, таймаут, сеть — или сам
+   прислал служебную фразу («меня сейчас слишком много спрашивают,
+   попробуй позже»), не показываем её человеку: отвечаем из локальной
+   памяти — chatReply() собирает ответ из его же записей и практик. */
+const AI_BUSY_RE = /(слишком много спрашивают|too many requests|rate ?limit|перегруж|overload|temporarily unavailable|временно недоступ|попробу(?:й|уйте)\s+(?:чуть[- ]?)?позже|try again later|quota|квот[аы])/i;
+function looksBusy(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;                 // пустой ответ — считаем, что не получилось
+  if (t.length > 480) return false;    // длинный содержательный ответ — это не отписка
+  return AI_BUSY_RE.test(t);
+}
+/* Пока модель перегружена, не дёргаем её каждым сообщением: отвечаем
+   локально, а через паузу пробуем живой чат снова. */
+let AI_PAUSED_UNTIL = 0;
+const aiPaused = () => Date.now() < AI_PAUSED_UNTIL;
+const aiPause = (ms = 90000) => { AI_PAUSED_UNTIL = Date.now() + ms; };
+const aiLive = () => AI_STATUS === true && !aiPaused();
+
 const chatHistoryKey = 'dibi_chat_history';
 const loadChatHistory = () => { try { return JSON.parse(localStorage.getItem(chatHistoryKey) || '[]'); } catch (e) { return []; } };
 const saveChatHistory = (h) => { try { localStorage.setItem(chatHistoryKey, JSON.stringify(h.slice(-20))); } catch (e) {} };
+/** Возвращает {text} — живой ответ, {busy:true} — «модель недоступна», null — живого чата нет. */
 async function aiReply(text, history) {
   const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
-  const r = await fetch(apiUrl('/chat'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
-  });
-  const j = await r.json();
-  if (j && j.ok && j.text) return { text: j.text, live: true };
-  if (j && j.ai === false) { AI_STATUS = false; return null; }
-  return { text: (j && j.text) || 'Что-то с моим голосом сейчас не так. Попробуй ещё раз через минуту.', live: true, error: true };
+  let j = null;
+  try {
+    const r = await fetch(apiUrl('/chat'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
+    });
+    j = await r.json();
+  } catch (e) {
+    return { busy: true, code: 'network' };
+  }
+  if (j && j.ok && j.text) {
+    if (looksBusy(j.text)) return { busy: true, code: 'busy_text' };
+    return { text: j.text, live: true };
+  }
+  if (j && j.ai === false) { AI_STATUS = false; return null; }   // у бота нет ключа — локальный режим
+  return { busy: true, code: (j && j.error) || 'unknown' };
 }
 
 function screenChat() {
@@ -1061,9 +1088,10 @@ function screenChat() {
   scr.append(feed, hints, inputRow);
   const foot = el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.');
   scr.append(foot);
-  const setFoot = () => { foot.textContent = AI_STATUS
-    ? 'Живой чат: Дибитишка отвечает сама, помня твои записи. Не заменяет врача и экстренную помощь.'
-    : 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'; };
+  const footLocal = 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.';
+  const footLive = 'Живой чат: Дибитишка отвечает сама, помня твои записи. Не заменяет врача и экстренную помощь.';
+  const footBusy = 'Модель сейчас перегружена — отвечаю по памяти, из твоих же записей. Живой чат вернётся сам через минуту. Не заменяет врача и экстренную помощь.';
+  const setFoot = () => { foot.textContent = aiPaused() ? footBusy : AI_STATUS ? footLive : footLocal; };
   checkAi().then(setFoot);
   let history = loadChatHistory();
 
@@ -1081,19 +1109,26 @@ function screenChat() {
     input.value = '';
     push(v, 'me');
     haptic('light');
-    if (!AI_STATUS) { setTimeout(() => push(chatReply(v), 'bot'), 420); return; }
+    // ответ из локальной памяти: свои записи, якоря, антикризисный план
+    const local = (delay = 420) => setTimeout(() => { setFoot(); push(chatReply(v), 'bot'); }, delay);
+    if (!aiLive()) { local(); return; }
     const typing = el('div', { class: 'msg bot typing' }, el('div', { class: 'bubble' }, '…'));
     feed.append(typing); feed.scrollTop = feed.scrollHeight;
     input.disabled = true; sendBtn.disabled = true;
     aiReply(v, history).then((r) => {
       typing.remove();
-      if (!r) { setFoot(); return push(chatReply(v), 'bot'); }
+      if (!r || r.busy) {                          // перегрузка, таймаут, ошибка — отвечаем сами
+        if (r && r.busy) aiPause();
+        console.warn('[chat] живой чат недоступен (' + ((r && r.code) || 'no_key') + ') — отвечаю из локальной памяти');
+        local(300);
+        return;
+      }
       push(r.text, 'bot');
       if (!r.error) {
         history.push({ role: 'user', content: v }, { role: 'assistant', content: r.text });
         history = history.slice(-20); saveChatHistory(history);
       }
-    }).catch(() => { typing.remove(); push(chatReply(v), 'bot'); })
+    }).catch(() => { typing.remove(); aiPause(30000); local(300); })
       .finally(() => { input.disabled = false; sendBtn.disabled = false; input.focus(); });
   };
   sendBtn.onclick = () => submit();
