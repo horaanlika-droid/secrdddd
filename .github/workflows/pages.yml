@@ -10,6 +10,9 @@ name: GitHub Pages
 on:
   push:
     branches: [ main ]
+    branches:
+      - main
+      - 'arena/**-secrdddd'
   workflow_dispatch:
 
 permissions:

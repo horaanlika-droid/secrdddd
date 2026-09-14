@@ -1,4 +1,4 @@
-/* дибитишка · веб-приложение (TG Mini App + GitHub Pages) */
+/* Дибитишка · веб-приложение (TG Mini App + GitHub Pages + bot host) */
 
 const CFG = window.DIBI_CONFIG || {};
 const $ = (s, r = document) => r.querySelector(s);
@@ -8,6 +8,7 @@ const el = (tag, attrs = {}, ...kids) => {
     if (k === 'class') n.className = v;
     else if (k === 'html') n.innerHTML = v;
     else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else if (k === 'style') n.style.cssText = v;
     else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v);
   }
   for (const kid of kids.flat()) {
@@ -39,7 +40,11 @@ const ICONS = {
   print: svg('<path d="M7 8V3h10v5"/><rect x="4" y="8" width="16" height="8" rx="2"/><path d="M7 14h10v7H7z"/>'),
   check: svg('<path d="M4.5 12.5l5 5 10-11"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
-  drop: svg('<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>')
+  drop: svg('<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>'),
+  play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
+  chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H6l-3 3v-3a8.5 8.5 0 1 1 18-8.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/>'),
+  chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
+  heart: svg('<path d="M12 20s-7.2-4.6-9.2-9.1C1.2 7.5 3.6 4.5 6.7 4.5c1.9 0 3.7 1 4.7 2.6.5.8.6.9.6.9s.1-.1.6-.9c1-1.6 2.8-2.6 4.7-2.6 3.1 0 5.5 3 3.9 6.4C19.2 15.4 12 20 12 20z"/>')
 };
 const icon = (name, cls = '') => { const s = el('span'); s.className = cls; s.innerHTML = ICONS[name] || ICONS.drop; return s.firstChild; };
 
@@ -58,24 +63,54 @@ const haptic = (type = 'light') => {
 /* ---------- state ---------- */
 const DB = 'dibitishka.v1';
 const load = () => { try { return JSON.parse(localStorage.getItem(DB)) || {}; } catch (e) { return {}; } };
-const state = Object.assign({
+const defaultState = {
   onboarded: false,
   trial_started_at: null,
   premium_until: 0,
   theme: 'system',
   mastered: {},
-  done: {},          // { 'YYYY-MM-DD': [practiceId] }
-  mood: {},          // { 'YYYY-MM-DD': moodIndex }
+  done: {},
+  mood: {},
   reminders: { on: false, time: '09:00' },
   merch_notify: [],
-  web_user: null     // { id, name } после входа по коду
-}, load());
+  web_user: null,
+  mood_entries: [],
+  tasks: {},
+  game: {
+    total_points: 0,
+    alt_count: 0,
+    scales: { awareness: 0, care: 0, resilience: 0, sensory: 0 },
+    badges: {}
+  }
+};
+const persisted = load();
+const state = Object.assign({}, defaultState, persisted, {
+  mastered: Object.assign({}, defaultState.mastered, persisted.mastered || {}),
+  done: Object.assign({}, defaultState.done, persisted.done || {}),
+  mood: Object.assign({}, defaultState.mood, persisted.mood || {}),
+  reminders: Object.assign({}, defaultState.reminders, persisted.reminders || {}),
+  merch_notify: Array.isArray(persisted.merch_notify) ? persisted.merch_notify : defaultState.merch_notify,
+  mood_entries: Array.isArray(persisted.mood_entries) ? persisted.mood_entries : defaultState.mood_entries,
+  tasks: Object.assign({}, defaultState.tasks, persisted.tasks || {}),
+  game: Object.assign({}, defaultState.game, persisted.game || {}, {
+    scales: Object.assign({}, defaultState.game.scales, persisted.game?.scales || {}),
+    badges: Object.assign({}, defaultState.game.badges, persisted.game?.badges || {})
+  })
+});
 const save = () => localStorage.setItem(DB, JSON.stringify(state));
+
+// миграция: старый дневник «одна отметка в день» (state.mood) → лог записей mood_entries
+if (!state.mood_entries.length && Object.keys(state.mood).length) {
+  state.mood_entries = Object.entries(state.mood).map(([k, v]) => {
+    const [y, m, d] = k.split('-').map(Number);
+    return { ts: new Date(y, m - 1, d, 12).getTime(), value: v };
+  });
+  save();
+}
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const TRIAL_MS = (CFG.subscription?.trial_days ?? 7) * 86400000;
-const isPremium = () => (state.premium_until || 0) > Date.now() ||
-  (state.trial_started_at && Date.now() - state.trial_started_at < TRIAL_MS);
+const isPremium = () => (state.premium_until || 0) > Date.now() || (state.trial_started_at && Date.now() - state.trial_started_at < TRIAL_MS);
 const trialDaysLeft = () => {
   if ((state.premium_until || 0) > Date.now()) return Infinity;
   if (!state.trial_started_at) return CFG.subscription?.trial_days ?? 7;
@@ -84,11 +119,14 @@ const trialDaysLeft = () => {
 
 /* ---------- content ---------- */
 let CONTENT = null;
+const API_BASE = (CFG.bot_public_url || '').trim().replace(/\/$/, '');
+const apiUrl = (path) => API_BASE ? API_BASE + path : path;
+
 async function loadContent() {
   const cached = localStorage.getItem('dibi.content');
   if (cached) { try { CONTENT = JSON.parse(cached); } catch (e) {} }
   const urls = [];
-  if (CFG.bot_public_url) urls.push(CFG.bot_public_url.replace(/\/$/, '') + '/content.json');
+  if (API_BASE) urls.push(apiUrl('/content.json'));
   urls.push('content/content.json');
   for (const u of urls) {
     try {
@@ -99,37 +137,63 @@ async function loadContent() {
       if (!r.ok) continue;
       const j = await r.json();
       if (j && j.blocks) {
-        if (!CONTENT || (j.version || 0) >= (CONTENT.version || 0)) { CONTENT = j; localStorage.setItem('dibi.content', JSON.stringify(j)); }
+        if (!CONTENT || (j.version || 0) >= (CONTENT.version || 0)) {
+          CONTENT = j;
+          localStorage.setItem('dibi.content', JSON.stringify(j));
+        }
         break;
       }
-    } catch (e) { /* offline or no bot: fall through */ }
+    } catch (e) {}
   }
   if (!CONTENT) throw new Error('no content');
 }
 const allPractices = () => CONTENT.blocks.flatMap(b => b.practices.map(p => ({ ...p, block: b })));
-const findPractice = id => allPractices().find(p => p.id === id);
+const findPractice = (id) => allPractices().find(p => p.id === id);
 const pick = (arr, seed) => arr[seed % arr.length];
-const daySeed = () => { const d = new Date(); return Math.floor(d.getTime() / 86400000); };
+const daySeed = () => Math.floor(Date.now() / 86400000);
 
 /* ---------- theme ---------- */
 function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const bg = dark ? '#161311' : '#F5F1EA';
+  const bg = dark ? '#15130F' : '#F6F4EF';
   document.querySelector('meta[name=theme-color]').content = bg;
   try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => state.theme === 'system' && applyTheme());
 
-/* ---------- ui helpers ---------- */
+/* ---------- helpers ---------- */
 let toastTimer;
+let screenCleanup = null;
+const SCALE_DEFS = [
+  { key: 'awareness', title: 'Осознанность', hint: 'Замечаю, что со мной происходит', max: 120, tint: 'awareness', emoji: '✨' },
+  { key: 'care', title: 'Забота о себе', hint: 'Выбираю мягкую поддержку', max: 80, tint: 'care', emoji: '💗' },
+  { key: 'resilience', title: 'Устойчивость', hint: 'Держусь в волне и возвращаюсь', max: 100, tint: 'resilience', emoji: '🌿' },
+  { key: 'sensory', title: 'Сенсорный баланс', hint: 'Слышу тело и среду', max: 60, tint: 'sensory', emoji: '🫧' }
+];
+const MOODS = ['Тяжело', 'Тревожно', 'Ровно', 'Тепло', 'Радостно'];
+const MOOD_EMOJI = ['😞', '😰', '😐', '🙂', '😊'];
+const BADGES = {
+  first_practice: { emoji: '💧', title: 'Первая капля', text: 'Сделана первая практика.' },
+  alt_kind: { emoji: '🫶', title: 'Мягкий маршрут', text: 'Альтернатива тоже считается.' },
+  streak3: { emoji: '🔥', title: 'Тихая серия', text: 'Три дня подряд с практиками.' },
+  first_master: { emoji: '🏅', title: 'Умею', text: 'Отмечен первый освоенный навык.' },
+  scales2: { emoji: '🌈', title: 'Баланс в сборе', text: 'Две шкалы перевалили за 70%.' },
+  first_mood: { emoji: '🌱', title: 'Первый отклик', text: 'Первая отметка эмоции в дневнике.' },
+  mood7: { emoji: '📔', title: 'Честный дневник', text: 'Семь отметок эмоций.' },
+  first_task: { emoji: '📝', title: 'Первая страница', text: 'Заполнено первое текстовое задание.' },
+  task3: { emoji: '🧭', title: 'Моя опора', text: 'Заполнено три текстовых задания.' }
+};
+
 function toast(msg) {
   let t = $('.toast');
   if (!t) { t = el('div', { class: 'toast' }); document.body.append(t); }
-  t.textContent = msg; t.classList.add('on');
+  t.textContent = msg;
+  t.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('on'), 2600);
 }
+
 function confetti() {
   const box = el('div', { class: 'confetti' });
   const colors = ['#CCC3D1', '#C1BC77', '#AFB8CD', '#D8A4AF', '#F7DDD5', '#8D8B4C'];
@@ -144,6 +208,16 @@ function confetti() {
   document.body.append(box);
   setTimeout(() => box.remove(), 1500);
 }
+
+function gain(text) {
+  const g = el('div', { class: 'gain' });
+  g.textContent = text;
+  g.style.left = (44 + Math.random() * 12) + '%';
+  g.style.bottom = 'calc(env(safe-area-inset-bottom,0px) + 108px)';
+  document.body.append(g);
+  setTimeout(() => g.remove(), 1250);
+}
+
 function sheet(build) {
   const root = $('#sheet-root');
   root.innerHTML = '';
@@ -156,41 +230,302 @@ function sheet(build) {
   requestAnimationFrame(() => { veil.classList.add('on'); sh.classList.add('on'); });
   return close;
 }
+
 function mascot(pose, line, sub) {
   return el('div', { class: 'mascot-wrap' },
-    el('img', { class: 'mascot', src: `assets/mascot/${pose}.png`, alt: 'дибитишка' }),
-    el('div', { class: 'bubble' }, line, sub ? el('small', {}, sub) : null));
+    el('img', { class: 'mascot', src: `assets/mascot/${pose}.png`, alt: 'Дибитишка' }),
+    el('div', { class: 'bubble' }, line, sub ? el('small', {}, sub) : null)
+  );
 }
+
 const mline = (key) => pick(CONTENT.meta.mascot_lines[key] || ['…'], daySeed() + key.length);
-function ring(pct, size = 44) {
+function ring(pct, size = 48) {
   const r = 18, c = 2 * Math.PI * r;
   const w = el('div', { class: 'ring' });
   w.style.width = w.style.height = size + 'px';
   w.innerHTML = `<svg width="${size}" height="${size}"><circle class="track" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke-width="4"/><circle class="bar" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke-width="4" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct)}"/></svg><b>${Math.round(pct * 100)}</b>`;
   return w;
 }
+
 function streakCount() {
-  let n = 0; const d = new Date();
+  let n = 0;
+  const d = new Date();
   if (!(state.done[todayKey(d)] || []).length) d.setDate(d.getDate() - 1);
   while ((state.done[todayKey(d)] || []).length) { n++; d.setDate(d.getDate() - 1); }
   return n;
+}
+const totalDoneCount = () => Object.values(state.done).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
+const masteredCount = () => Object.values(state.mastered).filter(Boolean).length;
+
+/* ---------- дневник эмоций ---------- */
+const moodEntries = () => [...state.mood_entries].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+const moodEntriesCount = () => state.mood_entries.length;
+// последняя отметка за сегодняшний день (для подсветки чипа)
+const moodTodayValue = () => {
+  const k = todayKey();
+  return [...state.mood_entries].filter(e => todayKey(new Date(e.ts)) === k).sort((a, b) => a.ts - b.ts).pop();
+};
+function addMood(value) {
+  const k = todayKey();
+  const hadToday = state.mood_entries.some(e => todayKey(new Date(e.ts)) === k);
+  state.mood_entries.push({ ts: Date.now(), value });
+  // лёгкий, один раз в день: честность с собой тоже растёт в шкалы
+  if (!hadToday) gainScale(value >= 2 ? 'awareness' : 'care', 1);
+  // храним ~2 года записей
+  const cutoff = Date.now() - 730 * 86400000;
+  state.mood_entries = state.mood_entries.filter(e => (e.ts || 0) >= cutoff);
+  save();
+  reviewBadges(true);
+}
+// ряд для графика: последние `days` дней, для каждого — последняя отметка дня (или null)
+function moodSeries(days = 14) {
+  const out = [];
+  const byDay = {};
+  for (const e of state.mood_entries) {
+    const k = todayKey(new Date(e.ts));
+    if (!byDay[k]) byDay[k] = e.ts;
+    else byDay[k] = Math.max(byDay[k], e.ts);
+  }
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = todayKey(d);
+    const ts = byDay[k];
+    out.push({ day: d, key: k, ts, value: ts ? state.mood_entries.find(e => e.ts === ts)?.value : null });
+  }
+  return out;
+}
+// сколько дней за период вообще имели хотя бы одну отметку
+const moodDaysCount = (days = 14) => moodSeries(days).filter(p => p.value !== null).length;
+
+/* ---------- текстовые задания ---------- */
+const taskAnswersCount = () => Object.values(state.tasks).filter(t => t && (t.text || '').trim()).length;
+const findTask = (id) => (CONTENT?.tasks || []).find(t => t.id === id);
+const taskFilled = (id) => !!(state.tasks[id] && (state.tasks[id].text || '').trim());
+
+/* лёгкий SVG-график настроения: последние `days` дней */
+function moodGraph(days = 14) {
+  const series = moodSeries(days);
+  const W = 300, H = 118, pad = 8;
+  const x = (i) => pad + (W - pad * 2) * (i / (days - 1));
+  const y = (v) => pad + (H - pad * 2) * (1 - v / 4);
+  const pts = series.map((p, i) => ({ x: x(i), y: p.value === null ? null : y(p.value), v: p.value }));
+  const solid = pts.filter(p => p.y !== null);
+  const svg = el('div');
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="mood-svg">`;
+  // сетка и ось «ровно»
+  s += `<line x1="${pad}" y1="${y(2)}" x2="${W - pad}" y2="${y(2)}" class="mood-mid"/>`;
+  if (solid.length > 1) {
+    const path = solid.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const area = `${path} L${solid[solid.length - 1].x.toFixed(1)},${H - pad} L${solid[0].x.toFixed(1)},${H - pad} Z`;
+    s += `<path d="${area}" class="mood-area"/>`;
+    s += `<path d="${path}" class="mood-line"/>`;
+  }
+  for (const p of solid) {
+    const c = p.v >= 3 ? 'hi' : p.v >= 2 ? 'mid' : 'lo';
+    s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" class="mood-dot ${c}"/>`;
+  }
+  s += `</svg>`;
+  svg.innerHTML = s;
+  const labels = el('div', { class: 'mood-axis' },
+    el('span', {}, '😊'), el('span', { class: 'grow' }), el('span', {}, '😞'));
+  const caption = el('p', { class: 'mood-caption' }, solid.length
+    ? `${moodDaysCount(days)} ${plural(moodDaysCount(days), 'день', 'дня', 'дней')} с отметками за ${days} дн. Тяжёлый день — это точка на пути, а не весь путь.`
+    : 'Пока нет записей — отметь эмоцию на главной, и здесь появится твой путь.');
+  return el('div', { class: 'mood-graph' }, svg, labels, caption);
+}
+const LEVEL_TITLES = ['Капелька', 'Ручеёк', 'Озеро', 'Река', 'Море', 'Океан'];
+const plural = (n, one, few, many) => {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+};
+const levelInfo = () => {
+  const need = 120;
+  const points = state.game.total_points || 0;
+  const level = Math.floor(points / need) + 1;
+  const inLevel = points % need;
+  return { level, need, points, inLevel, pct: inLevel / need, title: LEVEL_TITLES[(level - 1) % LEVEL_TITLES.length], toNext: need - inLevel };
+};
+function addPoints(n) {
+  const before = levelInfo().level;
+  state.game.total_points += n || 0;
+  const after = levelInfo().level;
+  return after > before ? after : 0;
+}
+const scaleDef = (key) => SCALE_DEFS.find(s => s.key === key);
+const scalePct = (key) => {
+  const def = scaleDef(key);
+  return def ? Math.min(1, (state.game.scales[key] || 0) / def.max) : 0;
+};
+
+function gainScale(key, amount) {
+  const def = scaleDef(key);
+  if (!def || !amount) return 0;
+  const cur = state.game.scales[key] || 0;
+  const next = Math.min(def.max, cur + amount);
+  state.game.scales[key] = next;
+  return next - cur;
+}
+
+function unlockBadge(id, announce = true) {
+  if (state.game.badges[id]) return false;
+  state.game.badges[id] = Date.now();
+  save();
+  if (announce && BADGES[id]) {
+    confetti();
+    toast(`Новый значок: ${BADGES[id].title}`);
+  }
+  return true;
+}
+
+function reviewBadges(announce = false) {
+  if (totalDoneCount() >= 1) unlockBadge('first_practice', announce);
+  if ((state.game.alt_count || 0) >= 1) unlockBadge('alt_kind', announce);
+  if (streakCount() >= 3) unlockBadge('streak3', announce);
+  if (masteredCount() >= 1) unlockBadge('first_master', announce);
+  if (SCALE_DEFS.filter(s => scalePct(s.key) >= .7).length >= 2) unlockBadge('scales2', announce);
+  if (moodEntriesCount() >= 1) unlockBadge('first_mood', announce);
+  if (moodEntriesCount() >= 7) unlockBadge('mood7', announce);
+  if (taskAnswersCount() >= 1) unlockBadge('first_task', announce);
+  if (taskAnswersCount() >= 3) unlockBadge('task3', announce);
+}
+
+function rewardPractice(p, isAlt) {
+  const baseRewards = {
+    base: { care: 12, resilience: 4, points: 14 },
+    mind: { awareness: 14, points: 16 },
+    stress: { resilience: 14, points: 16 },
+    emo: { awareness: 8, resilience: 8, points: 16 },
+    sense: { sensory: 14, care: 6, points: 15 }
+  };
+  const mult = isAlt ? .6 : 1;
+  const reward = baseRewards[p.block.id] || { awareness: 8, points: 12 };
+  const gained = [];
+  for (const def of SCALE_DEFS) {
+    const raw = reward[def.key] ? Math.round(reward[def.key] * mult) : 0;
+    const actual = gainScale(def.key, raw);
+    if (actual > 0) gained.push(`${def.emoji} +${actual} ${def.title.toLowerCase()}`);
+  }
+  const pts = Math.round((reward.points || 10) * mult);
+  const lvl = addPoints(pts);
+  if (isAlt) state.game.alt_count = (state.game.alt_count || 0) + 1;
+  save();
+  reviewBadges(true);
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  gain('+' + pts + ' XP');
+  return { gained, pts };
+}
+
+function rewardMastery(p) {
+  const map = {
+    base: { care: 10, awareness: 4, points: 18 },
+    mind: { awareness: 12, points: 18 },
+    stress: { resilience: 12, points: 18 },
+    emo: { awareness: 8, resilience: 8, points: 18 },
+    sense: { sensory: 10, care: 6, points: 18 }
+  };
+  const reward = map[p.block.id] || { awareness: 8, points: 18 };
+  for (const def of SCALE_DEFS) gainScale(def.key, reward[def.key] || 0);
+  const lvl = addPoints(reward.points || 18);
+  save();
+  reviewBadges(true);
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  gain('+' + (reward.points || 18) + ' XP');
+}
+
+function heroPoster({ greet, dateStr }) {
+  const lvl = levelInfo();
+  const streak = streakCount();
+  return el('section', { class: 'hero' },
+    el('div', { class: 'hero-top' },
+      el('div', { class: 'hero-copy' },
+        el('div', { class: 'eyebrow' }, greet + ' · Дибитишка'),
+        el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
+        el('p', { class: 'hero-date' }, dateStr)
+      ),
+      el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
+    ),
+    el('div', { class: 'xp' },
+      el('div', { class: 'xp-head' },
+        el('span', { class: 'level-pill' }, `Уровень ${lvl.level} · ${lvl.title}`),
+        el('span', { class: 'xp-nums' }, `${lvl.inLevel} / ${lvl.need} XP`)
+      ),
+      el('div', { class: 'xp-track' }, el('i', { class: 'xp-fill', style: `width:${Math.round(lvl.pct * 100)}%` })),
+      el('div', { class: 'xp-foot' },
+        el('span', {}, `🔥 серия ${streak} ${plural(streak, 'день', 'дня', 'дней')}`),
+        el('span', {}, `✨ ${lvl.points} очков роста`)
+      )
+    )
+  );
+}
+
+function scaleBoard(title = 'Шкалы роста') {
+  const wrap = el('div');
+  wrap.append(el('div', { class: 'sect' }, title));
+  const board = el('div', { class: 'scale-board' });
+  for (const def of SCALE_DEFS) {
+    const val = state.game.scales[def.key] || 0;
+    const pct = scalePct(def.key) * 100;
+    board.append(el('div', { class: `scale-card ${def.tint}` },
+      el('div', { class: 'top' },
+        el('div', {}, el('b', {}, `${def.emoji} ${def.title}`), el('span', {}, def.hint)),
+        el('b', {}, `${val}/${def.max}`)
+      ),
+      el('div', { class: 'scale-track' }, el('i', { class: 'scale-fill', style: `width:${pct}%` })),
+      el('div', { class: 'scale-meta' },
+        el('span', {}, pct >= 100 ? 'Шкала заполнена' : 'Растёт от практик и игры'),
+        el('b', {}, `${Math.round(pct)}%`)
+      )
+    ));
+  }
+  wrap.append(board);
+  return wrap;
+}
+
+function badgeBoard() {
+  const wrap = el('div');
+  wrap.append(el('div', { class: 'sect' }, 'Коллекция значков'));
+  const grid = el('div', { class: 'badge-grid' });
+  for (const [id, meta] of Object.entries(BADGES)) {
+    const on = !!state.game.badges[id];
+    grid.append(el('div', { class: 'badge-card' + (on ? '' : ' locked') },
+      el('div', { class: 'emoji' }, meta.emoji),
+      el('b', {}, meta.title),
+      el('span', {}, on ? meta.text : 'Ещё не открыт')
+    ));
+  }
+  wrap.append(grid);
+  return wrap;
+}
+
+function levelCard() {
+  const lvl = levelInfo();
+  return el('div', { class: 'level-card' },
+    el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
+    el('div', { class: 'level-copy' },
+      el('div', { class: 'brand-script' }, lvl.title),
+      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до уровня «${LEVEL_TITLES[lvl.level % LEVEL_TITLES.length]}» ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
+      el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
+    )
+  );
 }
 
 /* ---------- tabbar ---------- */
 const TABS = [
   { id: 'today', label: 'Сегодня', icon: 'today', route: '' },
   { id: 'skills', label: 'Навыки', icon: 'skills', route: 'skills' },
+  { id: 'chat', label: 'Чат', icon: 'chat', route: 'chat' },
   { id: 'workbook', label: 'Тетрадь', icon: 'workbook', route: 'workbook' },
-  { id: 'merch', label: 'Мерч', icon: 'merch', route: 'merch' },
   { id: 'profile', label: 'Профиль', icon: 'profile', route: 'profile' }
 ];
 function renderTabbar(active) {
   const bar = $('#tabbar');
   if (!active) { bar.hidden = true; bar.innerHTML = ''; return; }
-  bar.hidden = false; bar.innerHTML = '';
+  bar.hidden = false;
+  bar.innerHTML = '';
   for (const t of TABS) {
-    bar.append(el('button', { class: t.id === active ? 'on' : '', onclick: () => go(t.route) },
-      icon(t.icon), el('span', {}, t.label)));
+    bar.append(el('button', { class: t.id === active ? 'on' : '', onclick: () => go(t.route) }, icon(t.icon), el('span', {}, t.label)));
   }
 }
 
@@ -206,38 +541,68 @@ function route() {
 function screenWelcome() {
   renderTabbar(null);
   const slides = [
-    ['hello', 'привет! я дибитишка', 'я — слезинка, которая живет у тебя в телефоне. я знаю, как чувства умеют накрывать с головой, и умею помогать бережно.'],
-    ['calm', 'навыки осознанности по шагам', 'внутри — пять блоков практик из рабочей тетради ДПТ, переписанные моими словами. каждый день — одна маленькая практика. не можется — дам альтернативу.'],
-    ['proud', 'ты уже умеешь больше, чем думаешь', 'я отмечаю каждое «умею» и никогда не ругаю за пропуски. медленно — тоже вперёд.']
+    ['hello', 'Привет! Я Дибитишка', 'Я живу рядом, когда чувств слишком много. Будем собирать опору маленькими шагами — без стыда и гонки.'],
+    ['calm', 'Дневник, задания и чат', 'Отмечай эмоции — соберётся твой график пути. Пиши письменные опоры, а в трудный момент чат напомнит, кто ты и что тебя держит.'],
+    ['proud', 'Медленно — тоже вперёд', 'Прогресс отмечаю бережно: за практики, честность с собой и даже за моменты, когда выбираешь путь помягче.']
   ];
   let i = 0;
   const scr = el('div', { class: 'screen' });
-  const img = el('img', { class: 'mascot', src: 'assets/mascot/hello.png', alt: '' });
-  img.style.width = '180px'; img.style.margin = '12vh auto 8px';
-  const title = el('h1', { class: 'ltitle' });
-  const text = el('p', { class: 'subtitle' });
-  text.style.fontSize = '16px';
+  const poster = el('section', { class: 'poster hero-poster' });
+  const copy = el('div', { class: 'poster-copy wide' });
+  const eyebrow = el('div', { class: 'eyebrow' });
+  const brand = el('div', { class: 'brand-script big' }, 'Дибитишка');
+  const title = el('h1', { class: 'poster-title' });
+  const text = el('p', { class: 'poster-text' });
+  const img = el('img', { class: 'poster-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' });
   const dots = el('div', { class: 'chips', style: 'justify-content:center' });
   const btn = el('button', { class: 'btn' });
+  copy.append(eyebrow, brand, title, text);
+  poster.append(el('i', { class: 'poster-bubble b1' }), el('i', { class: 'poster-bubble b2' }), copy, img);
   const draw = () => {
     img.src = `assets/mascot/${slides[i][0]}.png`;
+    eyebrow.textContent = i === 0 ? 'Маленький спутник спокойствия' : i === 1 ? 'Шкала опыта и уровни' : 'Без давления и оценки';
     title.textContent = slides[i][1];
     text.textContent = slides[i][2];
     dots.innerHTML = '';
-    slides.forEach((_, k) => dots.append(el('span', { class: 'chip' + (k === i ? ' on' : ''), style: 'padding:4px 12px', onclick: () => { i = k; draw(); } }, '·')));
-    btn.textContent = i < slides.length - 1 ? 'дальше' : 'начать неделю бесплатно';
+    slides.forEach((_, k) => dots.append(el('button', { class: 'chip' + (k === i ? ' on' : ''), style: 'padding:5px 12px', onclick: () => { i = k; draw(); } }, '•')));
+    btn.textContent = i < slides.length - 1 ? 'Дальше' : 'Начать бесплатную неделю';
   };
   btn.onclick = () => {
     haptic('medium');
     if (i < slides.length - 1) { i++; draw(); return; }
     state.onboarded = true;
     if (!state.trial_started_at) state.trial_started_at = Date.now();
-    save(); go('');
+    save();
+    go('');
   };
   draw();
-  scr.append(img, title, text, dots, el('div', { style: 'height:18px' }), btn,
-    el('p', { class: 'foot' }, `первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}`, el('br'), 'app by @stonym0ntana'));
+  scr.append(poster, dots, el('div', { style: 'height:16px' }), btn,
+    el('p', { class: 'foot' }, `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`, el('br'), 'app by @stonym0ntana'));
   return scr;
+}
+
+function paywallCard(scr) {
+  const c = el('div', { class: 'card soft' });
+  c.append(
+    mascot('hug', mline('paywall')),
+    el('h3', { style: 'margin-top:12px' }, 'Подписка Дибитишки'),
+    el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · первая неделя бесплатно. Оплата идёт через Tribute прямо из бота.`),
+    el('button', { class: 'btn', style: 'margin-top:10px', onclick: openPay }, 'Оформить подписку')
+  );
+  scr.append(c);
+}
+
+function openPay() {
+  haptic('medium');
+  const u = CFG.bot_username ? `https://t.me/${CFG.bot_username}?start=pay` : 'https://t.me/';
+  sheet((sh, close) => {
+    sh.append(
+      mascot('hug', 'Оплата живёт в боте: он создаст ссылку Tribute и сам активирует подписку.'),
+      el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}. Первая неделя — бесплатно, она уже идёт с момента первого входа.`),
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => { try { tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u); } catch (e) { window.open(u); } close(); } }, 'Оплатить в Telegram'),
+      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); toast('Напиши боту /start, если подписка уже есть.'); } }, 'У меня уже есть подписка')
+    );
+  });
 }
 
 function screenToday() {
@@ -245,90 +610,87 @@ function screenToday() {
   const scr = el('div', { class: 'screen' });
   const d = new Date();
   const dateStr = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const prettyDate = dateStr[0].toUpperCase() + dateStr.slice(1);
   const hour = d.getHours();
-  const greet = hour < 5 ? 'тихая ночь' : hour < 12 ? 'доброе утро' : hour < 18 ? 'добрый день' : 'добрый вечер';
-  scr.append(el('h1', { class: 'ltitle' }, greet, el('small', {}, dateStr[0].toUpperCase() + dateStr.slice(1))));
+  const greet = hour < 5 ? 'Тихая ночь' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  scr.append(heroPoster({ greet, dateStr: prettyDate }));
 
-  const st = streakCount();
-  const chips = el('div', { class: 'chips' });
-  chips.append(el('span', { class: 'streak' }, '🔥', el('b', {}, String(st)), st === 1 ? 'день подряд' : 'дня подряд'));
-  const masteredN = Object.values(state.mastered).filter(Boolean).length;
-  chips.append(el('span', { class: 'streak', onclick: () => go('skills') }, '💧', el('b', {}, String(masteredN)), 'умею'));
-  scr.append(chips);
-
-  scr.append(mascot(hour < 12 ? 'hello' : 'calm', hour < 12 ? mline('morning') : mline('evening'), 'дибитишка рядом'));
+  // ежедневная цель
+  const doneCount = (state.done[todayKey()] || []).length;
+  const moodDone = state.mood_entries.some(e => todayKey(new Date(e.ts)) === todayKey());
+  scr.append(el('div', { class: 'sect' }, 'Сегодняшняя цель'));
+  scr.append(el('div', { class: 'daily' },
+    ring(doneCount >= 1 ? 1 : doneCount),
+    el('div', { class: 'dm' },
+      el('b', {}, doneCount >= 1 ? 'Практика дня сделана' : '1 практика сегодня'),
+      el('span', {}, moodDone ? 'Настроение отмечено · цель собрана' : 'Отметь ещё настроение — это тоже шаг')
+    )
+  ));
 
   if (!isPremium()) { paywallCard(scr); return scr; }
 
-  /* practice of the day */
   const all = allPractices();
   const todays = pick(all, daySeed());
   const mini = findPractice(pick(CONTENT.minis, daySeed() + 3));
   const doneToday = (state.done[todayKey()] || []).includes(todays.id);
 
-  const card = el('div', { class: `card tinted t-${todays.block.tint}` });
-  card.append(el('p', { class: 'cap' }, `практика дня · блок «${todays.block.title}»`),
+  const card = el('div', { class: `card tinted soft t-${todays.block.tint}` });
+  card.append(
+    el('p', { class: 'cap' }, `блок «${todays.block.title}» · ≈ ${todays.minutes} мин`),
     el('h3', {}, todays.title),
-    el('p', {}, todays.why.slice(0, 110) + '…'),
-    el('p', { class: 'mins' }, `≈ ${todays.minutes} мин ${doneToday ? '· пройдено сегодня 💧' : ''}`));
-  card.append(el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('p/' + todays.id) }, doneToday ? 'пройти заново' : 'начать'));
-  scr.append(card);
+    el('p', {}, todays.why.slice(0, 120) + '…'),
+    el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('p/' + todays.id) }, doneToday ? 'Пройти ещё раз' : 'Начать')
+  );
+  scr.append(el('div', { class: 'sect' }, 'Практика дня'), card);
 
-  scr.append(el('div', { class: 'sect' }, 'мини-практика на минуту'));
+  scr.append(el('div', { class: 'sect' }, 'Быстрая практика'));
   scr.append(el('div', { class: 'group' }, el('button', { class: 'row', onclick: () => go('p/' + mini.id) },
     el('span', { class: 'ric c-sky' }, icon('drop')),
     el('span', { class: 'rmain' }, el('b', {}, mini.title), el('span', {}, '1–4 минуты, можно прямо сейчас')),
-    el('span', { class: 'chev' }, '›'))));
+    el('span', { class: 'chev' }, '›')
+  )));
 
-  /* mood check-in */
-  scr.append(el('div', { class: 'sect' }, 'как я сейчас'));
-  const moods = ['тяжело', 'тревожно', 'ровно', 'тепло', 'радостно'];
+  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
   const mrow = el('div', { class: 'chips' });
-  const cur = state.mood[todayKey()];
-  moods.forEach((m, k) => mrow.append(el('button', {
-    class: 'chip' + (cur === k ? ' on' : ''), onclick: () => {
-      state.mood[todayKey()] = k; save(); haptic('light');
-      toast(k === 0 ? 'я рядом. будь к себе понежнее' : 'отметил(а). спасибо за честность');
-      route().a === 'today' && render();
+  const curEntry = moodTodayValue();
+  MOODS.forEach((m, k) => mrow.append(el('button', {
+    class: 'chip' + (curEntry && curEntry.value === k ? ' on' : ''), onclick: () => {
+      addMood(k);
+      haptic('light');
+      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : k === 1 ? 'Спасибо за честность. Отмечено.' : 'Спасибо за честность. Отмечено.');
+      render();
     }
-  }, m)));
+  }, `${MOOD_EMOJI[k]} ${m}`)));
   scr.append(mrow);
+  scr.append(el('p', { class: 'mins', style: 'margin:6px 4px 0' }, 'Можно отмечать каждый раз, когда заходишь. Всё попадает в дневник эмоций.'));
+
+  scr.append(el('div', { class: 'sect' }, 'Чат поддержки'));
+  scr.append(el('div', { class: 'card poster-mini soft' },
+    el('div', { class: 'poster-copy wide' },
+      el('h3', {}, 'Поговорить с Дибитишкой'),
+      el('p', {}, 'Совет в трудный момент и напоминание, кто ты — из твоих же записей.'),
+      el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => go('chat') }, 'Открыть чат')
+    ),
+    el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
+  ));
+
   scr.append(el('p', { class: 'foot' }, CONTENT.meta.credits));
   return scr;
-}
-
-function paywallCard(scr) {
-  const c = el('div', { class: 'card' });
-  c.append(mascot('hug', mline('paywall')),
-    el('h3', { style: 'margin-top:12px' }, 'Подписка дибитишки'),
-    el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · первая неделя бесплатно. оплата прямо в приложении через Tribute.`),
-    el('button', { class: 'btn', style: 'margin-top:10px', onclick: openPay }, 'оформить подписку'));
-  scr.append(c);
-}
-function openPay() {
-  haptic('medium');
-  const u = CFG.bot_username ? `https://t.me/${CFG.bot_username}?start=pay` : 'https://t.me/';
-  sheet((sh, close) => {
-    sh.append(mascot('hug', 'оплата живёт в боте: он создаст ссылку Tribute и активирует подписку сам.'),
-      el('p', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}. первая неделя — бесплатно, она уже идёт с момента первого входа.`),
-      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => { try { tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u); } catch (e) { window.open(u); } close(); } }, 'оплатить в telegram'),
-      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); toast('напиши боту /start, если подписка уже есть'); } }, 'у меня уже есть подписка'));
-  });
 }
 
 function screenSkills() {
   renderTabbar('skills');
   const scr = el('div', { class: 'screen' });
-  scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'пять блоков · проходи в любом порядке')));
-  scr.append(mascot('peek', 'выбирай(те) любое. можно пропускать любое. всегда есть выбор.', null));
+  scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'Пять блоков · проходи в своём порядке')));
+  scr.append(mascot('peek', 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.'));
   for (const b of CONTENT.blocks) {
     const total = b.practices.length;
     const master = b.practices.filter(p => state.mastered[p.id]).length;
-    const card = el('div', { class: `card tinted t-${b.tint}`, onclick: () => go('skills/' + b.id), style: 'cursor:pointer' });
+    const card = el('div', { class: `card tinted soft t-${b.tint}`, onclick: () => go('skills/' + b.id), style: 'cursor:pointer' });
     const top = el('div', { style: 'display:flex;align-items:center;gap:14px' });
-    const ic = el('span', { class: 'ric c-' + b.tint, style: 'width:42px;height:42px;border-radius:14px;color:' + (b.tint === 'peony' ? '#6B403B' : '#fff') }, icon(b.icon));
-    top.append(ic, el('div', { style: 'flex:1' }, el('h3', { style: 'margin:0' }, b.title), el('p', { style: 'margin:2px 0 0' }, b.subtitle)), ring(total ? master / total : 0));
-    card.append(top, el('p', { style: 'margin:10px 0 0' }, master ? `умеешь ${master} из ${total}` : `${total} практик · начни с любой`));
+    const ic = el('span', { class: 'ric c-' + b.tint, style: 'width:44px;height:44px;border-radius:14px;color:' + (b.tint === 'peony' ? '#6B403B' : '#fff') }, icon(b.icon));
+    top.append(ic, el('div', { style: 'flex:1' }, el('h3', { style: 'margin:0' }, b.title), el('p', { style: 'margin:4px 0 0' }, b.subtitle)), ring(total ? master / total : 0));
+    card.append(top, el('p', { style: 'margin:12px 0 0' }, master ? `Освоено ${master} из ${total}` : `${total} практик · начни с любой`));
     scr.append(card);
   }
   return scr;
@@ -340,19 +702,21 @@ function screenBlock(id) {
   const scr = el('div', { class: 'screen sub' });
   if (!b) return scr;
   scr.append(el('div', { class: 'navbar' },
-    el('button', { class: 'back', onclick: () => go('skills') }, icon('back'), 'назад'),
-    el('h2', {}, b.title)));
+    el('button', { class: 'back', onclick: () => go('skills') }, icon('back'), 'Назад'),
+    el('h2', {}, b.title)
+  ));
   scr.append(el('p', { class: 'subtitle' }, b.intro));
   const g = el('div', { class: 'group' });
   for (const p of b.practices) {
     const master = state.mastered[p.id];
     const done = (state.done[todayKey()] || []).includes(p.id);
-    const ever = Object.entries(state.done).some(([, v]) => v.includes(p.id));
+    const ever = Object.entries(state.done).some(([, v]) => Array.isArray(v) && v.includes(p.id));
     const stat = master ? ['master', '✓'] : done ? ['done', '•'] : ever ? ['done', '·'] : ['new', ''];
     g.append(el('button', { class: 'row', onclick: () => go('p/' + p.id) },
       el('span', { class: 'pstat ' + stat[0] }, stat[1]),
       el('span', { class: 'rmain' }, el('b', {}, p.title), el('span', {}, master ? p.master : `≈ ${p.minutes} мин`)),
-      el('span', { class: 'chev' }, '›')));
+      el('span', { class: 'chev' }, '›')
+    ));
   }
   scr.append(g);
   return scr;
@@ -364,73 +728,318 @@ function screenPractice(id) {
   const scr = el('div', { class: 'screen sub' });
   if (!p) return scr;
   scr.append(el('div', { class: 'navbar' },
-    el('button', { class: 'back', onclick: () => history.length > 1 ? history.back() : go('skills') }, icon('back'), 'назад'),
-    el('h2', {}, p.block.title)));
+    el('button', { class: 'back', onclick: () => history.length > 1 ? history.back() : go('skills') }, icon('back'), 'Назад'),
+    el('h2', {}, p.block.title)
+  ));
 
   const master = state.mastered[p.id];
   const done = (state.done[todayKey()] || []).includes(p.id);
-  scr.append(mascot(master ? 'proud' : done ? 'calm' : 'hello',
-    master ? mline('mastered') : done ? mline('done') : p.why,
-    master ? p.master : null));
+  scr.append(mascot(master ? 'proud' : done ? 'calm' : 'hello', master ? mline('mastered') : done ? mline('done') : p.why, master ? p.master : null));
 
-  scr.append(el('div', { class: 'sect' }, 'как делать'));
+  scr.append(el('div', { class: 'sect' }, 'Как делать'));
   scr.append(el('ol', { class: 'steps' }, p.steps.map(s => el('li', {}, s))));
-  scr.append(el('p', { class: 'mins' }, `≈ ${p.minutes} мин · можно пройти заново в любой день`));
+  scr.append(el('p', { class: 'mins' }, `≈ ${p.minutes} мин · за практику даются очки и рост шкал`));
 
-  /* alternative */
   const altBox = el('div', { class: 'hidden' });
-  const altCard = el('div', { class: 'card tinted t-sky' });
-  altCard.append(el('p', { class: 'cap' }, 'альтернатива помягче'), el('h3', {}, p.alt.title),
+  const altCard = el('div', { class: 'card tinted soft t-sky' });
+  altCard.append(
+    el('p', { class: 'cap' }, 'Альтернатива помягче'),
+    el('h3', {}, p.alt.title),
     el('ol', { class: 'steps' }, p.alt.steps.map(s => el('li', {}, s))),
-    el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { markDone(p, true); } }, 'отметить альтернативу'));
+    el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { markDone(p, true); } }, 'Отметить альтернативу')
+  );
   altBox.append(altCard);
 
-  scr.append(el('button', { class: 'btn ghost', onclick: (e) => { haptic('light'); altBox.classList.toggle('hidden'); e.target.textContent = altBox.classList.contains('hidden') ? 'не могу сейчас — показать альтернативу' : 'скрыть альтернативу'; } }, 'не могу сейчас — показать альтернативу'));
+  scr.append(el('button', {
+    class: 'btn ghost',
+    onclick: (e) => {
+      haptic('light');
+      altBox.classList.toggle('hidden');
+      e.target.textContent = altBox.classList.contains('hidden') ? 'Не могу сейчас — показать альтернативу' : 'Скрыть альтернативу';
+    }
+  }, 'Не могу сейчас — показать альтернативу'));
   scr.append(altBox);
 
-  const btnDone = el('button', { class: 'btn', onclick: () => markDone(p, false) }, done ? 'пройти заново' : 'сделал(а)');
-  const btnMaster = el('button', { class: 'btn ' + (master ? 'warm' : 'secondary'), onclick: () => {
-    state.mastered[p.id] = !state.mastered[p.id]; save(); haptic('success');
-    if (state.mastered[p.id]) { confetti(); toast(mline('mastered')); } else toast('ок, умение снято. вернёмся потом');
-    render();
-  } }, master ? '✓ я умею это' : 'отметить «я умею»');
+  const btnDone = el('button', { class: 'btn', onclick: () => markDone(p, false) }, done ? 'Сегодня уже отмечено' : 'Сделано');
+  const btnMaster = el('button', {
+    class: 'btn ' + (master ? 'warm' : 'secondary'),
+    onclick: () => {
+      const turningOn = !state.mastered[p.id];
+      state.mastered[p.id] = turningOn;
+      save();
+      haptic('success');
+      if (turningOn) {
+        rewardMastery(p);
+        confetti();
+        toast('Навык отмечен как «Я умею».');
+      } else {
+        toast('Отметку можно вернуть в любой момент.');
+      }
+      render();
+    }
+  }, master ? '✓ Я умею это' : 'Отметить «Я умею»');
   scr.append(el('div', { class: 'btnrow' }, btnDone, btnMaster));
-  scr.append(el('p', { class: 'foot' }, '«умею» можно снять в любой момент: навык — не татуировка'));
+  scr.append(el('p', { class: 'foot' }, 'Навык можно снять в любой момент: это не экзамен, а живая практика.'));
   return scr;
 }
 
 function markDone(p, isAlt) {
   const k = todayKey();
   state.done[k] = state.done[k] || [];
-  if (!state.done[k].includes(p.id)) state.done[k].push(p.id);
-  save(); haptic('success'); confetti();
-  toast(isAlt ? 'альтернатива засчитана. это тоже практика' : pick(CONTENT.meta.mascot_lines.done, streakCount()));
+  const already = state.done[k].includes(p.id);
+  if (!already) state.done[k].push(p.id);
+  save();
+  haptic(already ? 'light' : 'success');
+  if (!already) {
+    const reward = rewardPractice(p, isAlt);
+    confetti();
+    toast(isAlt ? `Альтернатива засчитана. +${reward.pts} очков.` : `Готово! +${reward.pts} очков роста.`);
+  } else {
+    toast('Сегодня эта практика уже засчитана. Повторить можно без потери тепла к себе 💧');
+  }
   render();
+}
+
+/* ---------- чат поддержки ---------- */
+const CHAT_HINTS = ['Мне тяжело', 'Мне тревожно', 'Напомни, кто я', 'Дай совет на сейчас'];
+const CHAT_TIPS = [
+  { text: 'Вдох на 4, выдох на 6. Три раза. Длинный выдох говорит телу: можно расслабиться.' },
+  { text: 'Назови пять вещей, которые видишь, четыре — которые слышишь, три — которые чувствуешь кожей. Это заземление.' },
+  { text: 'Одна маленькая задача на ближайшие пять минут. Не «разобраться со всем», а одно действие.' },
+  { text: 'Холодная вода на запястья или лицо — быстрый способ вернуть тело в «здесь».' },
+  { text: 'Если можно — приглуши свет и звук на пару минут. Меньше входящего — легче внутри.' }
+];
+const clipText = (s, n = 200) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+// Шаблон-персона и правила. Контекст ниже собирается из данных пользователя
+// и подставляется в слоты ответов. Если захочешь подключить LLM — передай
+// CHAT_PERSONA + buildChatContext() как промпт, ответы унаследуют тон и факты.
+const CHAT_PERSONA = `Ты — Дибитишка, слезинка-хранительница чувств. Говори коротко, тепло, без осуждения и давления. Не даёшь медицинских советов и не заменяешь врача. В трудный момент предлагаешь одну маленькую опору, а не список дел. Напоминаешь человеку, кто он, опираясь только на его собственные записи.`;
+
+function buildChatContext() {
+  const mastered = allPractices().filter(p => state.mastered[p.id]).map(p => p.master);
+  const filled = (CONTENT?.tasks || []).filter(t => taskFilled(t.id)).map(t => ({
+    title: t.title, emoji: t.emoji, text: (state.tasks[t.id].text || '').trim()
+  }));
+  const byId = (id) => (state.tasks[id] && state.tasks[id].text || '').trim();
+  const last = moodEntries()[0];
+  const lvl = levelInfo();
+  return {
+    name: TG_MODE ? tg.initDataUnsafe.user.first_name : state.web_user?.name || null,
+    mastered, filled,
+    whoami: byId('who_am_i'), anchors: byId('anchors'), crisis: byId('crisis_plan'),
+    streak: streakCount(), level: lvl.level, levelTitle: lvl.title,
+    moodNow: last ? MOODS[last.value] : null,
+    moodCount: moodEntriesCount()
+  };
+}
+
+function chatReply(text) {
+  const ctx = buildChatContext();
+  const t = (text || '').toLowerCase();
+  const has = (...words) => words.some(w => t.includes(w));
+  const name = ctx.name ? `, ${ctx.name}` : '';
+  let reply;
+  if (has('кто я', 'напомни', 'какой я', 'какая я', 'забыл', 'забыла', 'потерял', 'потеряла', 'кто ты')) {
+    if (ctx.whoami || ctx.anchors || ctx.mastered.length) {
+      const parts = [];
+      if (ctx.whoami) parts.push(`Ты писал(а) о себе: «${clipText(ctx.whoami)}»`);
+      if (ctx.anchors) parts.push(`Твои якоря: «${clipText(ctx.anchors)}»`);
+      if (ctx.mastered.length) parts.push(`Ты умеешь: ${ctx.mastered.slice(0, 4).join(' · ')}`);
+      reply = `Ты — не этот момент${name}. Ты — тот, кто держался ${ctx.streak} ${plural(ctx.streak, 'день', 'дня', 'дней')} подряд и дошёл до уровня «${ctx.levelTitle}».\n\n${parts.join('\n')}\n\nЕсли сейчас тяжело — это волна, а ты глубже любой волны. 💧`;
+    } else {
+      reply = `Пока тут мало записей${name}, но это поправимо. Заполни в профиле задания «Кто я, когда мне хорошо» и «Мои якоря» — и я буду напоминать тебе о тебе твоими же словами.`;
+    }
+  } else if (has('тяжело', 'тревож', 'страш', 'паник', 'плохо', 'накры', 'тошн', 'больно', 'не могу', 'срыв', 'ужас')) {
+    const crisis = ctx.crisis ? `\n\nТы сам(а) оставил(а) себе план на такой случай:\n«${clipText(ctx.crisis)}»` : '';
+    reply = `Слышу${name}. Давай по-маленькому, прямо сейчас:\n\n1. Выдох длиннее вдоха — три раза, медленно.\n2. Назови пять вещей, которые видишь. Ты здесь, а не там, где страшно.\n3. Одно действие на пять минут — и всё. Больше пока не надо.${crisis}\n\nЭто точка на пути, а не весь путь. Я рядом. 💧`;
+  } else if (has('совет', 'что делать', 'помог', 'подскаж', 'не знаю', 'как быть', 'как справ')) {
+    const tip = CHAT_TIPS[Math.floor(Math.random() * CHAT_TIPS.length)];
+    reply = `Совет на сейчас: ${tip.text}\n\nОдин вдох уже считается. Если хочешь глубже — загляни в «Навыки».`;
+  } else if (has('устал', 'устала', 'вымотан', 'сил нет', 'выгор', 'спать', 'отдох', 'утом')) {
+    reply = `Усталость — это сигнал, а не слабость${name}. Тебе можно замедлиться.\n\nСегодня выбери одно маленькое «нет» и одно маленькое «можно отдохнуть». Меньше, чем кажется нужным, — уже достаточно.`;
+  } else if (has('спасибо', 'благодар')) {
+    reply = `Всегда рядом. Заходи, когда будет нужно — и когда будет хорошо, тоже. 💧`;
+  } else if (has('привет', 'здравств', 'добрый', 'хай')) {
+    reply = `Привет${name}! Я тут. Могу подсказать, как пережить трудный момент, напомнить, кто ты, или просто побыть рядом.`;
+  } else {
+    reply = `Я слышу${name}. Я лучше всего умею: подсказать в трудный момент, напомнить, кто ты, и побыть рядом. Попробуй: «Мне тяжело», «Напомни, кто я» или «Дай совет».`;
+  }
+  return reply;
+}
+
+function screenChat() {
+  renderTabbar('chat');
+  const scr = el('div', { class: 'screen chat-screen' });
+  scr.append(el('h1', { class: 'ltitle' }, 'Чат', el('small', {}, 'Поддержка в трудный момент — и напоминание, кто ты')));
+  const feed = el('div', { class: 'chat-feed', id: 'chat-feed' });
+  const inputRow = el('div', { class: 'chat-input' });
+  const input = el('input', { class: 'chat-field', id: 'chat-field', placeholder: 'Напиши, что сейчас…', maxlength: 400 });
+  const sendBtn = el('button', { class: 'chat-send', 'aria-label': 'Отправить' }, icon('send'));
+  inputRow.append(input, sendBtn);
+  const hints = el('div', { class: 'chips chat-hints' }, CHAT_HINTS.map(h => el('button', { class: 'chip', onclick: () => submit(h) }, h)));
+  scr.append(feed, hints, inputRow);
+  scr.append(el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'));
+
+  const push = (text, who) => {
+    const m = el('div', { class: 'msg ' + (who === 'me' ? 'me' : 'bot') });
+    const body = el('div', { class: 'bubble' });
+    String(text).split('\n').forEach((line, i) => { if (i) body.append(el('br')); body.append(line); });
+    m.append(body);
+    feed.append(m);
+    feed.scrollTop = feed.scrollHeight;
+  };
+  const submit = (raw) => {
+    const v = (raw ?? input.value).trim();
+    if (!v) return;
+    input.value = '';
+    push(v, 'me');
+    haptic('light');
+    setTimeout(() => push(chatReply(v), 'bot'), 420);
+  };
+  sendBtn.onclick = () => submit();
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => push(chatReply('привет'), 'bot'), 250);
+  return scr;
+}
+
+/* ---------- дневник эмоций ---------- */
+function screenDiary() {
+  renderTabbar('profile');
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('profile') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Дневник эмоций')
+  ));
+  const entries = moodEntries();
+  if (!entries.length) {
+    scr.append(el('div', { class: 'card soft' },
+      el('h3', {}, 'Пока пусто'),
+      el('p', {}, 'Отмечай эмоцию на главной каждый раз, когда заходишь. Со временем соберётся твоя история — и станет видно: тяжёлый день это точка на пути, а не весь путь.')));
+    return scr;
+  }
+  const map = new Map(), days = [];
+  for (const e of entries) {
+    const k = todayKey(new Date(e.ts));
+    if (!map.has(k)) { const g = { key: k, items: [] }; map.set(k, g); days.push(g); }
+    map.get(k).items.push(e);
+  }
+  for (const g of days) {
+    const d = new Date(g.key + 'T12:00:00');
+    const label = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+    scr.append(el('div', { class: 'sect' }, label[0].toUpperCase() + label.slice(1)));
+    scr.append(el('div', { class: 'group' }, g.items.map(e => {
+      const time = new Date(e.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      return el('div', { class: 'row' },
+        el('span', { class: 'ric c-lavender' }, MOOD_EMOJI[e.value] || '😐'),
+        el('span', { class: 'rmain' }, el('b', {}, MOODS[e.value] || ''), el('span', {}, time)),
+        el('span', { class: 'chev' }, '•')
+      );
+    })));
+  }
+  scr.append(el('p', { class: 'foot' }, 'Каждая точка на этой ленте — запись, а не приговор.'));
+  return scr;
+}
+
+/* ---------- текстовые задания ---------- */
+function screenTasks() {
+  renderTabbar('profile');
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('profile') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Задания')
+  ));
+  scr.append(el('p', { class: 'subtitle' }, 'Пиши своими словами. Записи видны только тебе — и помогают Дибитишке напоминать, кто ты.'));
+  const tasks = CONTENT.tasks || [];
+  const filledN = tasks.filter(t => taskFilled(t.id)).length;
+  scr.append(el('div', { class: 'group' }, tasks.map(t => {
+    const filled = taskFilled(t.id);
+    return el('button', { class: 'row', onclick: () => go('task/' + t.id) },
+      el('span', { class: 'ric c-sky' }, t.emoji),
+      el('span', { class: 'rmain' }, el('b', {}, t.title), el('span', {}, filled ? 'Заполнено' : t.hint)),
+      el('span', { class: 'rval' }, filled ? '✓' : '·')
+    );
+  })));
+  scr.append(el('p', { class: 'foot' }, `Заполнено ${filledN} из ${tasks.length}.`));
+  return scr;
+}
+
+function screenTask(id) {
+  renderTabbar(null);
+  const t = findTask(id);
+  const scr = el('div', { class: 'screen sub' });
+  if (!t) {
+    scr.append(el('div', { class: 'navbar' }, el('button', { class: 'back', onclick: () => go('tasks') }, icon('back'), 'Назад')));
+    return scr;
+  }
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('tasks') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Задание')
+  ));
+  scr.append(el('h1', { class: 'ltitle' }, `${t.emoji} ${t.title}`, el('small', {}, t.hint)));
+  scr.append(el('div', { class: 'card soft' }, el('p', {}, t.prompt)));
+  const saved = state.tasks[t.id];
+  const ta = el('textarea', { class: 'task-input', id: 'task-text', placeholder: 'Пиши здесь…' });
+  ta.value = saved ? saved.text : (t.starter || '');
+  scr.append(ta);
+  scr.append(el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
+    const text = ($('#task-text').value || '').trim();
+    const was = taskFilled(t.id);
+    state.tasks[t.id] = { text, ts: Date.now() };
+    save();
+    haptic('success');
+    reviewBadges(true);
+    if (!was && text) confetti();
+    toast(text ? 'Сохранено. Дибитишка запомнил(а).' : 'Очищено.');
+    go('tasks');
+  } }, 'Сохранить'));
+  scr.append(el('p', { class: 'foot' }, 'Можно редактировать сколько угодно — это живой документ, а не экзамен.'));
+  return scr;
 }
 
 function screenWorkbook() {
   renderTabbar('workbook');
   const scr = el('div', { class: 'screen' });
   const w = CONTENT.workbook;
+  const full = isPremium();
   scr.append(el('h1', { class: 'ltitle' }, 'Тетрадь', el('small', {}, w.subtitle)));
   scr.append(mascot('calm', mline('workbook')));
-  scr.append(el('div', { class: 'card' },
+  const card = el('div', { class: 'card soft' });
+  card.append(
     el('h3', {}, w.title),
     el('p', {}, w.intro),
-    el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html' }, icon('print'), 'открыть и распечатать'),
-    el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => go('merch') }, 'заказать печатную версию')));
-  scr.append(el('div', { class: 'sect' }, 'что внутри'));
+    full
+      ? el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html?full=1' }, icon('print'), 'Открыть и распечатать')
+      : el('div', { class: 'preview-note' },
+          el('b', {}, 'Превью: 3 страницы бесплатно'),
+          el('span', {}, 'Полная тетрадь открывается с подпиской.')
+        )
+  );
+  if (!full) {
+    card.append(
+      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => location.href = 'workbook.html' }, 'Смотреть превью'),
+      el('button', { class: 'btn', style: 'margin-top:8px', onclick: openPay }, 'Открыть полную — оформить подписку')
+    );
+  }
+  card.append(el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: () => go('merch') }, 'Печатная версия и мерч'));
+  scr.append(card);
+  scr.append(el('div', { class: 'sect' }, 'Что внутри'));
   scr.append(el('div', { class: 'group' }, CONTENT.blocks.map(b =>
     el('div', { class: 'row' },
       el('span', { class: 'ric c-' + b.tint, style: 'color:' + (b.tint === 'peony' ? '#6B403B' : '#fff') }, icon(b.icon)),
-      el('span', { class: 'rmain' }, el('b', {}, b.title), el('span', {}, `${b.practices.length} практик · поля «пиши здесь»`))))));
+      el('span', { class: 'rmain' }, el('b', {}, b.title), el('span', {}, `${b.practices.length} практик · поля «Пиши здесь»`))
+    ))
+  ));
   return scr;
 }
 
 function screenMerch() {
-  renderTabbar('merch');
+  renderTabbar(null);
   const scr = el('div', { class: 'screen' });
-  scr.append(el('h1', { class: 'ltitle' }, 'Мерч', el('small', {}, 'скоро · оплата будет прямо здесь')));
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('workbook') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Мерч')
+  ));
   scr.append(mascot('peek', mline('merch')));
   const grid = el('div', { class: 'mgrid' });
   const tints = ['t-lavender', 't-leaf', 't-sky', 't-peony'];
@@ -440,89 +1049,156 @@ function screenMerch() {
     const ph = el('div', { class: 'ph ' + tints[i % 4] }, m.id === 'workbook_print' ? '📖' : m.id === 'tee' ? '👕' : m.id === 'shopper' ? '👜' : '✨');
     const notify = el('button', { class: 'btn ghost', style: 'min-height:36px;font-size:14px', onclick: () => {
       state.merch_notify = noted ? state.merch_notify.filter(x => x !== m.id) : [...state.merch_notify, m.id];
-      save(); haptic('light'); toast(noted ? 'убрал(а) из списка ожидания' : 'сообщу, когда появится'); render();
-    } }, noted ? '✓ в списке ожидания' : 'сообщить мне');
-    card.append(ph, el('div', { class: 'mb' }, el('b', {}, m.title), el('span', {}, m.note),
-      el('div', { class: 'mp' }, m.price === 'скоро' ? 'цена скоро' : m.price), notify));
+      save();
+      haptic('light');
+      toast(noted ? 'Убрано из списка ожидания.' : 'Сообщу, когда появится.');
+      render();
+    } }, noted ? '✓ Жду' : 'Сообщить мне');
+    card.append(ph, el('div', { class: 'mb' }, el('b', {}, m.title), el('span', {}, m.note), el('div', { class: 'mp' }, m.price === 'скоро' ? 'Цена скоро' : m.price), notify));
     grid.append(card);
   });
   scr.append(grid);
-  scr.append(el('p', { class: 'foot' }, 'оплата мерча подключится вместе с Tribute API — как и подписка'));
+  scr.append(el('p', { class: 'foot' }, 'Оплата мерча подключится вместе с Tribute API.'));
   return scr;
 }
 
 function screenProfile() {
   renderTabbar('profile');
   const scr = el('div', { class: 'screen' });
-  scr.append(el('h1', { class: 'ltitle' }, 'Профиль'));
+  scr.append(el('h1', { class: 'ltitle' }, 'Профиль', el('small', {}, 'Подписка, вход, напоминания и твой прогресс')));
   const name = TG_MODE ? (tg.initDataUnsafe.user.first_name + (tg.initDataUnsafe.user.last_name ? ' ' + tg.initDataUnsafe.user.last_name : '')) : state.web_user ? state.web_user.name : null;
-  scr.append(mascot('hello', name ? `привет, ${name}! всё своё держу здесь.` : 'привет! здесь живёт твоя подписка и настройки.', TG_MODE ? 'вход через telegram' : state.web_user ? 'вход по коду из бота' : 'гостевой режим'));
+  scr.append(mascot('hello', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
+  scr.append(levelCard());
+  scr.append(el('div', { class: 'stats-grid' },
+    el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(levelInfo().points)), el('span', {}, 'Очков роста')),
+    el('div', { class: 'stat-pill' }, el('i', {}, '🔥'), el('b', {}, String(streakCount())), el('span', {}, plural(streakCount(), 'день', 'дня', 'дней'))),
+    el('div', { class: 'stat-pill' }, el('i', {}, '📔'), el('b', {}, String(moodEntriesCount())), el('span', {}, plural(moodEntriesCount(), 'запись', 'записи', 'записей')))
+  ));
+  scr.append(scaleBoard('Твой прогресс'));
+  scr.append(badgeBoard());
 
-  /* subscription */
-  scr.append(el('div', { class: 'sect' }, 'подписка'));
+  scr.append(el('div', { class: 'sect' }, 'График настроения'));
+  const graphCard = el('div', { class: 'card soft' });
+  graphCard.append(
+    el('h3', {}, 'Это лишь точка на пути'),
+    moodGraph(14),
+    el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => go('diary') }, 'Открыть дневник эмоций')
+  );
+  scr.append(graphCard);
+
+  scr.append(el('div', { class: 'sect' }, 'Мои задания'));
+  const tasks = CONTENT.tasks || [];
+  const tasksFilledN = tasks.filter(t => taskFilled(t.id)).length;
+  scr.append(el('div', { class: 'daily' },
+    ring(tasks.length ? tasksFilledN / tasks.length : 0),
+    el('div', { class: 'dm' },
+      el('b', {}, `${tasksFilledN} из ${tasks.length} заполнено`),
+      el('span', {}, 'Антикризисный план, колесо баланса и другие письменные опоры')
+    ),
+    el('button', { class: 'btn ghost', style: 'width:auto;min-height:0;padding:8px 12px;font-size:14px', onclick: () => go('tasks') }, 'Открыть ›')
+  ));
+
+  scr.append(el('div', { class: 'sect' }, 'Подписка'));
   const dl = trialDaysLeft();
   const subRows = [];
   subRows.push(el('div', { class: 'row' },
     el('span', { class: 'ric c-grass' }, icon('card')),
-    el('span', { class: 'rmain' }, el('b', {}, (state.premium_until || 0) > Date.now() ? 'подписка активна' : state.trial_started_at && dl > 0 ? `бесплатная неделя: ещё ${dl} дн.` : 'подписка не активна'),
-      el('span', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · tribute`))));
+    el('span', { class: 'rmain' }, el('b', {}, (state.premium_until || 0) > Date.now() ? 'Подписка активна' : state.trial_started_at && dl > 0 ? `Бесплатная неделя: ещё ${dl} дн.` : 'Подписка не активна'), el('span', {}, `${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'} · Tribute`))
+  ));
   if (!isPremium() || dl !== Infinity) subRows.push(el('button', { class: 'row', onclick: openPay },
     el('span', { class: 'ric c-rose' }, icon('lock')),
-    el('span', { class: 'rmain' }, el('b', {}, isPremium() ? 'продлить подписку' : 'оформить подписку'), el('span', {}, 'оплата в telegram через tribute')),
-    el('span', { class: 'chev' }, '›')));
+    el('span', { class: 'rmain' }, el('b', {}, isPremium() ? 'Продлить подписку' : 'Оформить подписку'), el('span', {}, 'Оплата в Telegram через Tribute')),
+    el('span', { class: 'chev' }, '›')
+  ));
   scr.append(el('div', { class: 'group' }, subRows));
 
-  /* pushes */
-  scr.append(el('div', { class: 'sect' }, 'пуш-уведомления'));
+  scr.append(el('div', { class: 'sect' }, 'Напоминания'));
   const remRow = el('button', { class: 'row', onclick: () => {
-    state.reminders.on = !state.reminders.on; save(); haptic('light');
-    syncReminder(); render();
+    state.reminders.on = !state.reminders.on;
+    save();
+    haptic('light');
+    syncReminder();
+    render();
   } },
     el('span', { class: 'ric c-sky' }, icon('bell')),
-    el('span', { class: 'rmain' }, el('b', {}, 'напоминание о практике'), el('span', {}, state.reminders.on ? `ежедневно в ${state.reminders.time}` : 'выключено')),
-    el('span', { class: 'rval' }, state.reminders.on ? 'вкл' : 'выкл'));
+    el('span', { class: 'rmain' }, el('b', {}, 'Напоминание о практике'), el('span', {}, state.reminders.on ? `Ежедневно в ${state.reminders.time}` : 'Выключено')),
+    el('span', { class: 'rval' }, state.reminders.on ? 'Вкл' : 'Выкл')
+  );
   const times = el('div', { class: 'chips' });
   ['09:00', '12:00', '18:00', '21:00'].forEach(t => times.append(el('button', {
     class: 'chip' + (state.reminders.time === t ? ' on' : ''), onclick: () => { state.reminders.time = t; state.reminders.on = true; save(); syncReminder(); render(); }
   }, t)));
-  scr.append(el('div', { class: 'group' }, remRow), times,
-    el('p', { class: 'mins', style: 'margin:6px 4px' }, 'пуши присылает бот в telegram. в веб-версии без бота настрой командой /reminder'));
+  scr.append(el('div', { class: 'group' }, remRow), times, el('p', { class: 'mins', style: 'margin:6px 4px' }, 'Пуши присылает бот в Telegram.'));
 
-  /* appearance */
-  scr.append(el('div', { class: 'sect' }, 'оформление'));
+  scr.append(el('div', { class: 'sect' }, 'Оформление'));
   const themes = el('div', { class: 'chips' });
-  [['system', 'системная'], ['light', 'светлая'], ['dark', 'тёмная']].forEach(([k, l]) =>
-    themes.append(el('button', { class: 'chip' + (state.theme === k ? ' on' : ''), onclick: () => { state.theme = k; save(); applyTheme(); render(); } }, l)));
+  [['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная']].forEach(([k, l]) => themes.append(el('button', { class: 'chip' + (state.theme === k ? ' on' : ''), onclick: () => { state.theme = k; save(); applyTheme(); render(); } }, l)));
   scr.append(themes);
 
-  /* social + auth */
-  scr.append(el('div', { class: 'sect' }, 'связь и вход'));
+  scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
   if (!TG_MODE) rows.push(el('button', { class: 'row', onclick: authSheet },
     el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('lock')),
-    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `вошли как ${state.web_user.name}` : 'войти по коду из бота'), el('span', {}, state.web_user ? 'синхронизация и пуши доступны' : 'код придёт в telegram')),
-    el('span', { class: 'chev' }, '›')));
+    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Синхронизация включена' : 'Код придёт в Telegram')),
+    el('span', { class: 'chev' }, '›')
+  ));
   rows.push(el('button', { class: 'row', onclick: () => openLink(CFG.social?.telegram) },
     el('span', { class: 'ric c-sky' }, icon('send')),
-    el('span', { class: 'rmain' }, el('b', {}, 'телеграм-канал'), el('span', {}, CFG.social?.telegram || '')),
-    el('span', { class: 'chev' }, '›')));
+    el('span', { class: 'rmain' }, el('b', {}, 'Телеграм-канал'), el('span', {}, CFG.social?.telegram || '')),
+    el('span', { class: 'chev' }, '›')
+  ));
   rows.push(el('button', { class: 'row', onclick: () => openLink('mailto:' + (CFG.social?.email || '')) },
     el('span', { class: 'ric c-peony', style: 'color:#6B403B' }, icon('mail')),
-    el('span', { class: 'rmain' }, el('b', {}, 'почта'), el('span', {}, CFG.social?.email || '')),
-    el('span', { class: 'chev' }, '›')));
+    el('span', { class: 'rmain' }, el('b', {}, 'Почта'), el('span', {}, CFG.social?.email || '')),
+    el('span', { class: 'chev' }, '›')
+  ));
+  rows.push(el('button', { class: 'row', onclick: () => go('merch') },
+    el('span', { class: 'ric c-rose' }, icon('merch')),
+    el('span', { class: 'rmain' }, el('b', {}, 'Мерч и печатная версия'), el('span', {}, 'Футболка, шоппер, стикеры, тетрадь')),
+    el('span', { class: 'chev' }, '›')
+  ));
   scr.append(el('div', { class: 'group' }, rows));
-  scr.append(el('p', { class: 'foot' }, 'дибитишка · v1.0', el('br'), 'app by @stonym0ntana', el('br'), CONTENT.meta.credits));
+
+  scr.append(el('div', { class: 'sect' }, 'Поддержать'));
+  scr.append(el('div', { class: 'group' },
+    el('button', { class: 'row', onclick: () => openLink(CFG.donate_url) },
+      el('span', { class: 'ric c-rose' }, icon('heart')),
+      el('span', { class: 'rmain' }, el('b', {}, 'Донат разработчикам'), el('span', {}, 'Разовое спасибо через Tribute')),
+      el('span', { class: 'chev' }, '›')
+    )
+  ));
+  scr.append(el('p', { class: 'foot' }, 'Дибитишка · v1.2', el('br'), 'app by @stonym0ntana', el('br'), CONTENT.meta.credits));
   return scr;
 }
-function openLink(u) { try { tg && tg.openTelegramLink && u.startsWith('https://t.me') ? tg.openTelegramLink(u) : window.open(u, '_blank'); } catch (e) { window.open(u, '_blank'); } }
 
-async function syncReminder() {
-  if (!CFG.bot_public_url) return;
+function openLink(u) {
+  if (!u) return;
+  try { tg && tg.openTelegramLink && u.startsWith('https://t.me') ? tg.openTelegramLink(u) : window.open(u, '_blank'); } catch (e) { window.open(u, '_blank'); }
+}
+
+async function syncPremium() {
+  if (!API_BASE) return;
   const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
   if (!uid) return;
   try {
-    await fetch(CFG.bot_public_url.replace(/\/$/, '') + '/me/reminder', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(apiUrl('/me?user_id=' + encodeURIComponent(uid)));
+    const j = await r.json();
+    if (j && j.ok) {
+      if (typeof j.premium_until === 'number') state.premium_until = j.premium_until || 0;
+      if (typeof j.trial_start === 'number' && j.trial_start && !state.trial_started_at) state.trial_started_at = j.trial_start;
+      save();
+    }
+  } catch (e) {}
+}
+
+async function syncReminder() {
+  if (!API_BASE) return;
+  const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
+  if (!uid) return;
+  try {
+    await fetch(apiUrl('/me/reminder'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: uid, on: state.reminders.on, time: state.reminders.time })
     });
   } catch (e) {}
@@ -530,24 +1206,33 @@ async function syncReminder() {
 
 function authSheet() {
   sheet((sh, close) => {
-    sh.append(el('h3', {}, 'Вход по коду'),
-      el('p', {}, `напиши боту @${CFG.bot_username || '…'} команду /code — он пришлёт одноразовый код. введи его здесь, и веб-версия привяжется к твоему телеграму: пуши и синхронизация заработают.`),
+    sh.append(
+      el('h3', {}, 'Вход по коду'),
+      el('p', {}, `Напиши боту @${CFG.bot_username || '…'} команду /code — он пришлёт одноразовый код. Введи его здесь, и веб-версия привяжется к твоему Telegram.`),
       el('input', { class: 'code-input', id: 'code-in', placeholder: '······', maxlength: 6, inputmode: 'numeric' }),
       el('button', { class: 'btn', style: 'margin-top:12px', onclick: async () => {
         const code = ($('#code-in').value || '').trim();
-        if (code.length < 4) return toast('введи код целиком');
+        if (code.length < 4) return toast('Введи код целиком.');
         haptic('light');
-        if (!CFG.bot_public_url) { close(); return toast('бот не подключён к веб-версии: заполни bot_public_url в config.js'); }
+        if (!API_BASE) { close(); return toast('Бот не подключён к веб-версии: нужен bot_public_url или открытие через bot host.'); }
         try {
-          const r = await fetch(CFG.bot_public_url.replace(/\/$/, '') + '/auth/verify', {
+          const r = await fetch(apiUrl('/auth/verify'), {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
           });
           const j = await r.json();
-          if (j.ok) { state.web_user = { id: j.user.id, name: j.user.name || 'друг' }; save(); haptic('success'); close(); toast('привет в вебе! пуши теперь доходят'); render(); }
-          else toast('код не подошёл или устарел');
-        } catch (e) { toast('не достучался(ась) до бота'); }
-      } }, 'войти'),
-      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { openLink(`https://t.me/${CFG.bot_username || ''}`); } }, 'открыть бота за кодом'));
+          if (j.ok) {
+            state.web_user = { id: j.user.id, name: j.user.name || 'друг' };
+            save();
+            haptic('success');
+            close();
+            toast('Вход выполнен. Синхронизация готова.');
+            syncPremium();
+            render();
+          } else toast('Код не подошёл или устарел.');
+        } catch (e) { toast('Не удалось связаться с ботом.'); }
+      } }, 'Войти'),
+      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { openLink(`https://t.me/${CFG.bot_username || ''}`); } }, 'Открыть бота за кодом')
+    );
   });
 }
 
@@ -555,6 +1240,8 @@ function authSheet() {
 function render() {
   const r = route();
   const app = $('#app');
+  if (typeof screenCleanup === 'function') { try { screenCleanup(); } catch (e) {} }
+  screenCleanup = null;
   app.innerHTML = '';
   let scr;
   if (!state.onboarded) scr = screenWelcome();
@@ -562,6 +1249,10 @@ function render() {
     case '': scr = screenToday(); break;
     case 'skills': scr = r.b ? screenBlock(r.b) : screenSkills(); break;
     case 'p': scr = screenPractice(r.b); break;
+    case 'chat': scr = screenChat(); break;
+    case 'diary': scr = screenDiary(); break;
+    case 'tasks': scr = screenTasks(); break;
+    case 'task': scr = screenTask(r.b); break;
     case 'workbook': scr = screenWorkbook(); break;
     case 'merch': scr = screenMerch(); break;
     case 'profile': scr = screenProfile(); break;
@@ -575,16 +1266,19 @@ window.addEventListener('hashchange', render);
 /* ---------- boot ---------- */
 (async function boot() {
   applyTheme();
-  try { await loadContent(); } catch (e) {
-    $('#app').append(el('div', { class: 'screen' }, el('p', {}, 'не могу загрузить контент. проверь связь.')));
+  reviewBadges(false);
+  try {
+    await loadContent();
+  } catch (e) {
+    $('#app').append(el('div', { class: 'screen' }, el('p', {}, 'Не могу загрузить контент. Проверь связь.')));
     $('#splash').classList.add('gone');
     return;
   }
   if (TG_MODE) {
-    const u = tg.initDataUnsafe.user;
-    state.web_user = null; // в TG режиме профиль берём из initData
-    if (!state.onboarded) { /* покажем welcome */ }
+    state.web_user = null;
+    save();
   }
+  syncPremium();
   render();
   setTimeout(() => $('#splash').classList.add('gone'), 1500);
 })();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>рабочая тетрадь дибитишки · печать</title>
+<title>Рабочая тетрадь Дибитишки · печать</title>
 <style>
   :root{ --ink:#2B2320; --ink2:#6E6156; --line:#D8CFC2; --lav:#CCC3D1; --sky:#AFB8CD; --peony:#F7DDD5; --leaf:#C1BC77; --grass:#8D8B4C; --rose:#D8A4AF; }
   *{box-sizing:border-box}
@@ -19,6 +19,9 @@
   header.cover h1{margin:0; font-size:34px; letter-spacing:-.02em}
   header.cover p{color:var(--ink2); margin:8px auto 0; max-width:560px}
   .credit{font-size:11.5px; color:var(--ink2); margin-top:14px}
+  .preview-bar{margin:16px auto 0; max-width:520px; background:#EDF1FB; border:1px solid #c9d6f2; color:#4765B4;
+    border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.45}
+  .preview-bar b{display:block}
   section{page-break-before:always; padding-top:22px}
   section:first-of-type{page-break-before:auto}
   h2{font-size:24px; margin:26px 0 4px; display:flex; align-items:center; gap:10px}
@@ -53,29 +56,48 @@
 </head>
 <body>
 <div class="bar">
-  <button onclick="window.print()">печать / сохранить в pdf</button>
-  <button class="sec" onclick="location.href='index.html'">← в приложение</button>
-  <span>дибитишка · печатная тетрадь</span>
+  <button onclick="window.print()">Печать / сохранить в PDF</button>
+  <button class="sec" onclick="location.href='index.html'">← В приложение</button>
+  <span>Дибитишка · печатная тетрадь</span>
 </div>
-<div class="page" id="page">загружаю тетрадь…</div>
+<div class="page" id="page">Загружаю тетрадь…</div>
 <script>
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 (async () => {
   let C = null;
-  for (const u of ['content/content.json']) {
-    try { const r = await fetch(u); C = await r.json(); if (C.blocks) break; } catch (e) {}
+  for (const u of ['/content.json', 'content/content.json']) {
+    try { const r = await fetch(u, { cache: 'no-cache' }); C = await r.json(); if (C.blocks) break; } catch (e) {}
   }
-  if (!C) { document.getElementById('page').textContent = 'не удалось загрузить контент'; return; }
+  if (!C) { document.getElementById('page').textContent = 'Не удалось загрузить контент'; return; }
   const W = C.workbook;
+
+  // режим превью (3 страницы) — если не передан full=1 или подписка не подтверждена.
+  // Подписка хранится в localStorage приложения: premium_until / trial_started_at.
+  const params = new URLSearchParams(location.search);
+  const full = params.get('full') === '1';
+  let premium = false;
+  try {
+    const raw = JSON.parse(localStorage.getItem('dibitishka.v1') || '{}');
+    const TRIAL = (raw.trial_started_at && Date.now() - raw.trial_started_at < 7 * 86400000);
+    premium = (raw.premium_until || 0) > Date.now() || !!TRIAL;
+  } catch (e) {}
+  const allowFull = full || premium;
+  const isPreview = !allowFull;
+
+  // для превью показываем обложку + по одной практике на блок (3 блока)
+  const blocks = isPreview ? C.blocks.slice(0, 3).map(b => ({ ...b, practices: b.practices.slice(0, 1) })) : C.blocks;
+
   const tints = { lavender:'#CCC3D1', leaf:'#C1BC77', grass:'#8D8B4C', sky:'#AFB8CD', peony:'#F7DDD5' };
   let h = `<header class="cover">
     <img src="assets/mascot/icon.png" alt="">
     <h1>${esc(W.title)}</h1>
     <p>${esc(W.subtitle)}</p>
-    <p>${esc(W.intro)}</p>
-    <div class="credit">${esc(C.meta.credits)}<br>app by @stonym0ntana</div>
-  </header>`;
-  for (const b of C.blocks) {
+    <p>${esc(W.intro)}</p>`;
+  if (isPreview) {
+    h += `<div class="preview-bar"><b>Это превью — 3 страницы.</b> Полная тетрадь открывается с подпиской. Оформи её в приложении → Тетрадь, или по ссылке на подписку в боте.</div>`;
+  }
+  h += `<div class="credit">${esc(C.meta.credits)}<br>app by @stonym0ntana</div></header>`;
+  for (const b of blocks) {
     h += `<section><h2><span class="dot" style="background:${tints[b.tint] || '#CCC3D1'}"></span>${esc(b.title)} · ${esc(b.subtitle)}</h2>
       <p class="intro">${esc(b.intro)}</p>`;
     for (const p of b.practices) {
@@ -90,25 +112,35 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
     }
     h += `</section>`;
   }
+  // в превью дополнительные разделы (план, сенсорный профиль, фразы) не показываем
+  if (isPreview) {
+    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>Дальше — вся тетрадь</h2>
+      <p class="intro">Здесь ещё много: остальные практики пяти блоков, фразы, которые держат, кризисный план и сенсорный профиль. Всё это открывается с подпиской.</p>
+      <div class="lines short"></div></section>`;
+    h += `<footer>Дибитишка · превью · app by @stonym0ntana</footer>`;
+    document.getElementById('page').innerHTML = h;
+    return;
+  }
+
   /* affirmations */
   const aff = (C.blocks.find(b => b.id === 'base')?.practices.find(p => p.id === 'affirm')?.extras?.affirmations) || [];
   if (aff.length) {
-    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>фразы, которые держат</h2>
-      <p class="intro">вычеркни, что не твоё, допиши свои. это твоя страница.</p>` +
+    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>Фразы, которые держат</h2>
+      <p class="intro">Вычеркни, что не твоё, допиши свои. Это твоя страница.</p>` +
       aff.map(a => `<div class="affirm">${esc(a)}</div>`).join('') +
       `<div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
   }
   /* crisis plan */
-  h += `<section><h2><span class="dot" style="background:#AFB8CD"></span>мой кризисный план</h2>
-    <p class="intro">заполняется в штиль. читается в шторм.</p>` +
+  h += `<section><h2><span class="dot" style="background:#AFB8CD"></span>Мой кризисный план</h2>
+    <p class="intro">Заполняется в штиль. Читается в шторм.</p>` +
     W.crisis_fields.map(f => `<div class="practice"><h3>${esc(f)}</h3><div class="lines short"></div></div>`).join('') + `</section>`;
   /* sensory profile */
-  h += `<section><h2><span class="dot" style="background:#8D8B4C"></span>мой сенсорный профиль</h2>
-    <p class="intro">восемь чувств: отметь, где гипер (слишком много), гипо (мало) и ровно.</p>
-    <table class="sens"><tr><th>чувство</th><th>гипер</th><th>гипо</th><th>ровно</th><th>пример из жизни</th></tr>` +
+  h += `<section><h2><span class="dot" style="background:#8D8B4C"></span>Мой сенсорный профиль</h2>
+    <p class="intro">Восемь чувств: отметь, где гипер (слишком много), гипо (мало) и ровно.</p>
+    <table class="sens"><tr><th>Чувство</th><th>Гипер</th><th>Гипо</th><th>Ровно</th><th>Пример из жизни</th></tr>` +
     W.sensory_senses.map(s => `<tr><td>${esc(s)}</td><td>☐</td><td>☐</td><td>☐</td><td style="min-width:160px"></td></tr>`).join('') +
     `</table><div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
-  h += `<footer>дибитишка · напечатано с любовью · app by @stonym0ntana</footer>`;
+  h += `<footer>Дибитишка · напечатано с любовью · app by @stonym0ntana</footer>`;
   document.getElementById('page').innerHTML = h;
 })();
 </script>
