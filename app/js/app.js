@@ -67,7 +67,7 @@ const defaultState = {
   onboarded: false,
   trial_started_at: null,
   premium_until: 0,
-  theme: 'system',
+  theme: 'light',
   mastered: {},
   done: {},
   mood: {},
@@ -154,13 +154,12 @@ const daySeed = () => Math.floor(Date.now() / 86400000);
 
 /* ---------- theme ---------- */
 function applyTheme() {
-  const dark = state.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const bg = dark ? '#0A1428' : '#EDF3FE';
-  document.querySelector('meta[name=theme-color]').content = bg;
+  document.documentElement.dataset.theme = 'light';
+  const bg = '#EDF3FE';
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) meta.content = bg;
   try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
 }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => state.theme === 'system' && applyTheme());
 
 /* ---------- helpers ---------- */
 let toastTimer;
@@ -173,6 +172,49 @@ const SCALE_DEFS = [
 ];
 const MOODS = ['Тяжело', 'Тревожно', 'Ровно', 'Тепло', 'Радостно'];
 const MOOD_EMOJI = ['😞', '😰', '😐', '🙂', '😊'];
+const DAILY_PHRASES = [
+  "Ты справляешься. Даже если сейчас так не кажется.",
+  "Сегодня можно просто быть.",
+  "Не обязательно делать всё сразу.",
+  "Маленький шаг — тоже шаг.",
+  "Ты не обязан быть продуктивным, чтобы быть молодцом.",
+  "Можно начать с самого простого.",
+  "Я рядом. Давай потихоньку.",
+  "Сегодня достаточно сделать чуть-чуть.",
+  "Ты уже делаешь важную вещь — замечаешь себя.",
+  "Иногда лучший прогресс — это остановиться.",
+  "Большие чувства. Маленькие шаги.",
+  "Давай не спешить.",
+  "Один маленький шаг на сегодня?",
+  "Начнём с того, что уже есть.",
+  "Не нужно идеально. Нужно достаточно.",
+  "Пять минут тоже считаются.",
+  "Шаг за шагом становится легче.",
+  "Можно попробовать. Можно передумать.",
+  "Давай сделаем только следующий шаг.",
+  "Сегодня прокачиваем себя на 1%.",
+  "Заметь. Назови. Выбери.",
+  "Что ты сейчас чувствуешь?",
+  "Эмоция — это информация, а не приказ.",
+  "Можно чувствовать и не действовать сразу.",
+  "Пауза тоже действие.",
+  "Дышим. Замечаем. Выбираем.",
+  "Тебе не нужно бороться с каждой эмоцией.",
+  "Чувство пройдёт. А ты останешься.",
+  "Можно принять момент и всё равно что-то изменить.",
+  "Между импульсом и действием есть пауза.",
+  "Сегодня трудный день? Тогда особенно медленно.",
+  "Ничего страшного, если сегодня мало сил.",
+  "Давай сначала позаботимся о тебе.",
+  "Ты можешь отложить сложное.",
+  "Сейчас не нужно решать всю жизнь.",
+  "Сначала выдохнем.",
+  "Тебе можно отдохнуть.",
+  "Иногда продержаться — уже достижение.",
+  "Не ругай себя за то, что тебе трудно.",
+  "Давай переживём этот момент вместе."
+];
+const dailyPhrase = () => pick(DAILY_PHRASES, daySeed());
 const BADGES = {
   first_practice: { emoji: '💧', title: 'Первая капля', text: 'Сделана первая практика.' },
   alt_kind: { emoji: '🫶', title: 'Мягкий маршрут', text: 'Альтернатива тоже считается.' },
@@ -265,10 +307,11 @@ const moodTodayValue = () => {
   const k = todayKey();
   return [...state.mood_entries].filter(e => todayKey(new Date(e.ts)) === k).sort((a, b) => a.ts - b.ts).pop();
 };
-function addMood(value) {
+function addMood(value, note) {
   const k = todayKey();
   const hadToday = state.mood_entries.some(e => todayKey(new Date(e.ts)) === k);
-  state.mood_entries.push({ ts: Date.now(), value });
+  const cleanNote = (note || '').trim().slice(0, 200);
+  state.mood_entries.push({ ts: Date.now(), value, note: cleanNote || undefined });
   // лёгкий, один раз в день: честность с собой тоже растёт в шкалы
   if (!hadToday) gainScale(value >= 2 ? 'awareness' : 'care', 1);
   // храним ~2 года записей
@@ -434,12 +477,14 @@ function rewardMastery(p) {
   gain('+' + (reward.points || 18) + ' XP');
 }
 
-function heroPoster({ greet, dateStr }) {
+function heroPoster({ dateStr }) {
   const lvl = levelInfo();
   const streak = streakCount();
+  const phrase = dailyPhrase();
+  const isLong = phrase.length > 48;
   return el('section', { class: 'hero' },
-    el('div', { class: 'hero-pill' }, greet),
-    el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
+    el('img', { class: 'hero-brand', src: 'assets/brand/logo-800.png', alt: 'Дибитишка' }),
+    el('div', { class: 'hero-phrase' + (isLong ? ' long' : '') }, phrase),
     el('p', { class: 'hero-date' }, dateStr),
     el('div', { class: 'hero-mascot-wrap' },
       el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
@@ -635,9 +680,30 @@ function screenToday() {
   const d = new Date();
   const dateStr = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
   const prettyDate = dateStr[0].toUpperCase() + dateStr.slice(1);
-  const hour = d.getHours();
-  const greet = hour < 5 ? 'Тихая ночь' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
-  scr.append(heroPoster({ greet, dateStr: prettyDate }));
+  scr.append(heroPoster({ dateStr: prettyDate }));
+
+  if (!isPremium()) { paywallCard(scr); return scr; }
+
+  // отметь эмоцию — подняли выше дашборда
+  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
+  const mrow = el('div', { class: 'chips' });
+  const curEntry = moodTodayValue();
+  const moodNoteWrap = el('div', { class: 'mood-note-wrap' },
+    el('textarea', { class: 'mood-note-input', id: 'mood-note', placeholder: 'Короткая заметка — что сейчас на душе? (необязательно)', maxlength: 200, rows: 2 }),
+    el('p', { class: 'mins', style: 'margin:6px 4px 0' }, 'Можно отмечать каждый раз, когда заходишь. Заметка попадёт в дневник.')
+  );
+  MOODS.forEach((m, k) => mrow.append(el('button', {
+    class: 'chip' + (curEntry && curEntry.value === k ? ' on' : ''), onclick: () => {
+      const noteEl = document.getElementById('mood-note');
+      const noteVal = noteEl ? noteEl.value : '';
+      addMood(k, noteVal);
+      if (noteEl) noteEl.value = '';
+      haptic('light');
+      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : k === 1 ? 'Спасибо за честность. Отмечено.' : 'Спасибо за честность. Отмечено.');
+      render();
+    }
+  }, `${MOOD_EMOJI[k]} ${m}`)));
+  scr.append(mrow, moodNoteWrap);
 
   // ежедневная цель
   const doneCount = (state.done[todayKey()] || []).length;
@@ -650,8 +716,6 @@ function screenToday() {
       el('span', {}, moodDone ? 'Настроение отмечено · цель собрана' : 'Отметь ещё настроение — это тоже шаг')
     )
   ));
-
-  if (!isPremium()) { paywallCard(scr); return scr; }
 
   const all = allPractices();
   const todays = pick(all, daySeed());
@@ -674,19 +738,8 @@ function screenToday() {
     el('span', { class: 'chev' }, '›')
   )));
 
-  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
-  const mrow = el('div', { class: 'chips' });
-  const curEntry = moodTodayValue();
-  MOODS.forEach((m, k) => mrow.append(el('button', {
-    class: 'chip' + (curEntry && curEntry.value === k ? ' on' : ''), onclick: () => {
-      addMood(k);
-      haptic('light');
-      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : k === 1 ? 'Спасибо за честность. Отмечено.' : 'Спасибо за честность. Отмечено.');
-      render();
-    }
-  }, `${MOOD_EMOJI[k]} ${m}`)));
-  scr.append(mrow);
-  scr.append(el('p', { class: 'mins', style: 'margin:6px 4px 0' }, 'Можно отмечать каждый раз, когда заходишь. Всё попадает в дневник эмоций.'));
+  // mood moved higher and with note
+    // (mood moved above — duplicate removed)
 
   scr.append(el('div', { class: 'sect' }, 'Чат поддержки'));
   scr.append(el('div', { class: 'card poster-mini soft' },
@@ -706,7 +759,10 @@ function screenSkills() {
   renderTabbar('skills');
   const scr = el('div', { class: 'screen' });
   scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'Пять блоков · проходи в своём порядке')));
-  scr.append(mascot('peek', 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.'));
+  scr.append(el('div', { class: 'mascot-wrap peeking' },
+    el('img', { class: 'mascot', src: 'assets/mascot/peek.png', alt: 'Дибитишка' }),
+    el('div', { class: 'bubble' }, 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.')
+  ));
   for (const b of CONTENT.blocks) {
     const total = b.practices.length;
     const master = b.practices.filter(p => state.mastered[p.id]).length;
@@ -895,8 +951,14 @@ function chatReply(text) {
 function screenChat() {
   renderTabbar('chat');
   const scr = el('div', { class: 'screen chat-screen' });
-  scr.append(el('h1', { class: 'ltitle' }, 'Чат', el('small', {}, 'Поддержка в трудный момент — и напоминание, кто ты')));
+  scr.append(el('div', { class: 'chat-mascot-header' },
+    el('img', { class: 'chat-mascot-small', src: 'assets/mascot/calm.png', alt: 'Дибитишка' }),
+    el('div', {}, el('h1', { class: 'ltitle', style: 'margin:0' }, 'Чат', el('small', {}, 'Поддержка в трудный момент — и напоминание, кто ты')))
+  ));
   const feed = el('div', { class: 'chat-feed', id: 'chat-feed' });
+  // laconic mascot illustration
+  const deco = el('img', { class: 'chat-illustration', src: 'assets/mascot/peek.png', alt: '', 'aria-hidden': 'true' });
+  feed.append(deco);
   const inputRow = el('div', { class: 'chat-input' });
   const input = el('input', { class: 'chat-field', id: 'chat-field', placeholder: 'Напиши, что сейчас…', maxlength: 400 });
   const sendBtn = el('button', { class: 'chat-send', 'aria-label': 'Отправить' }, icon('send'));
@@ -954,10 +1016,14 @@ function screenDiary() {
     scr.append(el('div', { class: 'sect' }, label[0].toUpperCase() + label.slice(1)));
     scr.append(el('div', { class: 'group' }, g.items.map(e => {
       const time = new Date(e.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      return el('div', { class: 'row' },
-        el('span', { class: 'ric c-lavender' }, MOOD_EMOJI[e.value] || '😐'),
-        el('span', { class: 'rmain' }, el('b', {}, MOODS[e.value] || ''), el('span', {}, time)),
-        el('span', { class: 'chev' }, '•')
+      const note = (e.note || '').trim();
+      return el('div', { class: 'row', style: note ? 'flex-direction:column; align-items:flex-start; gap:6px; padding-top:14px; padding-bottom:14px' : '' },
+        el('div', { style: 'display:flex; align-items:center; gap:14px; width:100%' },
+          el('span', { class: 'ric c-lavender' }, MOOD_EMOJI[e.value] || '😐'),
+          el('span', { class: 'rmain' }, el('b', {}, MOODS[e.value] || ''), el('span', {}, time)),
+          el('span', { class: 'chev' }, '•')
+        ),
+        note ? el('div', { class: 'mood-entry-note', style: 'width:100%; margin-left:56px; max-width:calc(100% - 56px)' }, note) : null
       );
     })));
   }
@@ -1154,10 +1220,8 @@ function screenProfile() {
   }, t)));
   scr.append(el('div', { class: 'group' }, remRow), times, el('p', { class: 'mins', style: 'margin:6px 4px' }, 'Пуши присылает бот в Telegram.'));
 
-  scr.append(el('div', { class: 'sect' }, 'Оформление'));
-  const themes = el('div', { class: 'chips' });
-  [['system', 'Системная'], ['light', 'Светлая'], ['dark', 'Тёмная']].forEach(([k, l]) => themes.append(el('button', { class: 'chip' + (state.theme === k ? ' on' : ''), onclick: () => { state.theme = k; save(); applyTheme(); render(); } }, l)));
-  scr.append(themes);
+  // оформление — только светлое (выбор темы скрыт)
+  // светлая тема зафиксирована в applyTheme()
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
