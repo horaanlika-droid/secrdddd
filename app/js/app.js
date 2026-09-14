@@ -557,7 +557,7 @@ function levelCard() {
   return el('div', { class: 'level-card' },
     el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
     el('div', { class: 'level-copy' },
-      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до следующего уровня ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
+      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до следующего уровня ещё ${lvl.toNext}. Всего: ${lvl.points} ${plural(lvl.points, 'очко', 'очка', 'очков')}.`),
       el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
     )
   );
@@ -1181,7 +1181,10 @@ function screenWorkbook() {
   const w = CONTENT.workbook;
   const full = isPremium();
   scr.append(el('h1', { class: 'ltitle' }, 'Тетрадь', el('small', {}, w.subtitle)));
-  scr.append(mascot('notebook', mline('workbook')));
+  // v23: обложка без персонажа — отдельная иллюстрация «DBT diary» в стиле приложения
+  scr.append(el('div', { class: 'workbook-art-wrap' },
+    el('img', { class: 'workbook-art', src: 'assets/workbook/dbt-diary.png', alt: 'Рабочая тетрадь DBT diary' })
+  ));
   const card = el('div', { class: 'card soft' });
   card.append(
     el('h3', {}, w.title),

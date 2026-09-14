@@ -3,54 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#EFF4FE">
 <title>Рабочая тетрадь Дибитишки · печать</title>
+<link rel="icon" type="image/png" href="assets/mascot/icon.png">
 <style>
-  :root{ --ink:#2B2320; --ink2:#6E6156; --line:#D8CFC2; --lav:#CCC3D1; --sky:#AFB8CD; --peony:#F7DDD5; --leaf:#C1BC77; --grass:#8D8B4C; --rose:#D8A4AF; }
-  *{box-sizing:border-box}
-  body{margin:0; font:14px/1.55 "SF Pro Text", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; color:var(--ink); background:#FBF8F2}
-  .bar{position:sticky; top:0; z-index:5; background:rgba(251,248,242,.9); backdrop-filter:blur(14px); border-bottom:1px solid var(--line);
-    display:flex; gap:10px; align-items:center; padding:10px 16px}
-  .bar button{border:0; border-radius:12px; padding:10px 16px; font:600 15px inherit; background:var(--grass); color:#fff; cursor:pointer}
-  .bar button.sec{background:#fff; color:var(--ink); box-shadow:0 1px 6px rgba(0,0,0,.08)}
-  .bar span{color:var(--ink2); font-size:13px; flex:1}
-  .page{max-width:820px; margin:0 auto; padding:28px 22px 80px}
-  header.cover{ text-align:center; padding:40px 10px 26px; border-bottom:2px solid var(--ink)}
-  header.cover img{width:120px; margin:0 auto 14px}
-  header.cover h1{margin:0; font-size:34px; letter-spacing:-.02em}
-  header.cover p{color:var(--ink2); margin:8px auto 0; max-width:560px}
-  .credit{font-size:11.5px; color:var(--ink2); margin-top:14px}
-  .preview-bar{margin:16px auto 0; max-width:520px; background:#EDF1FB; border:1px solid #c9d6f2; color:#4765B4;
-    border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.45}
-  .preview-bar b{display:block}
-  section{page-break-before:always; padding-top:22px}
-  section:first-of-type{page-break-before:auto}
-  h2{font-size:24px; margin:26px 0 4px; display:flex; align-items:center; gap:10px}
-  h2 .dot{width:14px;height:14px;border-radius:50% 50% 50% 0; transform:rotate(-45deg); flex:none}
-  .intro{color:var(--ink2); margin:0 0 14px}
-  .practice{border:1.5px solid var(--line); border-radius:16px; padding:16px 18px; margin:14px 0; page-break-inside:avoid}
-  .practice h3{margin:0 0 2px; font-size:17px}
-  .practice .mins{color:var(--ink2); font-size:12px}
-  .practice .why{margin:8px 0; color:#4A4038}
-  .practice ol{margin:6px 0; padding-left:20px}
-  .practice li{margin:4px 0}
-  .alt{background:var(--peony); border-radius:10px; padding:8px 12px; margin-top:8px; font-size:13px}
-  .alt b{display:block}
-  .write{margin-top:10px; border-top:1px dashed var(--line); padding-top:6px; color:var(--ink2); font-size:12px; letter-spacing:.06em; text-transform:uppercase}
-  .lines{height:96px; background:repeating-linear-gradient(to bottom, transparent 0 27px, var(--line) 27px 28px)}
-  .lines.short{height:60px}
-  .master{margin-top:8px; font-size:13px; color:var(--grass); font-weight:600}
-  .master:before{content:"☐ "; color:var(--ink2)}
-  .affirm{background:#fff; border:1.5px solid var(--line); border-radius:12px; padding:10px 14px; margin:8px 0; page-break-inside:avoid}
-  table.sens{width:100%; border-collapse:collapse; margin:10px 0}
-  table.sens td, table.sens th{border:1px solid var(--line); padding:8px 10px; font-size:13px; text-align:left}
-  table.sens th{background:var(--peony)}
-  footer{margin-top:30px; color:var(--ink2); font-size:12px; text-align:center}
+  /* ============================================================
+     Печатная тетрадь · v23 — тот же «воздух», что и в приложении:
+     светлый фон, serif-заголовки, мягкие скругления, тихие тени.
+     Всё, что красится, помечено print-color-adjust:exact, чтобы
+     при печати в PDF остались плашки и линии для письма.
+     ============================================================ */
+  :root{
+    --ink:#0B1F4D; --ink-2:#5A6B8C; --ink-3:#93A1C0;
+    --bg:#F3F7FE; --card:#FFFFFF; --card-2:#F6F9FF;
+    --line:rgba(11,31,77,.14); --line-2:rgba(11,31,77,.07);
+    --accent:#2F7DF6; --accent-deep:#1D5FD0; --accent-soft:#E7EFFD;
+    --lavender:#B9AFCB; --sky:#9FB0CF; --peony:#F3DCD3; --rose:#D8A4AF;
+    --leaf:#B7B279; --grass:#8D8B4C;
+    --t-lavender:#EFF0FA; --t-sky:#E9EFFB; --t-peony:#FBF0EA; --t-leaf:#F3F2E4; --t-grass:#F0F1E1;
+    --serif:"New York", ui-serif, Georgia, "Times New Roman", "Noto Serif", serif;
+    --sans:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  html{color-scheme:light}
+  body{margin:0; font:15px/1.6 var(--sans); color:var(--ink);
+    background:radial-gradient(90% 30% at 50% 0%, #FFFFFF, transparent 70%), linear-gradient(180deg, #E7F0FE 0%, var(--bg) 40%, #FBFDFF 100%)}
+
+  /* ---------- панель управления (только на экране) ---------- */
+  .bar{position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; padding:12px 18px;
+    background:rgba(255,255,255,.72); backdrop-filter:blur(18px) saturate(150%);
+    border-bottom:1px solid var(--line-2)}
+  .bar button{border:0; border-radius:16px; padding:11px 18px; font:700 15px var(--sans);
+    background:linear-gradient(180deg, #3B86F7, #2470E8); color:#fff; cursor:pointer;
+    box-shadow:0 10px 24px rgba(47,125,246,.28)}
+  .bar button.sec{background:#fff; color:var(--accent-deep); box-shadow:0 6px 18px rgba(47,125,246,.14)}
+  .bar span{flex:1; color:var(--ink-2); font-size:13px; font-weight:600; text-align:right}
+
+  .page{max-width:820px; margin:0 auto; padding:26px 22px 90px}
+
+  /* ---------- обложка ---------- */
+  header.cover{border-radius:38px; padding:34px 30px 30px; text-align:center;
+    background:linear-gradient(168deg, #FFFFFF 0%, #EEF4FE 58%, #E2EBFB 100%);
+    border:1px solid rgba(255,255,255,.9); box-shadow:0 26px 60px rgba(47,125,246,.14)}
+  header.cover .art{width:min(58%, 240px); margin:0 auto 6px; display:block;
+    filter:drop-shadow(0 20px 30px rgba(47,125,246,.24))}
+  header.cover .eyebrow{display:inline-block; margin:6px 0 10px; padding:9px 20px; border-radius:999px;
+    background:#fff; border:1px solid var(--line-2); color:var(--accent-deep);
+    font-size:11.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase}
+  header.cover h1{margin:0; font-family:var(--serif); font-size:38px; line-height:1.1; letter-spacing:-.02em}
+  header.cover .sub{color:var(--ink-2); margin:12px auto 0; max-width:520px; font-size:16px}
+  header.cover .intro{text-align:left; color:var(--ink-2); margin:22px auto 0; max-width:600px; font-size:14.6px; line-height:1.7;
+    background:#fff; border:1px solid var(--line-2); border-radius:22px; padding:18px 20px}
+  header.cover .intro b{color:var(--ink); font-weight:700}
+  .credit{font-size:11.5px; color:var(--ink-3); margin:18px auto 0; max-width:560px; line-height:1.6}
+  .preview-bar{margin:18px auto 0; max-width:560px; background:var(--accent-soft); border:1px solid #C9D9F6; color:#2A5BB8;
+    border-radius:20px; padding:14px 16px; font-size:13.5px; line-height:1.55; text-align:left}
+  .preview-bar b{display:block; margin-bottom:3px; color:var(--accent-deep)}
+
+  /* ---------- разделы ---------- */
+  section{break-before:page; page-break-before:always; margin-top:26px; padding-top:8px}
+  section:first-of-type{break-before:auto; page-break-before:auto; margin-top:34px}
+  section > h2{margin:0 0 6px; font-family:var(--serif); font-size:27px; line-height:1.15; letter-spacing:-.02em;
+    display:flex; align-items:center; gap:12px}
+  h2 .dot{width:15px; height:15px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); flex:none}
+  h2 .num{font-family:var(--sans); font-size:12px; font-weight:800; letter-spacing:.14em; color:var(--ink-3)}
+  .intro{color:var(--ink-2); margin:2px 0 16px; max-width:620px; font-size:14.4px}
+
+  /* ---------- практика ---------- */
+  .practice{background:var(--card); border:1px solid var(--line-2); border-radius:24px;
+    padding:20px 22px 18px; margin:16px 0; box-shadow:0 12px 30px rgba(47,125,246,.07);
+    break-inside:avoid; page-break-inside:avoid}
+  .practice h3{margin:0; font-size:18px; letter-spacing:-.01em}
+  .mins{display:inline-block; margin-top:6px; padding:4px 12px; border-radius:999px;
+    background:var(--accent-soft); color:var(--accent-deep); font-size:11.5px; font-weight:700; letter-spacing:.06em}
+  .why{margin:12px 0 4px; color:#3E4C6B}
+  .practice ol{margin:8px 0 0; padding:0; list-style:none; counter-reset:step}
+  .practice ol li{counter-increment:step; position:relative; padding-left:34px; margin:8px 0; line-height:1.55}
+  .practice ol li:before{content:counter(step); position:absolute; left:0; top:1px; width:23px; height:23px;
+    border-radius:50%; background:var(--card-2); border:1px solid var(--line-2); color:var(--ink-2);
+    font-size:12px; font-weight:800; display:grid; place-items:center}
+  .alt{background:var(--t-peony); border-radius:16px; padding:11px 14px; margin-top:12px; font-size:13.6px; color:#5A4240; line-height:1.55}
+  .alt b{display:block; color:#6B403B; margin-bottom:2px}
+  .master{margin-top:12px; font-size:13.4px; color:var(--grass); font-weight:700}
+  .master:before{content:"☐ "; color:var(--ink-2); font-weight:400}
+  .write{margin-top:14px; padding-top:10px; border-top:1px dashed var(--line);
+    color:var(--ink-3); font-size:11.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase}
+  .lines{height:104px; margin-top:8px;
+    background:repeating-linear-gradient(to bottom, transparent 0 28px, var(--line) 28px 29px)}
+  .lines.short{height:62px}
+
+  /* ---------- фразы, план, сенсорный профиль ---------- */
+  .affirm{background:#fff; border:1px solid var(--line-2); border-left:5px solid var(--rose);
+    border-radius:16px; padding:13px 16px; margin:10px 0; font-size:15px; break-inside:avoid}
+  .field{background:#fff; border:1px solid var(--line-2); border-radius:20px; padding:16px 18px; margin:12px 0;
+    break-inside:avoid; page-break-inside:avoid}
+  .field h3{margin:0; font-size:16.5px}
+  table.sens{width:100%; border-collapse:separate; border-spacing:0; margin:14px 0 0; font-size:13.4px;
+    background:#fff; border:1px solid var(--line-2); border-radius:18px; overflow:hidden}
+  table.sens th, table.sens td{padding:11px 12px; text-align:left; border-bottom:1px solid var(--line-2)}
+  table.sens th{background:var(--t-sky); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2)}
+  table.sens tr:last-child td{border-bottom:0}
+  table.sens td:first-child{font-weight:600}
+  table.sens .box{font-size:15px; color:var(--ink-2)}
+  footer{margin-top:34px; text-align:center; color:var(--ink-3); font-size:12px}
+  footer .mk{display:block; margin:0 auto 10px; width:54px; opacity:.9}
+
+  /* ---------- печать ---------- */
+  @page{ margin:14mm }
   @media print{
-    .bar{display:none}
     body{background:#fff}
-    .page{padding:0}
-    .practice{border-color:#BBB}
-    section{padding-top:0}
+    .bar, .preview-bar{display:none}
+    .page{max-width:none; padding:0}
+    header.cover{border-radius:0; box-shadow:none; border:0; padding:0 0 18px; background:transparent}
+    header.cover .intro{background:transparent; border:0; padding:0 4px}
+    section{margin-top:0}
+    .practice, .field, .affirm, table.sens{box-shadow:none; border-color:#C7D3E8}
+    .practice h3, section > h2{color:#0B1F4D}
+    .alt{background:#FBEDE6}
+    .practice ol li:before{background:#F2F6FE; border-color:#C7D3E8}
   }
 </style>
 </head>
@@ -63,6 +133,7 @@
 <div class="page" id="page">Загружаю тетрадь…</div>
 <script>
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
 (async () => {
   let C = null;
   for (const u of ['/content.json', 'content/content.json']) {
@@ -87,23 +158,38 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
   // для превью показываем обложку + по одной практике на блок (3 блока)
   const blocks = isPreview ? C.blocks.slice(0, 3).map(b => ({ ...b, practices: b.practices.slice(0, 1) })) : C.blocks;
 
-  const tints = { lavender:'#CCC3D1', leaf:'#C1BC77', grass:'#8D8B4C', sky:'#AFB8CD', peony:'#F7DDD5' };
+  // плашки разделов — те же тона, что и «Твой прогресс» в приложении
+  const tints = {
+    lavender: '#B9AFCB', leaf: '#B7B279', grass: '#8D8B4C', sky: '#9FB0CF', peony: '#D8A4AF'
+  };
+  const tintBg = {
+    lavender: 'var(--t-lavender)', leaf: 'var(--t-leaf)', grass: 'var(--t-grass)',
+    sky: 'var(--t-sky)', peony: 'var(--t-peony)'
+  };
+  const tintOf = (b) => tints[b.tint] || '#B9AFCB';
+  const bgOf = (b) => tintBg[b.tint] || 'var(--t-lavender)';
+
   let h = `<header class="cover">
-    <img src="assets/mascot/icon.png" alt="">
+    <img class="art" src="assets/workbook/dbt-diary.png" alt="Тетрадь DBT diary">
+    <div class="eyebrow">рабочая тетрадь · печатная версия</div>
     <h1>${esc(W.title)}</h1>
-    <p>${esc(W.subtitle)}</p>
-    <p>${esc(W.intro)}</p>`;
+    <p class="sub">${esc(W.subtitle)}</p>
+    <p class="intro">${esc(W.intro)}</p>`;
   if (isPreview) {
     h += `<div class="preview-bar"><b>Это превью — 3 страницы.</b> Полная тетрадь открывается с подпиской. Оформи её в приложении → Тетрадь, или по ссылке на подписку в боте.</div>`;
   }
   h += `<div class="credit">${esc(C.meta.credits)}</div></header>`;
+
   for (const b of blocks) {
-    h += `<section><h2><span class="dot" style="background:${tints[b.tint] || '#CCC3D1'}"></span>${esc(b.title)} · ${esc(b.subtitle)}</h2>
+    h += `<section style="--tint:${tintOf(b)}">
+      <h2><span class="dot" style="background:${tintOf(b)}"></span>${esc(b.title)}
+        <span class="num">${esc(b.subtitle)}</span></h2>
       <p class="intro">${esc(b.intro)}</p>`;
     for (const p of b.practices) {
-      h += `<div class="practice">
-        <h3>${esc(p.title)}</h3><div class="mins">≈ ${p.minutes} мин</div>
-        <div class="why">${esc(p.why)}</div>
+      h += `<div class="practice" style="background:linear-gradient(180deg, ${bgOf(b)} 0%, #fff 46%)">
+        <h3>${esc(p.title)}</h3>
+        <span class="mins">≈ ${p.minutes} мин</span>
+        <p class="why">${esc(p.why)}</p>
         <ol>${p.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
         <div class="alt"><b>если не можется — альтернатива: ${esc(p.alt.title)}</b>${p.alt.steps.map(s => esc(s)).join(' · ')}</div>
         <div class="master">${esc(p.master)}</div>
@@ -112,34 +198,39 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
     }
     h += `</section>`;
   }
+
   // в превью дополнительные разделы (план, сенсорный профиль, фразы) не показываем
   if (isPreview) {
-    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>Дальше — вся тетрадь</h2>
+    h += `<section><h2><span class="dot" style="background:var(--rose)"></span>Дальше — вся тетрадь</h2>
       <p class="intro">Здесь ещё много: остальные практики пяти блоков, фразы, которые держат, кризисный план и сенсорный профиль. Всё это открывается с подпиской.</p>
-      <div class="lines short"></div></section>`;
-    h += `<footer>Дибитишка · превью</footer>`;
+      <div class="field"><div class="write">${esc(W.write_here)}</div><div class="lines short"></div></div></section>
+      <footer>Дибитишка · превью</footer>`;
     document.getElementById('page').innerHTML = h;
     return;
   }
 
-  /* affirmations */
+  /* фразы, которые держат */
   const aff = (C.blocks.find(b => b.id === 'base')?.practices.find(p => p.id === 'affirm')?.extras?.affirmations) || [];
   if (aff.length) {
-    h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>Фразы, которые держат</h2>
+    h += `<section><h2><span class="dot" style="background:var(--rose)"></span>Фразы, которые держат</h2>
       <p class="intro">Вычеркни, что не твоё, допиши свои. Это твоя страница.</p>` +
       aff.map(a => `<div class="affirm">${esc(a)}</div>`).join('') +
       `<div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
   }
-  /* crisis plan */
-  h += `<section><h2><span class="dot" style="background:#AFB8CD"></span>Мой кризисный план</h2>
+
+  /* кризисный план */
+  h += `<section><h2><span class="dot" style="background:var(--sky)"></span>Мой кризисный план</h2>
     <p class="intro">Заполняется в штиль. Читается в шторм.</p>` +
-    W.crisis_fields.map(f => `<div class="practice"><h3>${esc(f)}</h3><div class="lines short"></div></div>`).join('') + `</section>`;
-  /* sensory profile */
-  h += `<section><h2><span class="dot" style="background:#8D8B4C"></span>Мой сенсорный профиль</h2>
+    W.crisis_fields.map(f => `<div class="field"><h3>${esc(f)}</h3><div class="lines short"></div></div>`).join('') +
+    `</section>`;
+
+  /* сенсорный профиль */
+  h += `<section><h2><span class="dot" style="background:var(--grass)"></span>Мой сенсорный профиль</h2>
     <p class="intro">Восемь чувств: отметь, где гипер (слишком много), гипо (мало) и ровно.</p>
     <table class="sens"><tr><th>Чувство</th><th>Гипер</th><th>Гипо</th><th>Ровно</th><th>Пример из жизни</th></tr>` +
-    W.sensory_senses.map(s => `<tr><td>${esc(s)}</td><td>☐</td><td>☐</td><td>☐</td><td style="min-width:160px"></td></tr>`).join('') +
+    W.sensory_senses.map(s => `<tr><td>${esc(s)}</td><td class="box">☐</td><td class="box">☐</td><td class="box">☐</td><td></td></tr>`).join('') +
     `</table><div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
+
   h += `<footer>Дибитишка · напечатано с любовью</footer>`;
   document.getElementById('page').innerHTML = h;
 })();
