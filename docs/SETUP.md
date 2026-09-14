@@ -89,19 +89,23 @@ docker compose logs -f # смотрим, что [bot] polling started
 
 ```bash
 npm run check   # зависимости резолвятся, lockfile не разошёлся, точка входа
-                # не импортирует grammy напрямую, .dockerignore ничего не потерял
+                # не импортирует grammy напрямую, .dockerignore ничего не потерял,
+                # корень Pages ведёт в app/, порт чистится через acquirePort
 npm run smoke   # бот реально поднимается и отвечает на /health и /content.json
-npm run verify  # и то, и другое
+npm run port    # деплой на занятый порт: своя копия уходит, чужая не страдает
+npm run verify  # всё вместе
 ```
 
 То же самое делает CI: `.github/workflows/ci.yml` на каждый пуш и PR.
 Отдельная джоба `self-heal` воспроизводит аварию — удаляет `node_modules`
-и проверяет, что бот поставит их сам и поднимется.
+и проверяет, что бот поставит их сам и поднимется. А `pages.yml` после публикации
+открывает сайт и проверяет, что там приложение, а не README.
 
 ## 2. GitHub Pages
 
-1. В репозитории: Settings → Pages → Source: **GitHub Actions**.
-2. Пуш в `main` (или в рабочую ветку) — workflow `.github/workflows/pages.yml` опубликует папку `app/`.
+1. В репозитории: Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+2. Пуш в `main` — workflow `.github/workflows/pages.yml` опубликует папку `app/`
+   и сам проверит, что по адресу открывается приложение, а не README.
 3. URL вида `https://<user>.github.io/<repo>/` — это веб-версия.
 
 > Если source почему-то стоит **«Deploy from a branch»** (ветка `main`, корень)

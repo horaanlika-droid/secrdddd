@@ -60,6 +60,8 @@ jobs:
         run: npm ci --omit=dev --no-audit --no-fund
       - name: смоук-тест (/health и /content.json)
         run: node scripts/smoke.mjs
+      - name: автоочистка порта при деплое
+        run: node scripts/port-clash.mjs
 
   self-heal:
     name: бот сам ставит зависимости
