@@ -361,6 +361,53 @@ for (const [label, lock, pkg, dir] of [
   else ok('bot/src/store.js отдаёт flush() для немедленной записи');
 }
 
+/* ---------- 13. примеры к практикам: обещаны в тексте → есть в контенте и в витринах ----------
+   Поломка, из-за которой появилась эта проверка: практика «Фразы, которые
+   держат» (блок «Опора») говорила «прочитай примеры ниже», а примеры из
+   p.extras не рисовала ни одна витрина — шаг вёл в пустоту. */
+{
+  const content = readJson(path.join(ROOT, 'app', 'content', 'content.json'));
+  const seed = readJson(path.join(BOT, 'seed', 'content.json'));
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const botApp = read(path.join(BOT, 'src', 'app.js'));
+  const book = read(path.join(ROOT, 'app', 'workbook.html'));
+  if (!content) bad('app/content/content.json не читается как JSON');
+  else {
+    const PROMISE = /примеры?\s+(ниже|выше)|из\s+примеров|списка?\s+ниже|из\s+списка/i;
+    const flat = (v) => (Array.isArray(v) ? v : Object.values(v || {}).filter(Array.isArray).flat());
+    const practices = content.blocks.flatMap((b) => b.practices.map((p) => ({ block: b, p })));
+    const promised = practices.filter(({ p }) =>
+      [...p.steps, ...((p.alt && p.alt.steps) || [])].some((s) => PROMISE.test(s)));
+    if (!promised.length) {
+      bad('в контенте не осталось практик, обещающих примеры', 'проверка протухла: убери её вместе с формулировками «примеры ниже»');
+    } else {
+      const empty = promised.filter(({ p }) => !Object.keys(p.extras || {}).length);
+      if (empty.length) bad('практика обещает примеры, а extras пуст',
+        empty.map(({ block, p }) => `${block.title} → ${p.title}`).join(', '));
+      else ok(`у практик с «примерами ниже» есть extras (${promised.length} шт.)`);
+
+      const thin = promised.filter(({ p }) => Object.values(p.extras || {}).some((v) => flat(v).length < 2));
+      if (thin.length) bad('в extras меньше двух примеров — выбирать не из чего',
+        thin.map(({ p }) => p.title).join(', '));
+      else ok('в каждой группе extras минимум два примера');
+    }
+
+    if (!seed) bad('bot/seed/content.json не читается как JSON');
+    else if (JSON.stringify(seed.blocks) !== JSON.stringify(content.blocks)) {
+      bad('bot/seed/content.json разошёлся с app/content/content.json по практикам',
+        'бот без app/ берёт контент из seed — примеры там должны быть те же');
+    } else ok('бот-сид и веб-контент совпадают по блокам практик');
+
+    if (!/practiceExamples\(/.test(web)) bad('app/js/app.js не рисует примеры практики (p.extras)',
+      'верни practiceExamples(p) в screenPractice()');
+    else ok('веб рисует примеры практики (practiceExamples)');
+    if (!/practiceExamplesText\(/.test(botApp)) bad('bot/src/app.js не присылает примеры в /today');
+    else ok('бот присылает примеры в /today');
+    if (!/extrasHtml\(/.test(book)) bad('app/workbook.html не печатает примеры в карточке практики');
+    else ok('печатная тетрадь показывает примеры внутри практики');
+  }
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');
