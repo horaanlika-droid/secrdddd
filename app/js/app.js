@@ -41,7 +41,10 @@ const ICONS = {
   check: svg('<path d="M4.5 12.5l5 5 10-11"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
   drop: svg('<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>'),
-  play: svg('<path d="M8 6.5v11l9-5.5z"/>')
+  play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
+  chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H6l-3 3v-3a8.5 8.5 0 1 1 18-8.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/>'),
+  chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
+  heart: svg('<path d="M12 20s-7.2-4.6-9.2-9.1C1.2 7.5 3.6 4.5 6.7 4.5c1.9 0 3.7 1 4.7 2.6.5.8.6.9.6.9s.1-.1.6-.9c1-1.6 2.8-2.6 4.7-2.6 3.1 0 5.5 3 3.9 6.4C19.2 15.4 12 20 12 20z"/>')
 };
 const icon = (name, cls = '') => { const s = el('span'); s.className = cls; s.innerHTML = ICONS[name] || ICONS.drop; return s.firstChild; };
 
@@ -71,12 +74,11 @@ const defaultState = {
   reminders: { on: false, time: '09:00' },
   merch_notify: [],
   web_user: null,
+  mood_entries: [],
+  tasks: {},
   game: {
     total_points: 0,
     alt_count: 0,
-    plays: 0,
-    best_jump: 0,
-    last_jump: 0,
     scales: { awareness: 0, care: 0, resilience: 0, sensory: 0 },
     badges: {}
   }
@@ -88,12 +90,23 @@ const state = Object.assign({}, defaultState, persisted, {
   mood: Object.assign({}, defaultState.mood, persisted.mood || {}),
   reminders: Object.assign({}, defaultState.reminders, persisted.reminders || {}),
   merch_notify: Array.isArray(persisted.merch_notify) ? persisted.merch_notify : defaultState.merch_notify,
+  mood_entries: Array.isArray(persisted.mood_entries) ? persisted.mood_entries : defaultState.mood_entries,
+  tasks: Object.assign({}, defaultState.tasks, persisted.tasks || {}),
   game: Object.assign({}, defaultState.game, persisted.game || {}, {
     scales: Object.assign({}, defaultState.game.scales, persisted.game?.scales || {}),
     badges: Object.assign({}, defaultState.game.badges, persisted.game?.badges || {})
   })
 });
 const save = () => localStorage.setItem(DB, JSON.stringify(state));
+
+// миграция: старый дневник «одна отметка в день» (state.mood) → лог записей mood_entries
+if (!state.mood_entries.length && Object.keys(state.mood).length) {
+  state.mood_entries = Object.entries(state.mood).map(([k, v]) => {
+    const [y, m, d] = k.split('-').map(Number);
+    return { ts: new Date(y, m - 1, d, 12).getTime(), value: v };
+  });
+  save();
+}
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const TRIAL_MS = (CFG.subscription?.trial_days ?? 7) * 86400000;
@@ -143,7 +156,7 @@ const daySeed = () => Math.floor(Date.now() / 86400000);
 function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const bg = dark ? '#151210' : '#F7F2EA';
+  const bg = dark ? '#15130F' : '#F6F4EF';
   document.querySelector('meta[name=theme-color]').content = bg;
   try { tg && tg.setHeaderColor && tg.setHeaderColor(bg); tg && tg.setBackgroundColor && tg.setBackgroundColor(bg); } catch (e) {}
 }
@@ -158,13 +171,18 @@ const SCALE_DEFS = [
   { key: 'resilience', title: 'Устойчивость', hint: 'Держусь в волне и возвращаюсь', max: 100, tint: 'resilience', emoji: '🌿' },
   { key: 'sensory', title: 'Сенсорный баланс', hint: 'Слышу тело и среду', max: 60, tint: 'sensory', emoji: '🫧' }
 ];
+const MOODS = ['Тяжело', 'Тревожно', 'Ровно', 'Тепло', 'Радостно'];
+const MOOD_EMOJI = ['😞', '😰', '😐', '🙂', '😊'];
 const BADGES = {
   first_practice: { emoji: '💧', title: 'Первая капля', text: 'Сделана первая практика.' },
   alt_kind: { emoji: '🫶', title: 'Мягкий маршрут', text: 'Альтернатива тоже считается.' },
   streak3: { emoji: '🔥', title: 'Тихая серия', text: 'Три дня подряд с практиками.' },
   first_master: { emoji: '🏅', title: 'Умею', text: 'Отмечен первый освоенный навык.' },
-  jump200: { emoji: '⭐', title: 'Высокий прыжок', text: 'В игре набрано 200+ очков.' },
-  scales2: { emoji: '🌈', title: 'Баланс в сборе', text: 'Две шкалы перевалили за 70%.' }
+  scales2: { emoji: '🌈', title: 'Баланс в сборе', text: 'Две шкалы перевалили за 70%.' },
+  first_mood: { emoji: '🌱', title: 'Первый отклик', text: 'Первая отметка эмоции в дневнике.' },
+  mood7: { emoji: '📔', title: 'Честный дневник', text: 'Семь отметок эмоций.' },
+  first_task: { emoji: '📝', title: 'Первая страница', text: 'Заполнено первое текстовое задание.' },
+  task3: { emoji: '🧭', title: 'Моя опора', text: 'Заполнено три текстовых задания.' }
 };
 
 function toast(msg) {
@@ -189,6 +207,15 @@ function confetti() {
   }
   document.body.append(box);
   setTimeout(() => box.remove(), 1500);
+}
+
+function gain(text) {
+  const g = el('div', { class: 'gain' });
+  g.textContent = text;
+  g.style.left = (44 + Math.random() * 12) + '%';
+  g.style.bottom = 'calc(env(safe-area-inset-bottom,0px) + 108px)';
+  document.body.append(g);
+  setTimeout(() => g.remove(), 1250);
 }
 
 function sheet(build) {
@@ -229,13 +256,103 @@ function streakCount() {
 }
 const totalDoneCount = () => Object.values(state.done).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
 const masteredCount = () => Object.values(state.mastered).filter(Boolean).length;
+
+/* ---------- дневник эмоций ---------- */
+const moodEntries = () => [...state.mood_entries].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+const moodEntriesCount = () => state.mood_entries.length;
+// последняя отметка за сегодняшний день (для подсветки чипа)
+const moodTodayValue = () => {
+  const k = todayKey();
+  return [...state.mood_entries].filter(e => todayKey(new Date(e.ts)) === k).sort((a, b) => a.ts - b.ts).pop();
+};
+function addMood(value) {
+  const k = todayKey();
+  const hadToday = state.mood_entries.some(e => todayKey(new Date(e.ts)) === k);
+  state.mood_entries.push({ ts: Date.now(), value });
+  // лёгкий, один раз в день: честность с собой тоже растёт в шкалы
+  if (!hadToday) gainScale(value >= 2 ? 'awareness' : 'care', 1);
+  // храним ~2 года записей
+  const cutoff = Date.now() - 730 * 86400000;
+  state.mood_entries = state.mood_entries.filter(e => (e.ts || 0) >= cutoff);
+  save();
+  reviewBadges(true);
+}
+// ряд для графика: последние `days` дней, для каждого — последняя отметка дня (или null)
+function moodSeries(days = 14) {
+  const out = [];
+  const byDay = {};
+  for (const e of state.mood_entries) {
+    const k = todayKey(new Date(e.ts));
+    if (!byDay[k]) byDay[k] = e.ts;
+    else byDay[k] = Math.max(byDay[k], e.ts);
+  }
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = todayKey(d);
+    const ts = byDay[k];
+    out.push({ day: d, key: k, ts, value: ts ? state.mood_entries.find(e => e.ts === ts)?.value : null });
+  }
+  return out;
+}
+// сколько дней за период вообще имели хотя бы одну отметку
+const moodDaysCount = (days = 14) => moodSeries(days).filter(p => p.value !== null).length;
+
+/* ---------- текстовые задания ---------- */
+const taskAnswersCount = () => Object.values(state.tasks).filter(t => t && (t.text || '').trim()).length;
+const findTask = (id) => (CONTENT?.tasks || []).find(t => t.id === id);
+const taskFilled = (id) => !!(state.tasks[id] && (state.tasks[id].text || '').trim());
+
+/* лёгкий SVG-график настроения: последние `days` дней */
+function moodGraph(days = 14) {
+  const series = moodSeries(days);
+  const W = 300, H = 118, pad = 8;
+  const x = (i) => pad + (W - pad * 2) * (i / (days - 1));
+  const y = (v) => pad + (H - pad * 2) * (1 - v / 4);
+  const pts = series.map((p, i) => ({ x: x(i), y: p.value === null ? null : y(p.value), v: p.value }));
+  const solid = pts.filter(p => p.y !== null);
+  const svg = el('div');
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="mood-svg">`;
+  // сетка и ось «ровно»
+  s += `<line x1="${pad}" y1="${y(2)}" x2="${W - pad}" y2="${y(2)}" class="mood-mid"/>`;
+  if (solid.length > 1) {
+    const path = solid.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const area = `${path} L${solid[solid.length - 1].x.toFixed(1)},${H - pad} L${solid[0].x.toFixed(1)},${H - pad} Z`;
+    s += `<path d="${area}" class="mood-area"/>`;
+    s += `<path d="${path}" class="mood-line"/>`;
+  }
+  for (const p of solid) {
+    const c = p.v >= 3 ? 'hi' : p.v >= 2 ? 'mid' : 'lo';
+    s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" class="mood-dot ${c}"/>`;
+  }
+  s += `</svg>`;
+  svg.innerHTML = s;
+  const labels = el('div', { class: 'mood-axis' },
+    el('span', {}, '😊'), el('span', { class: 'grow' }), el('span', {}, '😞'));
+  const caption = el('p', { class: 'mood-caption' }, solid.length
+    ? `${moodDaysCount(days)} ${plural(moodDaysCount(days), 'день', 'дня', 'дней')} с отметками за ${days} дн. Тяжёлый день — это точка на пути, а не весь путь.`
+    : 'Пока нет записей — отметь эмоцию на главной, и здесь появится твой путь.');
+  return el('div', { class: 'mood-graph' }, svg, labels, caption);
+}
+const LEVEL_TITLES = ['Капелька', 'Ручеёк', 'Озеро', 'Река', 'Море', 'Океан'];
+const plural = (n, one, few, many) => {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+};
 const levelInfo = () => {
   const need = 120;
   const points = state.game.total_points || 0;
   const level = Math.floor(points / need) + 1;
   const inLevel = points % need;
-  return { level, need, points, inLevel, pct: inLevel / need };
+  return { level, need, points, inLevel, pct: inLevel / need, title: LEVEL_TITLES[(level - 1) % LEVEL_TITLES.length], toNext: need - inLevel };
 };
+function addPoints(n) {
+  const before = levelInfo().level;
+  state.game.total_points += n || 0;
+  const after = levelInfo().level;
+  return after > before ? after : 0;
+}
 const scaleDef = (key) => SCALE_DEFS.find(s => s.key === key);
 const scalePct = (key) => {
   const def = scaleDef(key);
@@ -267,8 +384,11 @@ function reviewBadges(announce = false) {
   if ((state.game.alt_count || 0) >= 1) unlockBadge('alt_kind', announce);
   if (streakCount() >= 3) unlockBadge('streak3', announce);
   if (masteredCount() >= 1) unlockBadge('first_master', announce);
-  if ((state.game.best_jump || 0) >= 200) unlockBadge('jump200', announce);
   if (SCALE_DEFS.filter(s => scalePct(s.key) >= .7).length >= 2) unlockBadge('scales2', announce);
+  if (moodEntriesCount() >= 1) unlockBadge('first_mood', announce);
+  if (moodEntriesCount() >= 7) unlockBadge('mood7', announce);
+  if (taskAnswersCount() >= 1) unlockBadge('first_task', announce);
+  if (taskAnswersCount() >= 3) unlockBadge('task3', announce);
 }
 
 function rewardPractice(p, isAlt) {
@@ -288,10 +408,12 @@ function rewardPractice(p, isAlt) {
     if (actual > 0) gained.push(`${def.emoji} +${actual} ${def.title.toLowerCase()}`);
   }
   const pts = Math.round((reward.points || 10) * mult);
-  state.game.total_points += pts;
+  const lvl = addPoints(pts);
   if (isAlt) state.game.alt_count = (state.game.alt_count || 0) + 1;
   save();
   reviewBadges(true);
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  gain('+' + pts + ' XP');
   return { gained, pts };
 }
 
@@ -305,44 +427,36 @@ function rewardMastery(p) {
   };
   const reward = map[p.block.id] || { awareness: 8, points: 18 };
   for (const def of SCALE_DEFS) gainScale(def.key, reward[def.key] || 0);
-  state.game.total_points += reward.points || 18;
+  const lvl = addPoints(reward.points || 18);
   save();
   reviewBadges(true);
-}
-
-function rewardRun(summary) {
-  state.game.plays = (state.game.plays || 0) + 1;
-  state.game.last_jump = summary.score;
-  state.game.best_jump = Math.max(state.game.best_jump || 0, summary.score);
-  state.game.total_points += summary.score + summary.collect.awareness * 6 + summary.collect.care * 6 + summary.collect.resilience * 6 + summary.collect.sensory * 6;
-  gainScale('awareness', summary.collect.awareness * 4);
-  gainScale('care', summary.collect.care * 4);
-  gainScale('resilience', summary.collect.resilience * 4);
-  gainScale('sensory', summary.collect.sensory * 4);
-  save();
-  reviewBadges(true);
-}
-
-function statPill(emoji, value, label) {
-  return el('div', { class: 'streak' }, emoji, el('b', {}, String(value)), label);
+  if (lvl) { confetti(); toast(`Новый уровень ${lvl} — ${LEVEL_TITLES[(lvl - 1) % LEVEL_TITLES.length]}!`); }
+  gain('+' + (reward.points || 18) + ' XP');
 }
 
 function heroPoster({ greet, dateStr }) {
   const lvl = levelInfo();
-  return el('section', { class: 'poster hero-poster' },
-    el('i', { class: 'poster-bubble b1' }),
-    el('i', { class: 'poster-bubble b2' }),
-    el('div', { class: 'poster-copy' },
-      el('div', { class: 'eyebrow' }, greet),
-      el('div', { class: 'brand-script big' }, 'Дибитишка'),
-      el('h2', { class: 'poster-title' }, 'Большие чувства. Маленькие шаги.'),
-      el('p', { class: 'poster-text' }, dateStr),
-      el('div', { class: 'poster-stats' },
-        statPill('🔥', streakCount(), streakCount() === 1 ? 'День подряд' : 'Дня подряд'),
-        statPill('✨', lvl.points, 'Очков роста'),
-        statPill('🫧', lvl.level, 'Уровень'))
+  const streak = streakCount();
+  return el('section', { class: 'hero' },
+    el('div', { class: 'hero-top' },
+      el('div', { class: 'hero-copy' },
+        el('div', { class: 'eyebrow' }, greet + ' · Дибитишка'),
+        el('h1', { class: 'hero-title' }, 'Большие чувства. Маленькие шаги.'),
+        el('p', { class: 'hero-date' }, dateStr)
+      ),
+      el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
     ),
-    el('img', { class: 'poster-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
+    el('div', { class: 'xp' },
+      el('div', { class: 'xp-head' },
+        el('span', { class: 'level-pill' }, `Уровень ${lvl.level} · ${lvl.title}`),
+        el('span', { class: 'xp-nums' }, `${lvl.inLevel} / ${lvl.need} XP`)
+      ),
+      el('div', { class: 'xp-track' }, el('i', { class: 'xp-fill', style: `width:${Math.round(lvl.pct * 100)}%` })),
+      el('div', { class: 'xp-foot' },
+        el('span', {}, `🔥 серия ${streak} ${plural(streak, 'день', 'дня', 'дней')}`),
+        el('span', {}, `✨ ${lvl.points} очков роста`)
+      )
+    )
   );
 }
 
@@ -390,9 +504,9 @@ function levelCard() {
   return el('div', { class: 'level-card' },
     el('div', { class: 'level-orb' }, el('b', {}, String(lvl.level))),
     el('div', { class: 'level-copy' },
-      el('div', { class: 'brand-script' }, 'Уровень Дибитишки'),
-      el('p', {}, `До следующего уровня осталось ${lvl.need - lvl.inLevel || lvl.need} очков. Лучший прыжок: ${state.game.best_jump || 0}.`),
-      el('div', { class: 'level-track' }, el('i', { style: `width:${lvl.pct * 100}%` }))
+      el('div', { class: 'brand-script' }, lvl.title),
+      el('p', {}, `${lvl.inLevel}/${lvl.need} XP · до уровня «${LEVEL_TITLES[lvl.level % LEVEL_TITLES.length]}» ещё ${lvl.toNext}. Всего: ${lvl.points} очков.`),
+      el('div', { class: 'level-track' }, el('i', { style: `width:${Math.round(lvl.pct * 100)}%` }))
     )
   );
 }
@@ -401,7 +515,7 @@ function levelCard() {
 const TABS = [
   { id: 'today', label: 'Сегодня', icon: 'today', route: '' },
   { id: 'skills', label: 'Навыки', icon: 'skills', route: 'skills' },
-  { id: 'game', label: 'Игра', icon: 'play', route: 'game' },
+  { id: 'chat', label: 'Чат', icon: 'chat', route: 'chat' },
   { id: 'workbook', label: 'Тетрадь', icon: 'workbook', route: 'workbook' },
   { id: 'profile', label: 'Профиль', icon: 'profile', route: 'profile' }
 ];
@@ -428,8 +542,8 @@ function screenWelcome() {
   renderTabbar(null);
   const slides = [
     ['hello', 'Привет! Я Дибитишка', 'Я живу рядом, когда чувств слишком много. Будем собирать опору маленькими шагами — без стыда и гонки.'],
-    ['calm', 'Навыки, игра и шкалы роста', 'Внутри — пять блоков практик, мягкие альтернативы, очки осознанности и мини-игра с прыжками за капельками.'],
-    ['proud', 'Медленно — тоже вперёд', 'Я отмечаю прогресс бережно: за практики, честность с собой и даже за моменты, когда выбираешь путь помягче.']
+    ['calm', 'Дневник, задания и чат', 'Отмечай эмоции — соберётся твой график пути. Пиши письменные опоры, а в трудный момент чат напомнит, кто ты и что тебя держит.'],
+    ['proud', 'Медленно — тоже вперёд', 'Прогресс отмечаю бережно: за практики, честность с собой и даже за моменты, когда выбираешь путь помягче.']
   ];
   let i = 0;
   const scr = el('div', { class: 'screen' });
@@ -446,7 +560,7 @@ function screenWelcome() {
   poster.append(el('i', { class: 'poster-bubble b1' }), el('i', { class: 'poster-bubble b2' }), copy, img);
   const draw = () => {
     img.src = `assets/mascot/${slides[i][0]}.png`;
-    eyebrow.textContent = i === 0 ? 'Маленький спутник спокойствия' : i === 1 ? 'Новая версия — крупнее и мягче' : 'Без давления и оценки';
+    eyebrow.textContent = i === 0 ? 'Маленький спутник спокойствия' : i === 1 ? 'Шкала опыта и уровни' : 'Без давления и оценки';
     title.textContent = slides[i][1];
     text.textContent = slides[i][2];
     dots.innerHTML = '';
@@ -500,20 +614,18 @@ function screenToday() {
   const hour = d.getHours();
   const greet = hour < 5 ? 'Тихая ночь' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
   scr.append(heroPoster({ greet, dateStr: prettyDate }));
-  scr.append(levelCard());
-  scr.append(scaleBoard());
-  scr.append(mascot(hour < 12 ? 'hello' : 'calm', hour < 12 ? mline('morning') : mline('evening'), 'Дибитишка рядом'));
 
-  const gameTeaser = el('div', { class: 'card poster-mini soft' },
-    el('div', { class: 'poster-copy wide' },
-      el('p', { class: 'cap' }, 'Мини-игра'),
-      el('h3', {}, 'Прыжок за очками осознанности'),
-      el('p', {}, 'Лови капли осознанности, заботы, устойчивости и сенсорного баланса. Лучший результат тоже идёт в прогресс.'),
-      el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => go('game') }, 'Играть сейчас')
-    ),
-    el('img', { class: 'poster-mascot', src: 'assets/mascot/proud.png', alt: 'Дибитишка' })
-  );
-  scr.append(gameTeaser);
+  // ежедневная цель
+  const doneCount = (state.done[todayKey()] || []).length;
+  const moodDone = state.mood_entries.some(e => todayKey(new Date(e.ts)) === todayKey());
+  scr.append(el('div', { class: 'sect' }, 'Сегодняшняя цель'));
+  scr.append(el('div', { class: 'daily' },
+    ring(doneCount >= 1 ? 1 : doneCount),
+    el('div', { class: 'dm' },
+      el('b', {}, doneCount >= 1 ? 'Практика дня сделана' : '1 практика сегодня'),
+      el('span', {}, moodDone ? 'Настроение отмечено · цель собрана' : 'Отметь ещё настроение — это тоже шаг')
+    )
+  ));
 
   if (!isPremium()) { paywallCard(scr); return scr; }
 
@@ -524,13 +636,12 @@ function screenToday() {
 
   const card = el('div', { class: `card tinted soft t-${todays.block.tint}` });
   card.append(
-    el('p', { class: 'cap' }, `Практика дня · блок «${todays.block.title}»`),
+    el('p', { class: 'cap' }, `блок «${todays.block.title}» · ≈ ${todays.minutes} мин`),
     el('h3', {}, todays.title),
-    el('p', {}, todays.why.slice(0, 126) + '…'),
-    el('p', { class: 'mins' }, `≈ ${todays.minutes} мин ${doneToday ? '· уже отмечено сегодня' : ''}`),
+    el('p', {}, todays.why.slice(0, 120) + '…'),
     el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('p/' + todays.id) }, doneToday ? 'Пройти ещё раз' : 'Начать')
   );
-  scr.append(el('div', { class: 'sect' }, 'Сегодняшний фокус'), card);
+  scr.append(el('div', { class: 'sect' }, 'Практика дня'), card);
 
   scr.append(el('div', { class: 'sect' }, 'Быстрая практика'));
   scr.append(el('div', { class: 'group' }, el('button', { class: 'row', onclick: () => go('p/' + mini.id) },
@@ -539,25 +650,30 @@ function screenToday() {
     el('span', { class: 'chev' }, '›')
   )));
 
-  scr.append(el('div', { class: 'sect' }, 'Как я сейчас'));
-  const moods = ['Тяжело', 'Тревожно', 'Ровно', 'Тепло', 'Радостно'];
+  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
   const mrow = el('div', { class: 'chips' });
-  const cur = state.mood[todayKey()];
-  moods.forEach((m, k) => mrow.append(el('button', {
-    class: 'chip' + (cur === k ? ' on' : ''), onclick: () => {
-      const moodKey = todayKey();
-      const firstCheckInToday = state.mood[moodKey] === undefined;
-      state.mood[moodKey] = k;
-      if (firstCheckInToday) {
-        if (k >= 2) gainScale('awareness', 1); else gainScale('care', 1);
-      }
-      save();
+  const curEntry = moodTodayValue();
+  MOODS.forEach((m, k) => mrow.append(el('button', {
+    class: 'chip' + (curEntry && curEntry.value === k ? ' on' : ''), onclick: () => {
+      addMood(k);
       haptic('light');
-      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : 'Спасибо за честность. Отмечено.');
+      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : k === 1 ? 'Спасибо за честность. Отмечено.' : 'Спасибо за честность. Отмечено.');
       render();
     }
-  }, m)));
+  }, `${MOOD_EMOJI[k]} ${m}`)));
   scr.append(mrow);
+  scr.append(el('p', { class: 'mins', style: 'margin:6px 4px 0' }, 'Можно отмечать каждый раз, когда заходишь. Всё попадает в дневник эмоций.'));
+
+  scr.append(el('div', { class: 'sect' }, 'Чат поддержки'));
+  scr.append(el('div', { class: 'card poster-mini soft' },
+    el('div', { class: 'poster-copy wide' },
+      el('h3', {}, 'Поговорить с Дибитишкой'),
+      el('p', {}, 'Совет в трудный момент и напоминание, кто ты — из твоих же записей.'),
+      el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => go('chat') }, 'Открыть чат')
+    ),
+    el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
+  ));
+
   scr.append(el('p', { class: 'foot' }, CONTENT.meta.credits));
   return scr;
 }
@@ -684,395 +800,229 @@ function markDone(p, isAlt) {
   render();
 }
 
-function screenGame() {
-  renderTabbar('game');
-  const scr = el('div', { class: 'screen' });
-  scr.append(el('h1', { class: 'ltitle' }, 'Мини-игра', el('small', {}, 'Doodle Jump, но с Дибитишкой и очками осознанности')));
-  scr.append(mascot('proud', 'Прыгай выше, собирай капли и наполняй свои шкалы роста.', 'Очки из игры тоже идут в прогресс'));
+/* ---------- чат поддержки ---------- */
+const CHAT_HINTS = ['Мне тяжело', 'Мне тревожно', 'Напомни, кто я', 'Дай совет на сейчас'];
+const CHAT_TIPS = [
+  { text: 'Вдох на 4, выдох на 6. Три раза. Длинный выдох говорит телу: можно расслабиться.' },
+  { text: 'Назови пять вещей, которые видишь, четыре — которые слышишь, три — которые чувствуешь кожей. Это заземление.' },
+  { text: 'Одна маленькая задача на ближайшие пять минут. Не «разобраться со всем», а одно действие.' },
+  { text: 'Холодная вода на запястья или лицо — быстрый способ вернуть тело в «здесь».' },
+  { text: 'Если можно — приглуши свет и звук на пару минут. Меньше входящего — легче внутри.' }
+];
+const clipText = (s, n = 200) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
-  const summary = el('div', { class: 'game-summary' },
-    el('div', { class: 'stat-pill' }, el('i', {}, '⭐'), el('b', {}, String(state.game.best_jump || 0)), el('span', {}, 'Лучший счёт')),
-    el('div', { class: 'stat-pill' }, el('i', {}, '🕹️'), el('b', {}, String(state.game.plays || 0)), el('span', {}, 'Игр сыграно'))
-  );
+// Шаблон-персона и правила. Контекст ниже собирается из данных пользователя
+// и подставляется в слоты ответов. Если захочешь подключить LLM — передай
+// CHAT_PERSONA + buildChatContext() как промпт, ответы унаследуют тон и факты.
+const CHAT_PERSONA = `Ты — Дибитишка, слезинка-хранительница чувств. Говори коротко, тепло, без осуждения и давления. Не даёшь медицинских советов и не заменяешь врача. В трудный момент предлагаешь одну маленькую опору, а не список дел. Напоминаешь человеку, кто он, опираясь только на его собственные записи.`;
 
-  const shell = el('div', { class: 'game-shell' });
-  const stage = el('div', { class: 'game-stage' });
-  const canvas = el('canvas', { class: 'game-canvas' });
-  const hudScore = el('div', { class: 'game-chip' }, '⭐ ', el('strong', {}, '0'));
-  const hudTokens = el('div', { class: 'game-chip' }, '🫧 ', el('strong', {}, '0'));
-  const hud = el('div', { class: 'game-hud' }, hudScore, hudTokens);
-  const overlay = el('div', { class: 'game-overlay' },
-    el('h3', {}, 'Готов(а) к прыжку?'),
-    el('p', {}, 'Держи палец слева или справа. На клавиатуре тоже работают стрелки. Собирай цветные капли: каждая пополняет свою шкалу.'),
-    el('button', { class: 'btn', id: 'game-start-btn' }, 'Старт')
-  );
-  stage.append(canvas, hud, overlay);
+function buildChatContext() {
+  const mastered = allPractices().filter(p => state.mastered[p.id]).map(p => p.master);
+  const filled = (CONTENT?.tasks || []).filter(t => taskFilled(t.id)).map(t => ({
+    title: t.title, emoji: t.emoji, text: (state.tasks[t.id].text || '').trim()
+  }));
+  const byId = (id) => (state.tasks[id] && state.tasks[id].text || '').trim();
+  const last = moodEntries()[0];
+  const lvl = levelInfo();
+  return {
+    name: TG_MODE ? tg.initDataUnsafe.user.first_name : state.web_user?.name || null,
+    mastered, filled,
+    whoami: byId('who_am_i'), anchors: byId('anchors'), crisis: byId('crisis_plan'),
+    streak: streakCount(), level: lvl.level, levelTitle: lvl.title,
+    moodNow: last ? MOODS[last.value] : null,
+    moodCount: moodEntriesCount()
+  };
+}
 
-  const legend = el('div', { class: 'game-legend' },
-    el('div', { class: 'legend-pill' }, el('span', { class: 'legend-dot awareness' }), el('div', {}, el('b', {}, 'Осознанность'), 'Лавандовые капли')),
-    el('div', { class: 'legend-pill' }, el('span', { class: 'legend-dot care' }), el('div', {}, el('b', {}, 'Забота'), 'Розовые капли')),
-    el('div', { class: 'legend-pill' }, el('span', { class: 'legend-dot resilience' }), el('div', {}, el('b', {}, 'Устойчивость'), 'Оливковые капли')),
-    el('div', { class: 'legend-pill' }, el('span', { class: 'legend-dot sensory' }), el('div', {}, el('b', {}, 'Сенсорика'), 'Голубые капли'))
-  );
+function chatReply(text) {
+  const ctx = buildChatContext();
+  const t = (text || '').toLowerCase();
+  const has = (...words) => words.some(w => t.includes(w));
+  const name = ctx.name ? `, ${ctx.name}` : '';
+  let reply;
+  if (has('кто я', 'напомни', 'какой я', 'какая я', 'забыл', 'забыла', 'потерял', 'потеряла', 'кто ты')) {
+    if (ctx.whoami || ctx.anchors || ctx.mastered.length) {
+      const parts = [];
+      if (ctx.whoami) parts.push(`Ты писал(а) о себе: «${clipText(ctx.whoami)}»`);
+      if (ctx.anchors) parts.push(`Твои якоря: «${clipText(ctx.anchors)}»`);
+      if (ctx.mastered.length) parts.push(`Ты умеешь: ${ctx.mastered.slice(0, 4).join(' · ')}`);
+      reply = `Ты — не этот момент${name}. Ты — тот, кто держался ${ctx.streak} ${plural(ctx.streak, 'день', 'дня', 'дней')} подряд и дошёл до уровня «${ctx.levelTitle}».\n\n${parts.join('\n')}\n\nЕсли сейчас тяжело — это волна, а ты глубже любой волны. 💧`;
+    } else {
+      reply = `Пока тут мало записей${name}, но это поправимо. Заполни в профиле задания «Кто я, когда мне хорошо» и «Мои якоря» — и я буду напоминать тебе о тебе твоими же словами.`;
+    }
+  } else if (has('тяжело', 'тревож', 'страш', 'паник', 'плохо', 'накры', 'тошн', 'больно', 'не могу', 'срыв', 'ужас')) {
+    const crisis = ctx.crisis ? `\n\nТы сам(а) оставил(а) себе план на такой случай:\n«${clipText(ctx.crisis)}»` : '';
+    reply = `Слышу${name}. Давай по-маленькому, прямо сейчас:\n\n1. Выдох длиннее вдоха — три раза, медленно.\n2. Назови пять вещей, которые видишь. Ты здесь, а не там, где страшно.\n3. Одно действие на пять минут — и всё. Больше пока не надо.${crisis}\n\nЭто точка на пути, а не весь путь. Я рядом. 💧`;
+  } else if (has('совет', 'что делать', 'помог', 'подскаж', 'не знаю', 'как быть', 'как справ')) {
+    const tip = CHAT_TIPS[Math.floor(Math.random() * CHAT_TIPS.length)];
+    reply = `Совет на сейчас: ${tip.text}\n\nОдин вдох уже считается. Если хочешь глубже — загляни в «Навыки».`;
+  } else if (has('устал', 'устала', 'вымотан', 'сил нет', 'выгор', 'спать', 'отдох', 'утом')) {
+    reply = `Усталость — это сигнал, а не слабость${name}. Тебе можно замедлиться.\n\nСегодня выбери одно маленькое «нет» и одно маленькое «можно отдохнуть». Меньше, чем кажется нужным, — уже достаточно.`;
+  } else if (has('спасибо', 'благодар')) {
+    reply = `Всегда рядом. Заходи, когда будет нужно — и когда будет хорошо, тоже. 💧`;
+  } else if (has('привет', 'здравств', 'добрый', 'хай')) {
+    reply = `Привет${name}! Я тут. Могу подсказать, как пережить трудный момент, напомнить, кто ты, или просто побыть рядом.`;
+  } else {
+    reply = `Я слышу${name}. Я лучше всего умею: подсказать в трудный момент, напомнить, кто ты, и побыть рядом. Попробуй: «Мне тяжело», «Напомни, кто я» или «Дай совет».`;
+  }
+  return reply;
+}
 
-  const controls = el('div', { class: 'game-controls' });
-  const left = el('button', { class: 'ctrl' }, icon('back'), 'Лево');
-  const right = el('button', { class: 'ctrl' }, 'Право', icon('back', '')); right.lastChild.style.transform = 'rotate(180deg)';
-  controls.append(left, right);
+function screenChat() {
+  renderTabbar('chat');
+  const scr = el('div', { class: 'screen chat-screen' });
+  scr.append(el('h1', { class: 'ltitle' }, 'Чат', el('small', {}, 'Поддержка в трудный момент — и напоминание, кто ты')));
+  const feed = el('div', { class: 'chat-feed', id: 'chat-feed' });
+  const inputRow = el('div', { class: 'chat-input' });
+  const input = el('input', { class: 'chat-field', id: 'chat-field', placeholder: 'Напиши, что сейчас…', maxlength: 400 });
+  const sendBtn = el('button', { class: 'chat-send', 'aria-label': 'Отправить' }, icon('send'));
+  inputRow.append(input, sendBtn);
+  const hints = el('div', { class: 'chips chat-hints' }, CHAT_HINTS.map(h => el('button', { class: 'chip', onclick: () => submit(h) }, h)));
+  scr.append(feed, hints, inputRow);
+  scr.append(el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'));
 
-  shell.append(stage, legend, controls, summary);
-  scr.append(shell);
-
-  const cleanup = mountJumpGame({ canvas, overlay, hudScore, hudTokens, left, right, summary });
-  screenCleanup = cleanup;
+  const push = (text, who) => {
+    const m = el('div', { class: 'msg ' + (who === 'me' ? 'me' : 'bot') });
+    const body = el('div', { class: 'bubble' });
+    String(text).split('\n').forEach((line, i) => { if (i) body.append(el('br')); body.append(line); });
+    m.append(body);
+    feed.append(m);
+    feed.scrollTop = feed.scrollHeight;
+  };
+  const submit = (raw) => {
+    const v = (raw ?? input.value).trim();
+    if (!v) return;
+    input.value = '';
+    push(v, 'me');
+    haptic('light');
+    setTimeout(() => push(chatReply(v), 'bot'), 420);
+  };
+  sendBtn.onclick = () => submit();
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => push(chatReply('привет'), 'bot'), 250);
   return scr;
 }
 
-function mountJumpGame({ canvas, overlay, hudScore, hudTokens, left, right, summary }) {
-  const ctx = canvas.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const scoreEl = $('strong', hudScore);
-  const tokenEl = $('strong', hudTokens);
-  let raf = 0;
-  let running = false;
-  let score = 0;
-  let totalTokens = 0;
-  let rewarded = false;
-  let move = 0;
-  let touchLeft = false;
-  let touchRight = false;
-  let size = { w: 360, h: 560 };
-  let player, platforms, items, clouds;
-  let worldTop = 0;
-  let lastTs = 0;
-  let collect = { awareness: 0, care: 0, resilience: 0, sensory: 0 };
-
-  const itemColors = {
-    awareness: '#B7A8D6',
-    care: '#D8A4AF',
-    resilience: '#8D8B4C',
-    sensory: '#89AEE6'
-  };
-  const itemKeys = Object.keys(itemColors);
-
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-    size.w = Math.max(300, Math.round(rect.width || canvas.parentElement.clientWidth || 360));
-    size.h = Math.max(520, Math.round(rect.height || Math.min(window.innerHeight * .74, 600)));
-    canvas.width = size.w * dpr;
-    canvas.height = size.h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+/* ---------- дневник эмоций ---------- */
+function screenDiary() {
+  renderTabbar('profile');
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('profile') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Дневник эмоций')
+  ));
+  const entries = moodEntries();
+  if (!entries.length) {
+    scr.append(el('div', { class: 'card soft' },
+      el('h3', {}, 'Пока пусто'),
+      el('p', {}, 'Отмечай эмоцию на главной каждый раз, когда заходишь. Со временем соберётся твоя история — и станет видно: тяжёлый день это точка на пути, а не весь путь.')));
+    return scr;
   }
-
-  function newPlatform(y) {
-    const w = 84 + Math.random() * 26;
-    const x = 18 + Math.random() * (size.w - w - 36);
-    const hasItem = Math.random() < .65;
-    if (hasItem) {
-      const key = itemKeys[Math.floor(Math.random() * itemKeys.length)];
-      items.push({ x: x + w / 2, y: y - 24, r: 11, key, got: false });
-    }
-    return { x, y, w, h: 12 };
+  const map = new Map(), days = [];
+  for (const e of entries) {
+    const k = todayKey(new Date(e.ts));
+    if (!map.has(k)) { const g = { key: k, items: [] }; map.set(k, g); days.push(g); }
+    map.get(k).items.push(e);
   }
-
-  function resetGame() {
-    resize();
-    rewarded = false;
-    score = 0;
-    totalTokens = 0;
-    worldTop = 0;
-    lastTs = 0;
-    collect = { awareness: 0, care: 0, resilience: 0, sensory: 0 };
-    player = { x: size.w / 2 - 24, y: size.h - 118, w: 48, h: 62, vx: 0, vy: -10 };
-    items = [];
-    platforms = [];
-    clouds = Array.from({ length: 7 }, (_, i) => ({ x: Math.random() * size.w, y: Math.random() * size.h * .55, r: 20 + Math.random() * 24, s: .2 + Math.random() * .3, o: .16 + Math.random() * .18 }));
-    for (let i = 0; i < 11; i++) platforms.push(newPlatform(size.h - 40 - i * 68));
-    overlay.innerHTML = '';
-    overlay.append(
-      el('h3', {}, 'Прыжок пошёл!'),
-      el('p', {}, 'Лови капли и не падай вниз. Очки полетят в шкалы после приземления.'),
-      el('button', { class: 'btn secondary', onclick: stopRun }, 'Остановить игру')
-    );
-    running = true;
-    draw();
-    raf = requestAnimationFrame(loop);
-  }
-
-  function stopRun() {
-    if (!running) return;
-    running = false;
-    cancelAnimationFrame(raf);
-    finishRun();
-  }
-
-  function setMoveFromTouches() {
-    move = touchLeft && !touchRight ? -1 : touchRight && !touchLeft ? 1 : 0;
-  }
-
-  function bindPress(node, dir) {
-    const onDown = (e) => { e.preventDefault(); if (dir < 0) touchLeft = true; else touchRight = true; setMoveFromTouches(); };
-    const onUp = (e) => { e.preventDefault(); if (dir < 0) touchLeft = false; else touchRight = false; setMoveFromTouches(); };
-    node.addEventListener('pointerdown', onDown);
-    node.addEventListener('pointerup', onUp);
-    node.addEventListener('pointercancel', onUp);
-    node.addEventListener('pointerleave', onUp);
-    return () => {
-      node.removeEventListener('pointerdown', onDown);
-      node.removeEventListener('pointerup', onUp);
-      node.removeEventListener('pointercancel', onUp);
-      node.removeEventListener('pointerleave', onUp);
-    };
-  }
-
-  function onKey(e) {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') move = -1;
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') move = 1;
-  }
-  function onKeyUp(e) {
-    if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) move = 0;
-  }
-
-  function update(dt) {
-    player.vx += (move * 6.6 - player.vx) * Math.min(1, dt * 8);
-    player.x += player.vx * dt * 60;
-    player.vy += 0.36 * dt * 60;
-    const prevY = player.y;
-    player.y += player.vy * dt * 60;
-
-    if (player.x > size.w + 24) player.x = -player.w;
-    if (player.x < -player.w - 24) player.x = size.w + 12;
-
-    for (const p of platforms) {
-      const falling = player.vy > 0;
-      const hitX = player.x + player.w > p.x && player.x < p.x + p.w;
-      const prevBottom = prevY + player.h;
-      const curBottom = player.y + player.h;
-      if (falling && hitX && prevBottom <= p.y && curBottom >= p.y) {
-        player.vy = -9.4;
-        haptic('light');
-      }
-    }
-
-    for (const it of items) {
-      if (it.got) continue;
-      const cx = player.x + player.w / 2;
-      const cy = player.y + player.h / 2;
-      const dx = cx - it.x;
-      const dy = cy - it.y;
-      if (Math.hypot(dx, dy) < 28) {
-        it.got = true;
-        collect[it.key] += 1;
-        totalTokens += 1;
-        score += 14;
-        haptic('success');
-      }
-    }
-
-    const ceiling = size.h * .33;
-    if (player.y < ceiling) {
-      const diff = ceiling - player.y;
-      player.y = ceiling;
-      worldTop += diff;
-      score += Math.round(diff * .12);
-      platforms.forEach(p => p.y += diff);
-      items.forEach(it => it.y += diff);
-      clouds.forEach(c => { c.y += diff * c.s * .15; if (c.y > size.h * .56) c.y = -40; });
-    }
-
-    platforms = platforms.filter(p => p.y < size.h + 40);
-    items = items.filter(it => !it.got && it.y < size.h + 30);
-
-    while (platforms.length < 12) {
-      const top = platforms.reduce((m, p) => Math.min(m, p.y), size.h);
-      platforms.push(newPlatform(top - (56 + Math.random() * 34)));
-    }
-
-    if (player.y > size.h + 70) {
-      running = false;
-      finishRun();
-    }
-
-    scoreEl.textContent = String(score);
-    tokenEl.textContent = String(totalTokens);
-  }
-
-  function drawCloud(c) {
-    ctx.fillStyle = `rgba(255,255,255,${c.o})`;
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.7)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(c.x - c.r * .3, c.y - c.r * .35, c.r * .22, 0, Math.PI * 1.4);
-    ctx.stroke();
-  }
-
-  function drawPlayer() {
-    const x = player.x, y = player.y;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.shadowColor = 'rgba(55,90,160,.18)';
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = '#8FC0FF';
-    ctx.beginPath();
-    ctx.moveTo(player.w / 2, 0);
-    ctx.bezierCurveTo(player.w * .92, player.h * .16, player.w, player.h * .46, player.w, player.h * .62);
-    ctx.bezierCurveTo(player.w, player.h * .88, player.w * .8, player.h, player.w / 2, player.h);
-    ctx.bezierCurveTo(player.w * .2, player.h, 0, player.h * .88, 0, player.h * .62);
-    ctx.bezierCurveTo(0, player.h * .46, player.w * .08, player.h * .16, player.w / 2, 0);
-    ctx.fill();
-
-    const g = ctx.createLinearGradient(0, 0, player.w, player.h);
-    g.addColorStop(0, 'rgba(255,255,255,.55)');
-    g.addColorStop(1, 'rgba(255,255,255,.08)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(player.w / 2, 4);
-    ctx.bezierCurveTo(player.w * .85, player.h * .2, player.w * .92, player.h * .5, player.w * .84, player.h * .72);
-    ctx.bezierCurveTo(player.w * .73, player.h * .95, player.w * .26, player.h * .95, player.w * .14, player.h * .72);
-    ctx.bezierCurveTo(player.w * .07, player.h * .5, player.w * .15, player.h * .2, player.w / 2, 4);
-    ctx.fill();
-
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.ellipse(player.w / 2, player.h * .62, player.w * .29, player.h * .23, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#161616';
-    ctx.beginPath(); ctx.arc(player.w * .4, player.h * .58, 4.8, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(player.w * .6, player.h * .58, 4.8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(player.w * .385, player.h * .565, 1.6, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(player.w * .585, player.h * .565, 1.6, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#292929';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(player.w / 2, player.h * .67, 6, .15 * Math.PI, .85 * Math.PI);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(237,173,190,.9)';
-    ctx.beginPath(); ctx.arc(player.w * .28, player.h * .67, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(player.w * .72, player.h * .67, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawItem(it) {
-    const color = itemColors[it.key];
-    ctx.save();
-    ctx.translate(it.x, it.y);
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(0, 0, it.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,.8)';
-    ctx.beginPath(); ctx.arc(-3, -3, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawPlatform(p) {
-    ctx.fillStyle = '#FFFFFF';
-    ctx.strokeStyle = 'rgba(34,34,34,.12)';
-    ctx.lineWidth = 1.2;
-    const r = 9;
-    ctx.beginPath();
-    ctx.moveTo(p.x + r, p.y);
-    ctx.lineTo(p.x + p.w - r, p.y);
-    ctx.quadraticCurveTo(p.x + p.w, p.y, p.x + p.w, p.y + r);
-    ctx.lineTo(p.x + p.w, p.y + p.h - r);
-    ctx.quadraticCurveTo(p.x + p.w, p.y + p.h, p.x + p.w - r, p.y + p.h);
-    ctx.lineTo(p.x + r, p.y + p.h);
-    ctx.quadraticCurveTo(p.x, p.y + p.h, p.x, p.y + p.h - r);
-    ctx.lineTo(p.x, p.y + r);
-    ctx.quadraticCurveTo(p.x, p.y, p.x + r, p.y);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  function draw() {
-    ctx.clearRect(0, 0, size.w, size.h);
-    const bg = ctx.createLinearGradient(0, 0, 0, size.h);
-    bg.addColorStop(0, '#B9DAFF');
-    bg.addColorStop(.54, '#6EB0FF');
-    bg.addColorStop(.55, '#EFF7FF');
-    bg.addColorStop(1, '#FFFFFF');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, size.w, size.h);
-
-    clouds.forEach(drawCloud);
-    platforms.forEach(drawPlatform);
-    items.forEach(drawItem);
-    drawPlayer();
-  }
-
-  function loop(ts) {
-    if (!running) return;
-    if (!lastTs) lastTs = ts;
-    const dt = Math.min(.024, (ts - lastTs) / 1000);
-    lastTs = ts;
-    update(dt);
-    draw();
-    raf = requestAnimationFrame(loop);
-  }
-
-  function finishRun() {
-    cancelAnimationFrame(raf);
-    if (!rewarded) {
-      rewarded = true;
-      rewardRun({ score, collect });
-      summary.innerHTML = '';
-      summary.append(
-        el('div', { class: 'stat-pill' }, el('i', {}, '⭐'), el('b', {}, String(state.game.best_jump || 0)), el('span', {}, 'Лучший счёт')),
-        el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(state.game.total_points || 0)), el('span', {}, 'Очков всего'))
+  for (const g of days) {
+    const d = new Date(g.key + 'T12:00:00');
+    const label = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+    scr.append(el('div', { class: 'sect' }, label[0].toUpperCase() + label.slice(1)));
+    scr.append(el('div', { class: 'group' }, g.items.map(e => {
+      const time = new Date(e.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      return el('div', { class: 'row' },
+        el('span', { class: 'ric c-lavender' }, MOOD_EMOJI[e.value] || '😐'),
+        el('span', { class: 'rmain' }, el('b', {}, MOODS[e.value] || ''), el('span', {}, time)),
+        el('span', { class: 'chev' }, '•')
       );
-    }
-    overlay.innerHTML = '';
-    overlay.append(
-      el('h3', {}, 'Раунд завершён'),
-      el('p', {}, `Счёт: ${score}. Собрано капель: ${totalTokens}. В прогресс пошли все очки и цвета, которые ты поймал(а).`),
-      el('button', { class: 'btn', onclick: () => { haptic('medium'); resetGame(); } }, 'Ещё раз'),
-      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => go('today') }, 'Вернуться на главную')
-    );
-    awaitingRestart = true;
+    })));
   }
+  scr.append(el('p', { class: 'foot' }, 'Каждая точка на этой ленте — запись, а не приговор.'));
+  return scr;
+}
 
-  const unbindLeft = bindPress(left, -1);
-  const unbindRight = bindPress(right, 1);
-  window.addEventListener('keydown', onKey);
-  window.addEventListener('keyup', onKeyUp);
-  window.addEventListener('resize', resize);
-  $('#game-start-btn', overlay)?.addEventListener('click', () => { haptic('medium'); resetGame(); });
-  resize();
-  draw();
+/* ---------- текстовые задания ---------- */
+function screenTasks() {
+  renderTabbar('profile');
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('profile') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Задания')
+  ));
+  scr.append(el('p', { class: 'subtitle' }, 'Пиши своими словами. Записи видны только тебе — и помогают Дибитишке напоминать, кто ты.'));
+  const tasks = CONTENT.tasks || [];
+  const filledN = tasks.filter(t => taskFilled(t.id)).length;
+  scr.append(el('div', { class: 'group' }, tasks.map(t => {
+    const filled = taskFilled(t.id);
+    return el('button', { class: 'row', onclick: () => go('task/' + t.id) },
+      el('span', { class: 'ric c-sky' }, t.emoji),
+      el('span', { class: 'rmain' }, el('b', {}, t.title), el('span', {}, filled ? 'Заполнено' : t.hint)),
+      el('span', { class: 'rval' }, filled ? '✓' : '·')
+    );
+  })));
+  scr.append(el('p', { class: 'foot' }, `Заполнено ${filledN} из ${tasks.length}.`));
+  return scr;
+}
 
-  return () => {
-    running = false;
-    awaitingRestart = false;
-    cancelAnimationFrame(raf);
-    unbindLeft();
-    unbindRight();
-    window.removeEventListener('keydown', onKey);
-    window.removeEventListener('keyup', onKeyUp);
-    window.removeEventListener('resize', resize);
-  };
+function screenTask(id) {
+  renderTabbar(null);
+  const t = findTask(id);
+  const scr = el('div', { class: 'screen sub' });
+  if (!t) {
+    scr.append(el('div', { class: 'navbar' }, el('button', { class: 'back', onclick: () => go('tasks') }, icon('back'), 'Назад')));
+    return scr;
+  }
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('tasks') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Задание')
+  ));
+  scr.append(el('h1', { class: 'ltitle' }, `${t.emoji} ${t.title}`, el('small', {}, t.hint)));
+  scr.append(el('div', { class: 'card soft' }, el('p', {}, t.prompt)));
+  const saved = state.tasks[t.id];
+  const ta = el('textarea', { class: 'task-input', id: 'task-text', placeholder: 'Пиши здесь…' });
+  ta.value = saved ? saved.text : (t.starter || '');
+  scr.append(ta);
+  scr.append(el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
+    const text = ($('#task-text').value || '').trim();
+    const was = taskFilled(t.id);
+    state.tasks[t.id] = { text, ts: Date.now() };
+    save();
+    haptic('success');
+    reviewBadges(true);
+    if (!was && text) confetti();
+    toast(text ? 'Сохранено. Дибитишка запомнил(а).' : 'Очищено.');
+    go('tasks');
+  } }, 'Сохранить'));
+  scr.append(el('p', { class: 'foot' }, 'Можно редактировать сколько угодно — это живой документ, а не экзамен.'));
+  return scr;
 }
 
 function screenWorkbook() {
   renderTabbar('workbook');
   const scr = el('div', { class: 'screen' });
   const w = CONTENT.workbook;
+  const full = isPremium();
   scr.append(el('h1', { class: 'ltitle' }, 'Тетрадь', el('small', {}, w.subtitle)));
   scr.append(mascot('calm', mline('workbook')));
-  scr.append(el('div', { class: 'card soft' },
+  const card = el('div', { class: 'card soft' });
+  card.append(
     el('h3', {}, w.title),
     el('p', {}, w.intro),
-    el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html' }, icon('print'), 'Открыть и распечатать'),
-    el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => go('merch') }, 'Печатная версия и мерч')
-  ));
+    full
+      ? el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html?full=1' }, icon('print'), 'Открыть и распечатать')
+      : el('div', { class: 'preview-note' },
+          el('b', {}, 'Превью: 3 страницы бесплатно'),
+          el('span', {}, 'Полная тетрадь открывается с подпиской.')
+        )
+  );
+  if (!full) {
+    card.append(
+      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => location.href = 'workbook.html' }, 'Смотреть превью'),
+      el('button', { class: 'btn', style: 'margin-top:8px', onclick: openPay }, 'Открыть полную — оформить подписку')
+    );
+  }
+  card.append(el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: () => go('merch') }, 'Печатная версия и мерч'));
+  scr.append(card);
   scr.append(el('div', { class: 'sect' }, 'Что внутри'));
   scr.append(el('div', { class: 'group' }, CONTENT.blocks.map(b =>
     el('div', { class: 'row' },
@@ -1119,8 +1069,34 @@ function screenProfile() {
   const name = TG_MODE ? (tg.initDataUnsafe.user.first_name + (tg.initDataUnsafe.user.last_name ? ' ' + tg.initDataUnsafe.user.last_name : '')) : state.web_user ? state.web_user.name : null;
   scr.append(mascot('hello', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
   scr.append(levelCard());
+  scr.append(el('div', { class: 'stats-grid' },
+    el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(levelInfo().points)), el('span', {}, 'Очков роста')),
+    el('div', { class: 'stat-pill' }, el('i', {}, '🔥'), el('b', {}, String(streakCount())), el('span', {}, plural(streakCount(), 'день', 'дня', 'дней'))),
+    el('div', { class: 'stat-pill' }, el('i', {}, '📔'), el('b', {}, String(moodEntriesCount())), el('span', {}, plural(moodEntriesCount(), 'запись', 'записи', 'записей')))
+  ));
   scr.append(scaleBoard('Твой прогресс'));
   scr.append(badgeBoard());
+
+  scr.append(el('div', { class: 'sect' }, 'График настроения'));
+  const graphCard = el('div', { class: 'card soft' });
+  graphCard.append(
+    el('h3', {}, 'Это лишь точка на пути'),
+    moodGraph(14),
+    el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => go('diary') }, 'Открыть дневник эмоций')
+  );
+  scr.append(graphCard);
+
+  scr.append(el('div', { class: 'sect' }, 'Мои задания'));
+  const tasks = CONTENT.tasks || [];
+  const tasksFilledN = tasks.filter(t => taskFilled(t.id)).length;
+  scr.append(el('div', { class: 'daily' },
+    ring(tasks.length ? tasksFilledN / tasks.length : 0),
+    el('div', { class: 'dm' },
+      el('b', {}, `${tasksFilledN} из ${tasks.length} заполнено`),
+      el('span', {}, 'Антикризисный план, колесо баланса и другие письменные опоры')
+    ),
+    el('button', { class: 'btn ghost', style: 'width:auto;min-height:0;padding:8px 12px;font-size:14px', onclick: () => go('tasks') }, 'Открыть ›')
+  ));
 
   scr.append(el('div', { class: 'sect' }, 'Подписка'));
   const dl = trialDaysLeft();
@@ -1182,13 +1158,37 @@ function screenProfile() {
     el('span', { class: 'chev' }, '›')
   ));
   scr.append(el('div', { class: 'group' }, rows));
-  scr.append(el('p', { class: 'foot' }, 'Дибитишка · v1.1', el('br'), 'app by @stonym0ntana', el('br'), CONTENT.meta.credits));
+
+  scr.append(el('div', { class: 'sect' }, 'Поддержать'));
+  scr.append(el('div', { class: 'group' },
+    el('button', { class: 'row', onclick: () => openLink(CFG.donate_url) },
+      el('span', { class: 'ric c-rose' }, icon('heart')),
+      el('span', { class: 'rmain' }, el('b', {}, 'Донат разработчикам'), el('span', {}, 'Разовое спасибо через Tribute')),
+      el('span', { class: 'chev' }, '›')
+    )
+  ));
+  scr.append(el('p', { class: 'foot' }, 'Дибитишка · v1.2', el('br'), 'app by @stonym0ntana', el('br'), CONTENT.meta.credits));
   return scr;
 }
 
 function openLink(u) {
   if (!u) return;
   try { tg && tg.openTelegramLink && u.startsWith('https://t.me') ? tg.openTelegramLink(u) : window.open(u, '_blank'); } catch (e) { window.open(u, '_blank'); }
+}
+
+async function syncPremium() {
+  if (!API_BASE) return;
+  const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
+  if (!uid) return;
+  try {
+    const r = await fetch(apiUrl('/me?user_id=' + encodeURIComponent(uid)));
+    const j = await r.json();
+    if (j && j.ok) {
+      if (typeof j.premium_until === 'number') state.premium_until = j.premium_until || 0;
+      if (typeof j.trial_start === 'number' && j.trial_start && !state.trial_started_at) state.trial_started_at = j.trial_start;
+      save();
+    }
+  } catch (e) {}
 }
 
 async function syncReminder() {
@@ -1226,6 +1226,7 @@ function authSheet() {
             haptic('success');
             close();
             toast('Вход выполнен. Синхронизация готова.');
+            syncPremium();
             render();
           } else toast('Код не подошёл или устарел.');
         } catch (e) { toast('Не удалось связаться с ботом.'); }
@@ -1248,7 +1249,10 @@ function render() {
     case '': scr = screenToday(); break;
     case 'skills': scr = r.b ? screenBlock(r.b) : screenSkills(); break;
     case 'p': scr = screenPractice(r.b); break;
-    case 'game': scr = screenGame(); break;
+    case 'chat': scr = screenChat(); break;
+    case 'diary': scr = screenDiary(); break;
+    case 'tasks': scr = screenTasks(); break;
+    case 'task': scr = screenTask(r.b); break;
     case 'workbook': scr = screenWorkbook(); break;
     case 'merch': scr = screenMerch(); break;
     case 'profile': scr = screenProfile(); break;
@@ -1274,6 +1278,7 @@ window.addEventListener('hashchange', render);
     state.web_user = null;
     save();
   }
+  syncPremium();
   render();
   setTimeout(() => $('#splash').classList.add('gone'), 1500);
 })();
