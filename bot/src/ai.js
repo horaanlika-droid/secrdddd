@@ -30,7 +30,9 @@ export const aiConfigured = () => !!KEY();
    не нужно: считаем это ошибкой, а вызывающий код отвечает из локальной
    памяти (bot/src/local-reply.js и chatReply в вебе). Те же правила в
    app/js/app.js → looksBusy(). */
-const BUSY_RE = /(слишком много спрашивают|too many requests|rate ?limit|перегруж|overload|temporarily unavailable|временно недоступ|попробу(?:й|уйте)\s+(?:чуть[- ]?)?позже|try again later|quota|квот[аы])/i;
+/* Служебные отписки: говорим о сервисе, а не о человеке. «Ты перегружен(а) делами»
+   под это не подходит — такой ответ живой и его трогать нельзя. */
+const BUSY_RE = /(слишком много[^.!?\n]{0,25}спрашива|too many requests|rate ?limit|лимит запросов|(?:квот|quota)[аы]?|temporarily (?:unavailable|overloaded|at capacity)|experiencing high demand|временно недоступ|(?:модель|сервер|система|сервис)[^.!?\n]{0,15}перегруж|попробу(?:й|уйте)\s+(?:чуть[- ]?)?позже|try again later)/i;
 export function isBusyText(text) {
   const t = String(text || '').trim();
   if (!t) return true;                 // пустой ответ — считаем, что не получилось
