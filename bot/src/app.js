@@ -353,14 +353,29 @@ bot.on('message:text', async (ctx) => {
   await ctx.replyWithChatAction('typing').catch(() => {});
   const typing = setInterval(() => ctx.replyWithChatAction('typing').catch(() => {}), 4000);
   try {
+    // Собираем контекст пользователя для локального ответа на случай ошибки API.
+    // Задания (whoami/anchors/crisis) и прогресс хранятся пока только на вебе;
+    // в ТГ бот попадает только имя и подписка — этого достаточно для тёплого ответа.
+    const userContext = {
+      name: u.name, premium: isPremium(u), todayPractice: todayPractice()?.title,
+      level: null, streak: null, mastered: [],
+      whoami: null, anchors: null, crisis: null
+    };
     const res = await ai.complete({
       userText: text,
       history: u.chat || [],
-      userContext: { name: u.name, premium: isPremium(u), todayPractice: todayPractice()?.title },
+      userContext,
       channel: 'telegram'
     });
     clearInterval(typing);
-    if (!res || res.error) return ctx.reply(ai.fallbackLine(res?.error)).catch(() => {});
+    if (!res || res.error) {
+      // при ошибках API (rate_limit/timeout/сеть) отвечаем из локальной памяти,
+      // а не шаблоном «попробуй позже» — человеку нужен живой ответ прямо сейчас
+      const useLocal = res?.error && res.error !== 'bad_key';
+      const out = useLocal ? ai.localReply(text, userContext) : ai.fallbackLine(res?.error);
+      // не добавляем в историю, чтобы при следующем запросе контекст не ломался
+      return ctx.reply(out).catch(() => {});
+    }
     u.chat = ai.pushHistory(u.chat, 'user', text);
     u.chat = ai.pushHistory(u.chat, 'assistant', res.text);
     save();
@@ -368,7 +383,7 @@ bot.on('message:text', async (ctx) => {
   } catch (e) {
     clearInterval(typing);
     console.error('[ai] tg:', e?.message || e);
-    ctx.reply(ai.fallbackLine('network')).catch(() => {});
+    ctx.reply(ai.localReply(text, { name: u.name })).catch(() => {});
   }
 });
 
@@ -564,7 +579,14 @@ const server = http.createServer(async (req, res) => {
         }
         userContext.todayPractice = todayPractice()?.title;
         const out = await ai.complete({ userText: msg, history: hist, userContext, channel: 'web' });
-        if (!out || out.error) return json(res, 200, { ok: false, ai: true, error: out?.error || 'unknown', text: ai.fallbackLine(out?.error) });
+        if (!out || out.error) {
+          // при перегрузке/таймауте/сети отдаём локальный ответ из памяти пользователя,
+          // а не «меня слишком много спрашивают» — на фроненде есть ещё свой локальный чат,
+          // это запас на случай, если фронт не может сгенерировать сам (например, гость без localStorage)
+          const useLocal = out?.error && out.error !== 'bad_key';
+          const text = useLocal ? ai.localReply(msg, userContext) : ai.fallbackLine(out?.error);
+          return json(res, 200, { ok: false, ai: true, error: out?.error || 'unknown', text, local: !!useLocal });
+        }
         if (user) {
           user.web_chat = ai.pushHistory(user.web_chat, 'user', msg);
           user.web_chat = ai.pushHistory(user.web_chat, 'assistant', out.text);
