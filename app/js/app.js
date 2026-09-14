@@ -802,7 +802,7 @@ function screenSkills() {
   const scr = el('div', { class: 'screen' });
   scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'Пять блоков · проходи в своём порядке')));
   scr.append(el('div', { class: 'mascot-wrap peeking' },
-    el('img', { class: 'mascot', src: 'assets/mascot/star.png', alt: 'Дибитишка' }),
+    el('img', { class: 'mascot', src: 'assets/mascot/book.png', alt: 'Дибитишка' }),
     el('div', { class: 'bubble' }, 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.')
   ));
   for (const b of CONTENT.blocks) {
