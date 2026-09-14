@@ -96,7 +96,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
   if (isPreview) {
     h += `<div class="preview-bar"><b>Это превью — 3 страницы.</b> Полная тетрадь открывается с подпиской. Оформи её в приложении → Тетрадь, или по ссылке на подписку в боте.</div>`;
   }
-  h += `<div class="credit">${esc(C.meta.credits)}<br>app by @stonym0ntana</div></header>`;
+  h += `<div class="credit">${esc(C.meta.credits)}</div></header>`;
   for (const b of blocks) {
     h += `<section><h2><span class="dot" style="background:${tints[b.tint] || '#CCC3D1'}"></span>${esc(b.title)} · ${esc(b.subtitle)}</h2>
       <p class="intro">${esc(b.intro)}</p>`;
@@ -117,7 +117,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
     h += `<section><h2><span class="dot" style="background:#D8A4AF"></span>Дальше — вся тетрадь</h2>
       <p class="intro">Здесь ещё много: остальные практики пяти блоков, фразы, которые держат, кризисный план и сенсорный профиль. Всё это открывается с подпиской.</p>
       <div class="lines short"></div></section>`;
-    h += `<footer>Дибитишка · превью · app by @stonym0ntana</footer>`;
+    h += `<footer>Дибитишка · превью</footer>`;
     document.getElementById('page').innerHTML = h;
     return;
   }
@@ -140,7 +140,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
     <table class="sens"><tr><th>Чувство</th><th>Гипер</th><th>Гипо</th><th>Ровно</th><th>Пример из жизни</th></tr>` +
     W.sensory_senses.map(s => `<tr><td>${esc(s)}</td><td>☐</td><td>☐</td><td>☐</td><td style="min-width:160px"></td></tr>`).join('') +
     `</table><div class="write">${esc(W.write_here)}</div><div class="lines short"></div></section>`;
-  h += `<footer>Дибитишка · напечатано с любовью · app by @stonym0ntana</footer>`;
+  h += `<footer>Дибитишка · напечатано с любовью</footer>`;
   document.getElementById('page').innerHTML = h;
 })();
 </script>

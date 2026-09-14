@@ -509,6 +509,29 @@ function levelCard() {
   );
 }
 
+/* ---------- живой цифровой друг ---------- */
+function bindMascotFriends(root) {
+  root.querySelectorAll('.mascot, .hero-mascot, .onboard-mascot, .poster-mascot').forEach(img => {
+    if (img.dataset.friend) return;
+    img.dataset.friend = 'true';
+    img.setAttribute('role', 'button');
+    img.setAttribute('tabindex', '0');
+    img.setAttribute('aria-label', 'Поприветствовать персонажа');
+    const react = () => {
+      haptic('light');
+      img.classList.remove('mascot-tapped');
+      void img.offsetWidth;
+      img.classList.add('mascot-tapped');
+      const sparks = el('span', { class: 'friend-sparks', 'aria-hidden': 'true' });
+      for (let i = 0; i < 7; i++) sparks.append(el('i', { style: `--i:${i}` }));
+      img.parentElement?.append(sparks);
+      setTimeout(() => { img.classList.remove('mascot-tapped'); sparks.remove(); }, 850);
+    };
+    img.addEventListener('pointerdown', react);
+    img.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); react(); } });
+  });
+}
+
 /* ---------- tabbar ---------- */
 const TABS = [
   { id: 'today', label: 'Сегодня', icon: 'today', route: '' },
@@ -556,8 +579,8 @@ function screenWelcome() {
   const foot = el('div', { class: 'onboard-foot' }, dots, nextBtn);
   const cta = el('button', { class: 'btn onboard-cta hidden' }, 'Начать бесплатную неделю', el('span', { class: 'arr' }, '→'));
   const note = el('p', { class: 'onboard-note' },
-    `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`,
-    el('br'), 'app by @stonym0ntana');
+    `Первая неделя бесплатно, потом ${CFG.subscription?.price_ru || '200 ₽'} ${CFG.subscription?.period || 'в месяц'}.`
+  );
   const finish = () => {
     state.onboarded = true;
     if (!state.trial_started_at) state.trial_started_at = Date.now();
@@ -1168,7 +1191,7 @@ function screenProfile() {
       el('span', { class: 'chev' }, '›')
     )
   ));
-  scr.append(el('p', { class: 'foot' }, 'Дибитишка · v1.2', el('br'), 'app by @stonym0ntana', el('br'), CONTENT.meta.credits));
+  scr.append(el('p', { class: 'foot' }, 'Версия 1.3 · Air · Glow', el('br'), CONTENT.meta.credits));
   return scr;
 }
 
@@ -1260,6 +1283,7 @@ function render() {
     default: scr = screenToday();
   }
   app.append(scr);
+  bindMascotFriends(app);
   window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);

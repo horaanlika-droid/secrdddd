@@ -539,3 +539,38 @@ a{color:inherit}
 @media (prefers-reduced-motion: reduce){
   *{animation:none!important; transition:none!important}
 }
+
+/* ============================================================
+   v5 Air · Glow — aurora, shimmer and a responsive digital friend
+   ============================================================ */
+#bg-blobs::after{content:"";position:absolute;inset:-25%;background:conic-gradient(from 210deg at 50% 45%,transparent 0 18%,rgba(123,181,255,.2) 25%,rgba(218,170,241,.18) 34%,transparent 44% 65%,rgba(147,238,220,.14) 75%,transparent 86%);filter:blur(80px);animation:auroraDrift 22s ease-in-out infinite alternate;will-change:transform}
+#bg-blobs .b1{animation:blobFloat 18s ease-in-out infinite alternate}
+#bg-blobs .b2{animation:blobFloat 24s ease-in-out -7s infinite alternate-reverse}
+@keyframes auroraDrift{to{transform:translate3d(8%,-5%,0) rotate(10deg) scale(1.08)}}
+@keyframes blobFloat{to{transform:translate3d(7vw,5vh,0) scale(1.1)}}
+
+.splash-inner{width:min(82vw,390px);padding:0;gap:22px}
+.splash-art{position:relative;width:100%;aspect-ratio:1;border-radius:clamp(36px,12vw,72px);box-shadow:0 28px 90px rgba(62,113,200,.22),inset 0 1px rgba(255,255,255,.9);animation:breathe 3.8s ease-in-out infinite}
+.splash-dots{margin:0}
+
+.hero{padding-top:34px;margin-top:4px;box-shadow:0 1px 1px rgba(25,61,112,.03),0 22px 60px rgba(81,127,195,.12)}
+.hero-mascot{width:min(72vw,300px);max-height:35dvh;object-fit:contain;cursor:pointer;touch-action:manipulation}
+.onboard-mascot{width:min(78vw,330px);max-height:40dvh;object-fit:contain;cursor:pointer;touch-action:manipulation}
+.hero-mascot-wrap::before,.onboard-mascot-wrap::before{animation:haloBreathe 4.4s ease-in-out infinite}
+@keyframes haloBreathe{50%{transform:scale(1.13);opacity:.72}}
+
+.xp-track,.level-track,.scale-track{position:relative}
+.xp-fill,.level-track i{position:relative;overflow:hidden}
+.xp-fill::after,.level-track i::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 20%,rgba(255,255,255,.82) 46%,transparent 72%);transform:translateX(-130%);animation:xpShimmer 3.2s ease-in-out infinite}
+@keyframes xpShimmer{55%,100%{transform:translateX(150%)}}
+
+.mascot,.poster-mascot{cursor:pointer;touch-action:manipulation}
+.mascot-tapped{animation:friendSpring .72s cubic-bezier(.2,1.5,.35,1)!important}
+@keyframes friendSpring{0%{transform:scale(1)}28%{transform:translateY(-12px) scale(.88,1.13)}55%{transform:translateY(2px) scale(1.1,.93)}100%{transform:none}}
+.friend-sparks{position:absolute;z-index:8;left:50%;top:52%;width:1px;height:1px;pointer-events:none}
+.friend-sparks i{position:absolute;width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 12px #7baeff;animation:sparkOut .8s ease-out forwards;transform:rotate(calc(var(--i)*51deg)) translateY(-18px)}
+.friend-sparks i:nth-child(2n){background:#e5a9ed}.friend-sparks i:nth-child(3n){background:#8ce5dc}
+@keyframes sparkOut{to{opacity:0;transform:rotate(calc(var(--i)*51deg)) translateY(-105px) scale(.2)}}
+
+@media (min-height:780px){.screen{padding-top:calc(env(safe-area-inset-top,0px) + 44px)}.sect{margin-top:48px}.card + .card{margin-top:20px}}
+@media (prefers-reduced-motion:reduce){#bg-blobs::after,.xp-fill::after,.level-track i::after{animation:none!important}.friend-sparks{display:none}}
