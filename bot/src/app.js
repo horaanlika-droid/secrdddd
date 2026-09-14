@@ -7,6 +7,8 @@
      ADMIN_IDS   — id админов через запятую
      TRIBUTE_API — ключ Tribute API (можно вписать после запуска)
    Необязательно: PORT (по умолчанию 8080) — HTTP API + статика веб-версии
+                  OPENAI_API_KEY — «живой» чат Дибитишки (см. src/ai.js);
+                                   пока не задан — чат в локальном режиме
                   NO_POLLING=1 — только HTTP API (смоук-тесты, CI)
    ============================================================ */
 import { Bot, InputFile, InlineKeyboard } from 'grammy';
@@ -18,6 +20,7 @@ import { getDB, save } from './store.js';
 import { removeWhiteBackground } from './bgremove.js';
 import { freePort } from './free-port.js';
 import * as tribute from './tribute.js';
+import * as ai from './ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.TG_TOKEN || '';
@@ -123,6 +126,8 @@ bot.command('help', (ctx) => ctx.reply(
   '/reminder 09:00 — ежедневный пуш (off — выключить)\n' +
   '/pay — оформить подписку (Tribute)\n' +
   '/status — моя подписка и прогресс\n' +
+  '/reset — начать разговор со мной с чистого листа\n' +
+  '\nА ещё можно просто написать мне, что сейчас происходит, — я отвечу.\n' +
   (isAdmin(ctx) ? '\nАдмин: /admin' : '')
 ));
 
@@ -195,7 +200,20 @@ bot.command('admin', (ctx) => {
     '/export — прислать content.json файлом\n' +
     '/import — ответить этим сообщением на файл content.json\n' +
     '/users — статистика\n' +
-    '/grant <id> [дней] — выдать подписку вручную'
+    '/grant <id> [дней] — выдать подписку вручную\n' +
+    '/ai — статус живого чата (OpenAI)'
+  );
+});
+
+bot.command('ai', (ctx) => {
+  if (!isAdmin(ctx)) return;
+  const us = Object.values(db.users);
+  const talked = us.filter(u => (u.chat && u.chat.length) || (u.web_chat && u.web_chat.length)).length;
+  ctx.reply(
+    (ai.aiConfigured()
+      ? `Живой чат: включён ✅\nМодель: ${process.env.OPENAI_MODEL || 'gpt-4o-mini'}\nБаза API: ${process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}`
+      : 'Живой чат: выключен ⏸\nВпиши OPENAI_API_KEY на бот-хосте и перезапусти бота — включится сам.') +
+    `\nПользователей, говоривших со мной: ${talked}`
   );
 });
 
@@ -272,15 +290,58 @@ bot.command('broadcast', (ctx) => {
 });
 
 bot.on(':photo', async (ctx) => await handleDraft(ctx, true));
+bot.command('reset', (ctx) => {
+  const u = getUser(ctx);
+  u.chat = [];
+  save();
+  ctx.reply('Окей, начинаем с чистого листа. Я тут 💧');
+});
+
 bot.on('message:text', async (ctx) => {
   if (db.broadcast?.awaiting && isAdmin(ctx)) return handleDraft(ctx, false);
-  if (!ctx.from.is_bot) {
-    const u = getUser(ctx);
-    save();
+  if (ctx.from.is_bot) return;
+  const u = getUser(ctx);
+  save();
+  const text = ctx.message.text || '';
+  if (text.startsWith('/')) return; // неизвестная команда — молчим, чтобы не спорить с grammY
+  if (!ai.aiConfigured()) {
     const p = todayPractice();
-    ctx.reply(`Я тут. Если хочется практики — /today (${p.title}). Если нужен код для веба — /code.`).catch(() => {});
+    return ctx.reply(`Я тут. Живой разговор со мной включится, когда владелец впишет OPENAI_API_KEY на бот-хосте. А пока: /today — практика дня (${p.title}), /code — код для веба.`).catch(() => {});
+  }
+  await ctx.replyWithChatAction('typing').catch(() => {});
+  const typing = setInterval(() => ctx.replyWithChatAction('typing').catch(() => {}), 4000);
+  try {
+    const res = await ai.complete({
+      userText: text,
+      history: u.chat || [],
+      userContext: { name: u.name, premium: isPremium(u), todayPractice: todayPractice()?.title },
+      channel: 'telegram'
+    });
+    clearInterval(typing);
+    if (!res || res.error) return ctx.reply(ai.fallbackLine(res?.error)).catch(() => {});
+    u.chat = ai.pushHistory(u.chat, 'user', text);
+    u.chat = ai.pushHistory(u.chat, 'assistant', res.text);
+    save();
+    for (const part of splitMessage(res.text)) await ctx.reply(part).catch(() => {});
+  } catch (e) {
+    clearInterval(typing);
+    console.error('[ai] tg:', e?.message || e);
+    ctx.reply(ai.fallbackLine('network')).catch(() => {});
   }
 });
+
+/** Телеграм режет сообщения на 4096 символов — делим по абзацам. */
+function splitMessage(text, limit = 4000) {
+  const out = [];
+  let cur = '';
+  for (const para of String(text).split(/\n{2,}/)) {
+    const piece = para.length > limit ? para.slice(0, limit) : para;
+    if ((cur + '\n\n' + piece).length > limit && cur) { out.push(cur); cur = piece; }
+    else cur = cur ? cur + '\n\n' + piece : piece;
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [String(text).slice(0, limit)];
+}
 
 async function handleDraft(ctx, hasPhoto) {
   if (!db.broadcast?.awaiting || !isAdmin(ctx)) return;
@@ -436,7 +497,43 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
 
   if (req.method === 'GET' && u.pathname === '/health') {
-    return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length });
+    return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length, ai: ai.aiConfigured() });
+  }
+  if (req.method === 'GET' && u.pathname === '/chat/status') {
+    return json(res, 200, { ok: true, ai: ai.aiConfigured() });
+  }
+  if (req.method === 'POST' && u.pathname === '/chat') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 64000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { user_id, text, context, history } = JSON.parse(body || '{}');
+        const msg = String(text || '').trim();
+        if (!msg) return json(res, 400, { ok: false, error: 'empty' });
+        if (!ai.aiConfigured()) return json(res, 200, { ok: false, ai: false, error: 'no_key' });
+        const uid = Number(user_id);
+        const user = uid ? db.users[uid] : null;
+        // историю берём у бота (если пользователь известен), иначе — из тела запроса (гость в вебе)
+        const hist = user ? (user.web_chat || []) : (Array.isArray(history) ? history.slice(-20) : []);
+        const userContext = { ...(context && typeof context === 'object' ? context : {}) };
+        if (user) {
+          if (!userContext.name) userContext.name = user.name;
+          userContext.premium = isPremium(user);
+        }
+        userContext.todayPractice = todayPractice()?.title;
+        const out = await ai.complete({ userText: msg, history: hist, userContext, channel: 'web' });
+        if (!out || out.error) return json(res, 200, { ok: false, ai: true, error: out?.error || 'unknown', text: ai.fallbackLine(out?.error) });
+        if (user) {
+          user.web_chat = ai.pushHistory(user.web_chat, 'user', msg);
+          user.web_chat = ai.pushHistory(user.web_chat, 'assistant', out.text);
+          save();
+        }
+        return json(res, 200, { ok: true, ai: true, text: out.text });
+      } catch (e) {
+        return json(res, 400, { ok: false, error: 'bad_request' });
+      }
+    });
+    return;
   }
   if (req.method === 'GET' && u.pathname === '/content.json') {
     return json(res, 200, C());
@@ -533,7 +630,7 @@ server.on('error', (e) => {
 async function takePort() {
   const freed = await freePort(PORT);
   if (freed.length) console.log(`[port] порт ${PORT} освобождён до старта: pid ${freed.join(', ')}`);
-  server.listen(PORT, '0.0.0.0', () => console.log(`[http] API on :${PORT}`));
+  server.listen(PORT, '0.0.0.0', () => { console.log(`[http] API on :${PORT}`); console.log(ai.aiStatusLine()); });
 }
 
 takePort().catch((e) => {

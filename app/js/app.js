@@ -948,6 +948,33 @@ function chatReply(text) {
   return reply;
 }
 
+/* Живой чат через бота (POST /chat → OpenAI). Пока у бота нет OPENAI_API_KEY
+   или веб не подключён к боту — работает локальный chatReply(). */
+let AI_STATUS = null; // null — не проверяли, true/false — ответ бота
+async function checkAi() {
+  if (!API_BASE) { AI_STATUS = false; return false; }
+  try {
+    const r = await fetch(apiUrl('/chat/status'), { cache: 'no-cache' });
+    const j = await r.json();
+    AI_STATUS = !!(j && j.ai);
+  } catch (e) { AI_STATUS = false; }
+  return AI_STATUS;
+}
+const chatHistoryKey = 'dibi_chat_history';
+const loadChatHistory = () => { try { return JSON.parse(localStorage.getItem(chatHistoryKey) || '[]'); } catch (e) { return []; } };
+const saveChatHistory = (h) => { try { localStorage.setItem(chatHistoryKey, JSON.stringify(h.slice(-20))); } catch (e) {} };
+async function aiReply(text, history) {
+  const uid = TG_MODE ? tg.initDataUnsafe.user.id : state.web_user?.id;
+  const r = await fetch(apiUrl('/chat'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
+  });
+  const j = await r.json();
+  if (j && j.ok && j.text) return { text: j.text, live: true };
+  if (j && j.ai === false) { AI_STATUS = false; return null; }
+  return { text: (j && j.text) || 'Что-то с моим голосом сейчас не так. Попробуй ещё раз через минуту.', live: true, error: true };
+}
+
 function screenChat() {
   renderTabbar('chat');
   const scr = el('div', { class: 'screen chat-screen' });
@@ -965,7 +992,13 @@ function screenChat() {
   inputRow.append(input, sendBtn);
   const hints = el('div', { class: 'chips chat-hints' }, CHAT_HINTS.map(h => el('button', { class: 'chip', onclick: () => submit(h) }, h)));
   scr.append(feed, hints, inputRow);
-  scr.append(el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'));
+  const foot = el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.');
+  scr.append(foot);
+  const setFoot = () => { foot.textContent = AI_STATUS
+    ? 'Живой чат: Дибитишка отвечает сама, помня твои записи. Не заменяет врача и экстренную помощь.'
+    : 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'; };
+  checkAi().then(setFoot);
+  let history = loadChatHistory();
 
   const push = (text, who) => {
     const m = el('div', { class: 'msg ' + (who === 'me' ? 'me' : 'bot') });
@@ -981,7 +1014,20 @@ function screenChat() {
     input.value = '';
     push(v, 'me');
     haptic('light');
-    setTimeout(() => push(chatReply(v), 'bot'), 420);
+    if (!AI_STATUS) { setTimeout(() => push(chatReply(v), 'bot'), 420); return; }
+    const typing = el('div', { class: 'msg bot typing' }, el('div', { class: 'bubble' }, '…'));
+    feed.append(typing); feed.scrollTop = feed.scrollHeight;
+    input.disabled = true; sendBtn.disabled = true;
+    aiReply(v, history).then((r) => {
+      typing.remove();
+      if (!r) { setFoot(); return push(chatReply(v), 'bot'); }
+      push(r.text, 'bot');
+      if (!r.error) {
+        history.push({ role: 'user', content: v }, { role: 'assistant', content: r.text });
+        history = history.slice(-20); saveChatHistory(history);
+      }
+    }).catch(() => { typing.remove(); push(chatReply(v), 'bot'); })
+      .finally(() => { input.disabled = false; sendBtn.disabled = false; input.focus(); });
   };
   sendBtn.onclick = () => submit();
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });

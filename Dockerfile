@@ -2,7 +2,7 @@
 #
 #   сборка:  docker build -t dibitishka-bot .
 #   запуск:  docker run -d --name dibitishka-bot --restart unless-stopped \
-#               -e TG_TOKEN=... -e ADMIN_IDS=... [-e TRIBUTE_API=...] \
+#               -e TG_TOKEN=... -e ADMIN_IDS=... [-e TRIBUTE_API=... -e OPENAI_API_KEY=...] \
 #               -p 8080:8080 -v dibitishka-data:/data dibitishka-bot
 #
 # все три переменные (и PORT при необходимости) — см. docs/SETUP.md
