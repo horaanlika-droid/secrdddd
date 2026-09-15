@@ -5,12 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#EDF3FE">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Дибитишка">
 <meta name="description" content="Дибитишка — навыки осознанности и ДПТ бережно и по шагам">
 <title>Дибитишка</title>
+<!-- v39: иконка на экран «Домой». manifest + apple-touch-icon — то, из чего
+     iOS/Android/десктоп собирают иконку приложения; размеры и maskable-вариант
+     нарезает scripts/build-app-icons.py из assets/mascot/icon.png. -->
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="assets/mascot/icon.png">
-<link rel="apple-touch-icon" href="assets/mascot/icon.png">
-<link rel="stylesheet" href="css/app.css?v=38-orbit-splash">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-180.png">
+<link rel="stylesheet" href="css/app.css?v=39-home-deeds">
 <link rel="preload" as="image" href="assets/brand/splash-mascot-3d.png" fetchpriority="high">
 <link rel="preload" as="image" href="assets/brand/splash-wordmark-hq.png">
 <link rel="stylesheet" href="css/hero-moods.css?v=28">
@@ -50,6 +56,6 @@
 <main id="app" aria-live="polite"></main>
 <div id="sheet-root"></div>
 <nav id="tabbar" hidden></nav>
-<script type="module" src="js/app.js?v=38-orbit-splash"></script>
+<script type="module" src="js/app.js?v=39-home-deeds"></script>
 </body>
 </html>

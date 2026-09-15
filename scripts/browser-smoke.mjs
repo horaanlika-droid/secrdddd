@@ -310,7 +310,7 @@ try {
   check('maximum-tilt test really uses the long saved note',()=>assert(longText.length>2500));
   for(const width of [320,390,768]) {
     await page.setViewportSize({width,height:900});
-    for(const route of ['', 'skills','profile','boards',boardRoute.split('#/')[1]]) {
+    for(const route of ['', 'skills','profile','install','boards',boardRoute.split('#/')[1]]) {
       await page.goto(origin+'/#/'+route,{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});

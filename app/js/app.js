@@ -50,6 +50,9 @@ const ICONS = {
   image: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.5-4.5 3.5 3.5 3-3 4 4"/>'),
   gif: svg('<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M7 10v4M7 12h2.5M12 10v4M15.5 14v-4h3M15.5 12h2.5"/>'),
   note: svg('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 11h6M9 15h4"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  install: svg('<path d="M12 3v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/>'),
   heart: svg('<path d="M12 20s-7.2-4.6-9.2-9.1C1.2 7.5 3.6 4.5 6.7 4.5c1.9 0 3.7 1 4.7 2.6.5.8.6.9.6.9s.1-.1.6-.9c1-1.6 2.8-2.6 4.7-2.6 3.1 0 5.5 3 3.9 6.4C19.2 15.4 12 20 12 20z"/>')
 };
 const icon = (name, cls = '') => { const s = el('span'); s.className = cls; s.innerHTML = ICONS[name] || ICONS.drop; return s.firstChild; };
@@ -84,6 +87,10 @@ const defaultState = {
   web_user: null,
   mood_entries: [],
   tasks: {},
+  deeds: {},                 // v39: дела на сегодня — списки по дням {день: {items, ts}}
+  deeds_rewarded: {},        // v39: дни, когда весь список дел закрыт (конфетти один раз)
+  install_done: false,       // v39: иконку на экран «Домой» поставили — не напоминаем
+  install_snoozed: 0,        // v39: до этого момента подсказку про иконку не показываем
   picked: {},                // примеры из практик, которые человек отметил своими: "practiceId:extrasKey" → [тексты]
   practice_notes: {},        // v28: свой вариант ответа для практик Опоры (affirm, crisis) — текст, который держит
   game: {
@@ -102,6 +109,8 @@ const state = Object.assign({}, defaultState, persisted, {
   merch_notify: Array.isArray(persisted.merch_notify) ? persisted.merch_notify : defaultState.merch_notify,
   mood_entries: Array.isArray(persisted.mood_entries) ? persisted.mood_entries : defaultState.mood_entries,
   tasks: Object.assign({}, defaultState.tasks, persisted.tasks || {}),
+  deeds: Object.assign({}, defaultState.deeds, persisted.deeds || {}),
+  deeds_rewarded: Object.assign({}, defaultState.deeds_rewarded, persisted.deeds_rewarded || {}),
   picked: Object.assign({}, defaultState.picked, persisted.picked || {}),
   practice_notes: Object.assign({}, defaultState.practice_notes, persisted.practice_notes || {}),
   game: Object.assign({}, defaultState.game, persisted.game || {}, {
@@ -130,6 +139,35 @@ if ((persisted.mood_schema || 1) < 2) {
   state.mood_schema = 2;
   save();
 }
+
+/* ---------- v39: иконка на экран «Домой» (установка как приложение) ----------
+   Гайд живёт на отдельном экране #/install (шаги под iPhone/iPad, Android и
+   компьютер), подсказка — карточкой на «Сегодня» и строкой в профиле. Нативный
+   prompt браузера (beforeinstallprompt) перехватываем и показываем кнопку
+   «Установить» прямо в гайде; факт установки запоминаем, чтобы не напоминать
+   лишний раз. В Telegram Mini App иконку ставит сам телефон через браузер —
+   гайд честно начинает с «шага ноль». */
+let deferredInstallPrompt = null;
+const isStandalone = () => {
+  try {
+    return !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      window.navigator.standalone === true;
+  } catch (e) { return false; }
+};
+const UA = navigator.userAgent || '';
+const IS_IOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && (navigator.maxTouchPoints || 0) > 1);
+const IS_ANDROID = /Android/.test(UA) && !/Windows Phone/.test(UA);
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstallPrompt = e; });
+window.addEventListener('appinstalled', () => {
+  state.install_done = true;
+  save();
+  toast('Иконка Дибитишки появилась на экране «Домой» 💧');
+  try { render(); } catch (e) {}
+});
+const installSeen = () => isStandalone() || !!state.install_done;
+/* подсказку показываем, пока не поставили иконку и не попросили отложить */
+const installVisible = () => !installSeen() && Date.now() >= (state.install_snoozed || 0);
+const appUrl = () => location.href.split('#')[0];
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const TRIAL_MS = (CFG.subscription?.trial_days ?? 7) * 86400000;
@@ -503,6 +541,113 @@ const moodDaysCount = (days = 14) => moodSeries(days).filter(p => p.value !== nu
 const taskAnswersCount = () => Object.values(state.tasks).filter(t => t && (t.text || '').trim()).length;
 const findTask = (id) => (CONTENT?.tasks || []).find(t => t.id === id);
 const taskFilled = (id) => !!(state.tasks[id] && (state.tasks[id].text || '').trim());
+
+/* ---------- v39: дела на сегодня ----------
+   Заметка «Дела» на странице «Сегодня»: человек пишет свои дела на день,
+   отмечает сделанные и убирает лишнее. Список одного дня живёт в state.deeds
+   под ключом дня (как дневник и практики), поэтому завтра начинается чистый
+   лист, а вчера никуда не исчезает — незакрытое можно перенести одной кнопкой.
+   Всё локально, как и остальные записи. */
+const deedsToday = () => {
+  const day = state.deeds[todayKey()];
+  return day && Array.isArray(day.items) ? day.items : [];
+};
+const deedsSave = (items) => { state.deeds[todayKey()] = { items, ts: Date.now() }; save(); };
+const deedId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const deedsDoneCount = (items) => items.filter(i => i && i.done).length;
+/* незакрытые дела вчера — их предлагаем перенести в новый день */
+const deedsCarrySource = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const day = state.deeds[todayKey(d)];
+  return day && Array.isArray(day.items) ? day.items.filter(i => i && i.text && !i.done) : [];
+};
+function addDeed(text, refresh) {
+  const clean = (text || '').trim().slice(0, 140);
+  if (!clean) return false;
+  const items = deedsToday();
+  items.push({ id: deedId(), text: clean, done: false, ts: Date.now() });
+  deedsSave(items);
+  haptic('light');
+  refresh();
+  return true;
+}
+function toggleDeed(id, refresh) {
+  const items = deedsToday();
+  const it = items.find(i => i.id === id);
+  if (!it) return;
+  it.done = !it.done;
+  deedsSave(items);
+  haptic(it.done ? 'success' : 'light');
+  // весь список закрыт за день — один раз радуемся конфетти
+  if (it.done && items.length && deedsDoneCount(items) === items.length && !state.deeds_rewarded[todayKey()]) {
+    state.deeds_rewarded[todayKey()] = true;
+    save();
+    confetti();
+    toast('Все дела на сегодня закрыты. Тепло к себе 💧');
+  }
+  refresh();
+}
+function removeDeed(id, refresh) {
+  deedsSave(deedsToday().filter(i => i.id !== id));
+  haptic('light');
+  refresh();
+}
+function deedsCard() {
+  const card = el('div', { class: 'card soft deeds-card' });
+  const count = el('span', { class: 'deeds-count mins', role: 'status' });
+  card.append(el('div', { class: 'deeds-head' }, el('p', { class: 'cap' }, 'Заметка на день'), count));
+  card.append(el('h3', {}, 'Дела'));
+  const list = el('ul', { class: 'deeds-list' });
+  const hint = el('p', { class: 'deeds-empty mins' }, 'Можно одно маленькое дело — этого уже достаточно.');
+  const carry = el('button', { class: 'btn ghost deeds-carry hidden', type: 'button' });
+  const form = el('form', { class: 'deeds-form' });
+  const input = el('input', {
+    class: 'deeds-input', type: 'text', maxlength: 140,
+    placeholder: 'Что хочу сделать сегодня…', 'aria-label': 'Новое дело на сегодня'
+  });
+  form.append(input, el('button', { class: 'deeds-add', type: 'submit', 'aria-label': 'Добавить дело' }, icon('plus')));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (addDeed(input.value, refresh)) input.value = '';
+  });
+  function refresh() {
+    const items = deedsToday();
+    const done = deedsDoneCount(items);
+    count.textContent = items.length ? `${done} из ${items.length} сделано` : '';
+    list.innerHTML = '';
+    for (const it of items) {
+      list.append(el('li', { class: 'deed' + (it.done ? ' done' : '') },
+        el('button', {
+          class: 'deed-check', type: 'button', 'aria-pressed': String(!!it.done),
+          'aria-label': (it.done ? 'Вернуть в работу: ' : 'Отметить сделанным: ') + it.text,
+          onclick: () => toggleDeed(it.id, refresh)
+        }, icon('check')),
+        el('span', { class: 'deed-text' }, it.text),
+        el('button', {
+          class: 'deed-del', type: 'button', 'aria-label': 'Убрать дело: ' + it.text,
+          onclick: () => removeDeed(it.id, refresh)
+        }, icon('x'))
+      ));
+    }
+    hint.classList.toggle('hidden', items.length > 0);
+    const open = items.length ? [] : deedsCarrySource();
+    carry.classList.toggle('hidden', !open.length);
+    if (open.length) carry.textContent = `Перенести ${open.length} ${plural(open.length, 'дело', 'дела', 'дел')} со вчера`;
+  }
+  carry.addEventListener('click', () => {
+    const open = deedsCarrySource();
+    if (!open.length) return;
+    deedsSave(open.map(i => ({ id: deedId(), text: i.text, done: false, ts: Date.now() })));
+    haptic('light');
+    toast('Незакрытые дела со вчера теперь здесь.');
+    refresh();
+  });
+  refresh();
+  card.append(list, hint, carry, form);
+  card.append(el('p', { class: 'mins deeds-foot' }, 'Список живёт только на твоём телефоне. Завтра начнётся новый день — а незакрытое можно перенести одним нажатием.'));
+  return card;
+}
 
 /* лёгкий SVG-график настроения: последние `days` дней */
 function moodGraph(days = 14) {
@@ -961,6 +1106,11 @@ function screenToday() {
     el('p', {}, todays.why.slice(0, 120) + '…'),
     el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('p/' + todays.id) }, doneToday ? 'Пройти ещё раз' : 'Начать')
   );
+  // v39: заметка «Дела» — человек сам пишет свои дела на сегодня.
+  // Стоит между ежедневной целью и практикой дня: сначала своё, потом практика.
+  scr.append(el('div', { class: 'sect' }, 'Дела на сегодня'));
+  scr.append(deedsCard());
+
   scr.append(el('div', { class: 'sect' }, 'Практика дня'), card);
 
   scr.append(el('div', { class: 'sect' }, 'Быстрая практика'));
@@ -989,6 +1139,25 @@ function screenToday() {
     ),
     el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
   ));
+
+  // v39: мягкая подсказка про иконку на экране «Домой». Не давим: карточка
+  // уходит после установки (appinstalled / «Готово») и на неделю после «Не сейчас».
+  if (installVisible()) {
+    scr.append(el('div', { class: 'sect' }, 'Дибитишка рядом'));
+    const teaser = el('div', { class: 'card soft install-teaser' });
+    teaser.append(el('button', { class: 'row', onclick: () => go('install') },
+      el('span', { class: 'ric c-sky' }, icon('house')),
+      el('span', { class: 'rmain' },
+        el('b', {}, 'Иконка на экран «Домой»'),
+        el('span', {}, 'Открывай меня в один тап — без вкладок и Telegram')),
+      el('span', { class: 'chev' }, '›')
+    ));
+    teaser.append(el('button', {
+      class: 'install-later mins', type: 'button',
+      onclick: () => { state.install_snoozed = Date.now() + 7 * 86400000; save(); haptic('light'); render(); }
+    }, 'Не сейчас'));
+    scr.append(teaser);
+  }
 
   scr.append(el('p', { class: 'foot' }, CONTENT.meta.credits));
   return scr;
@@ -1730,6 +1899,129 @@ function screenTask(id) {
   return scr;
 }
 
+/* ---------- v39: гайд «иконка на экран Домой» ----------
+   Шаги зависят от того, где открыто приложение: у Telegram Mini App есть
+   «шаг ноль» (открыть в браузере), у iPhone — Safari и share-лист, у Android —
+   меню Chrome, у компьютера — кнопка установки в адресной строке. Если браузер
+   сам предлагает установку (beforeinstallprompt), даём кнопку в один тап. */
+const INSTALL_STEPS = {
+  ios: {
+    title: 'iPhone и iPad · Safari',
+    steps: [
+      ['Открой Дибитишку в Safari', 'В Chrome и Firefox на iPhone пункта «На экран „Домой“» нет. Если открыл(а) меня там — скопируй ссылку кнопкой ниже и открой в Safari.'],
+      ['Нажми «Поделиться»', 'Это квадратик со стрелкой вверх внизу экрана, в центре панели Safari.'],
+      ['Выбери «На экран „Домой“»', 'Пункт в списке действий share-листа: пролистай его вниз, если не видно сразу.'],
+      ['Нажми «Добавить»', 'Капелька встанет рядом с другими приложениями и будет открываться на весь экран, без вкладок.']
+    ]
+  },
+  android: {
+    title: 'Android · Chrome',
+    steps: [
+      ['Открой Дибитишку в Chrome', 'В других браузерах пункт может называться иначе или прятаться — в Chrome он есть всегда.'],
+      ['Нажми меню «⋮»', 'Три точки справа сверху, рядом с адресной строкой.'],
+      ['Выбери «Установить приложение»', 'Или «Добавить на главный экран» — на старых версиях Chrome пункт называется так.'],
+      ['Подтверди добавление', 'Иконка появится на домашнем экране; приложение откроется без адресной строки.']
+    ]
+  },
+  desktop: {
+    title: 'Компьютер · Chrome или Edge',
+    steps: [
+      ['Открой сайт Дибитишки', 'В Chrome или Edge — они умеют ставить веб-приложения отдельным окном.'],
+      ['Нажми значок установки', 'Он справа в адресной строке: монитор со стрелкой вниз. Или меню «⋮» → «Установить Дибитишку…».'],
+      ['Подтверди в окне установки', 'Приложение откроется в своём окне, с иконкой на панели задач и рабочем столе.']
+    ]
+  }
+};
+
+async function nativeInstall() {
+  const prompt = deferredInstallPrompt;
+  if (!prompt) return;
+  haptic('medium');
+  deferredInstallPrompt = null;
+  try {
+    prompt.prompt();
+    const res = await prompt.userChoice;
+    if (res && res.outcome === 'accepted') { state.install_done = true; save(); }
+  } catch (e) { /* человек закрыл окно установки — просто остаёмся в гайде */ }
+  render();
+}
+
+function screenInstall() {
+  renderTabbar(null);
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Иконка на экран «Домой»')
+  ));
+
+  if (installSeen()) {
+    scr.append(mascot('proud', isStandalone()
+      ? 'Ура! Я живу прямо на твоём экране «Домой».'
+      : 'Похоже, иконка уже стоит. Спасибо, что держишь меня рядом!'));
+    scr.append(el('div', { class: 'card soft' },
+      el('h3', {}, 'Приложение установлено'),
+      el('p', {}, 'Иконка капельки открывается без Telegram и вкладок браузера — на весь экран, как родное приложение. Все записи остаются с тобой, они живут в памяти телефона.'),
+      el('p', { class: 'mins' }, 'Если после обновления браузера иконка пропала — поставь её ещё раз по шагам ниже.')
+    ));
+  } else {
+    scr.append(mascot('hello', 'Поставь меня рядом с остальными приложениями — буду открываться в один тап.'));
+  }
+
+  if (TG_MODE && !isStandalone()) {
+    scr.append(el('div', { class: 'card tinted soft t-sky' },
+      el('p', { class: 'cap' }, 'Шаг ноль · ты в Telegram'),
+      el('h3', {}, 'Сначала открой меня в браузере'),
+      el('p', {}, 'Мини-приложение живёт внутри Telegram, а иконку на экран «Домой» ставит сам телефон — через браузер. Нажми «⋯» справа сверху и выбери «Открыть в браузере» или скопируй ссылку ниже.'),
+      el('p', { class: 'mins' }, 'Записи хранятся в памяти того браузера, где открыто приложение: у веб-версии будет своя копия дневника. Это плата за то, что данные не уходят с телефона.'),
+      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => copyText(appUrl()) }, icon('mail'), 'Скопировать ссылку')
+    ));
+  }
+
+  const osKey = IS_IOS ? 'ios' : IS_ANDROID ? 'android' : 'desktop';
+  const meta = INSTALL_STEPS[osKey];
+  const list = el('ol', { class: 'steps' });
+  meta.steps.forEach(([t, d], i) => list.append(el('li', { class: 'step' },
+    el('span', { class: 'step-n', 'aria-hidden': 'true' }, String(i + 1)),
+    el('div', {}, el('b', {}, t), el('span', {}, d))
+  )));
+  scr.append(el('div', { class: 'card soft' },
+    el('p', { class: 'cap' }, TG_MODE ? 'Дальше — ' + meta.title : meta.title),
+    el('h3', {}, osKey === 'desktop' ? 'Три шага' : 'Четыре шага'),
+    list
+  ));
+
+  const nativeBtn = el('button', { class: 'btn', style: 'margin-top:14px', onclick: nativeInstall }, icon('install'), 'Установить приложение');
+  if (!deferredInstallPrompt || installSeen()) nativeBtn.classList.add('hidden');
+  scr.append(nativeBtn);
+
+  scr.append(el('div', { class: 'group', style: 'margin-top:14px' },
+    el('button', { class: 'row', onclick: () => copyText(appUrl()) },
+      el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('mail')),
+      el('span', { class: 'rmain' }, el('b', {}, 'Скопировать ссылку на приложение'), el('span', {}, 'Чтобы открыть в нужном браузере')),
+      el('span', { class: 'chev' }, '›')
+    ),
+    el('button', { class: 'row', onclick: () => {
+      state.install_done = true;
+      save();
+      haptic('success');
+      toast('Готово! Гайд останется в профиле — на случай, если иконку придётся ставить заново.');
+      go('');
+    } },
+      el('span', { class: 'ric c-grass' }, icon('check')),
+      el('span', { class: 'rmain' }, el('b', {}, 'Готово, иконка на экране'), el('span', {}, 'Убрать подсказку с главной')),
+      el('span', { class: 'chev' }, '›')
+    )
+  ));
+  if (!installSeen()) {
+    scr.append(el('button', {
+      class: 'btn ghost', style: 'margin-top:10px',
+      onclick: () => { state.install_snoozed = Date.now() + 7 * 86400000; save(); haptic('light'); go(''); }
+    }, 'Позже, напомнить через неделю'));
+  }
+  scr.append(el('p', { class: 'foot' }, 'Гайд всегда живёт в профиле: раздел «Связь и вход» → «Иконка на экране „Домой“».'));
+  return scr;
+}
+
 function screenWorkbook() {
   renderTabbar('workbook');
   const scr = el('div', { class: 'screen' });
@@ -1882,6 +2174,13 @@ function screenProfile() {
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
+  rows.push(el('button', { class: 'row', onclick: () => go('install') },
+    el('span', { class: 'ric c-sky' }, icon('house')),
+    el('span', { class: 'rmain' },
+      el('b', {}, 'Иконка на экране «Домой»'),
+      el('span', {}, installSeen() ? 'Приложение установлено' : 'Гайд: iPhone, Android, компьютер')),
+    el('span', { class: 'chev' }, '›')
+  ));
   if (!TG_MODE) rows.push(el('button', { class: 'row', onclick: authSheet },
     el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('lock')),
     el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Аккаунт Telegram подключён' : 'Код придёт в Telegram')),
@@ -2880,6 +3179,7 @@ function render() {
     case 'diary': scr = screenDiary(); break;
     case 'tasks': scr = screenTasks(); break;
     case 'task': scr = screenTask(r.b); break;
+    case 'install': scr = screenInstall(); break;
     case 'workbook': scr = screenWorkbook(); break;
     case 'merch': scr = screenMerch(); break;
     case 'profile': scr = screenProfile(); break;
