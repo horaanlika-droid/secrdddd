@@ -479,16 +479,20 @@ for (const [label, lock, pkg, dir] of [
     ok('app/js/app.js: локальный чат расширен и защищён от немедленного повтора');
   } else bad('app/js/app.js: мало вариантов локального чата', 'нужно минимум 16 советов, 8 подсказок и защита от повтора');
 
-  /* чистый локап на прелоаде: logo-clean.png с фоном, вырезанным в альфу */
+  /* прелоад: постер IMG_1026 + шкала XP, 3.2 с чтобы рассмотреть */
   const pngHasAlpha = (p) => { try { const b = fs.readFileSync(p); return b.subarray(12, 16).toString('latin1') === 'IHDR' && b[24] === 8 && b[25] === 6; } catch { return false; } };
-  const logoClean = path.join(ROOT, 'app', 'assets', 'brand', 'logo-clean.png');
-  if (exists(logoClean) && pngHasAlpha(logoClean) &&
-      /splash-logo-clean[\s\S]{0,120}logo-clean\.png/.test(appIndex) &&
-      /<link rel="preload" as="image" href="assets\/brand\/logo-clean\.png"/.test(appIndex) &&
-      /\.splash-logo-clean\{/.test(css)) {
-    ok('бренд: прелоад на чистом logo-clean.png — фон в альфе, без строки «app by»');
-  } else bad('бренд: прелоад без чистого logo-clean.png с прозрачным фоном',
-             'фон вырезаем так: python3 scripts/cut_bg.py app/assets/brand/logo-clean.png app/assets/brand/logo-clean.png --white --dmax 26 --satmax 38 --adj-rounds 600');
+  const splashArt = path.join(ROOT, 'app', 'assets', 'brand', 'splash-1026.webp');
+  if (exists(splashArt) &&
+      /splash-poster[\s\S]{0,160}splash-1026\.webp/.test(appIndex) &&
+      /<link rel="preload" as="image" href="assets\/brand\/splash-1026\.webp"/.test(appIndex) &&
+      /class="splash-bar"/.test(appIndex) &&
+      /\.splash-bar\{/.test(css) &&
+      /\.splash-poster\{/.test(css) &&
+      /SPLASH_MS\s*=\s*3200/.test(web) &&
+      /--splash-ms:\s*3\.2s/.test(css)) {
+    ok('бренд: прелоад — постер 1026 и шкала загрузки, 3.2 с');
+  } else bad('бренд: прелоад не на постере 1026 со шкалой',
+             'app/index.html: .splash-poster → splash-1026.webp и .splash-bar; CSS --splash-ms 3.2s; JS SPLASH_MS 3200');
 
   /* розовая палитра: первой страницей — логотип 1025, вырезанный без розовой каймы */
   const logo1025 = path.join(ROOT, 'app', 'assets', 'brand', 'logo-1025-clean.png');

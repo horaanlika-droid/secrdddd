@@ -2894,13 +2894,21 @@ window.addEventListener('hashchange', render);
 
 /* ---------- boot ---------- */
 (async function boot() {
+  /* Держать в синхроне с --splash-ms в app.css. 3.2 с — постер 1026 успевают рассмотреть;
+     если контент грузится дольше, заставка ждёт его, шкала к этому моменту уже полная. */
+  const SPLASH_MS = 3200;
+  const splashAt = performance.now();
+  const dismissSplash = (now = false) => {
+    const wait = now ? 0 : Math.max(0, SPLASH_MS - (performance.now() - splashAt));
+    setTimeout(() => $('#splash')?.classList.add('gone'), wait);
+  };
   applyTheme();
   reviewBadges(false);
   try {
     await loadContent();
   } catch (e) {
     $('#app').append(el('div', { class: 'screen' }, el('p', {}, 'Не могу загрузить контент. Проверь связь.')));
-    $('#splash').classList.add('gone');
+    dismissSplash(true);
     return;
   }
   if (TG_MODE) {
@@ -2911,5 +2919,5 @@ window.addEventListener('hashchange', render);
   initBoardSync();
   render();
   if (boardSync?.state.enabled) boardSync.sync();
-  setTimeout(() => $('#splash').classList.add('gone'), 1500);
+  dismissSplash();
 })();
