@@ -598,36 +598,49 @@ for (const [label, lock, pkg, dir] of [
     if (/search/.test(web) && /board-search/.test(css)) ok('доски: поиск по тегам и подписям');
     else bad('доски: нет поиска по тегам');
 
-    /* живой маскот */
-    if (/liveMascot\(/.test(web) && /live-mascot/.test(css)) ok('главная: живой маскот (моргает и улыбается)');
-    else bad('главная: живой маскот пропал');
-    for (const f of ['hero-blink.png', 'hero-smile.png']) {
-      if (exists(path.join(ROOT, 'app', 'assets', 'mascot', f))) ok(`маскот: кадр ${f} на месте`);
-      else bad(`маскот: нет кадра ${f}`, 'пересобери: python3 scripts/build-mascot-frames.py');
-    }
-    /* кадры должны быть тех же размеров, что и опорная поза, иначе анимация «прыгает».
-       Размер PNG читаем из заголовка — без внешних пакетов, чтобы работало и в CI. */
-    const pngSize = (file) => {
-      try {
-        const buf = fs.readFileSync(file);
-        if (buf.toString('ascii', 1, 4) !== 'PNG') return null;
-        return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
-      } catch (e) { return null; }
-    };
-    const sizes = ['hello.png', 'hero-blink.png', 'hero-smile.png']
-      .map((f) => pngSize(path.join(ROOT, 'app', 'assets', 'mascot', f)));
-    if (sizes.every((x) => x && x[0] === sizes[0][0] && x[1] === sizes[0][1])) {
-      ok(`маскот: кадры анимации совпадают по размеру с hello.png (${sizes[0].join('×')})`);
+    /* маскот на главной: лицо = текущее настроение.
+       Проверяем три обещания итерации: тело всегда из hello.png (иначе смена
+       выражения дёргает силуэт), лицо берёт последнюю отметку дневника, а без
+       отметок остаётся спокойное лицо. */
+    if (/liveMascot\(/.test(web) && /live-mascot-face/.test(css)) ok('главная: слой лица поверх неподвижной позы');
+    else bad('главная: пропал слой лица маскота');
+    if (/live-mascot-base/.test(web) && /hello\.png/.test(web) && /object-fit:contain/.test(css)) ok('маскот: тело, руки и капюшон всегда из hello.png');
+    else bad('маскот: тело берётся не из опорной позы', 'силуэт будет дёргаться при смене настроения');
+    if (/const heroMood = /.test(web) && /moodEntries\(\)\[0\]/.test(web)) ok('маскот: лицо — последняя отметка настроения, а не сегодняшняя');
+    else bad('маскот: лицо не связано с отметками дневника', 'нужна heroMood() из последней подтверждённой записи');
+    if (/has-mood/.test(css) && /mood \? `Дибитишка рядом · настроение: \$\{MOODS\[mood - 1\]\}`/.test(web)) ok('маскот: без отметок спокойное лицо, с отметкой — озвучено словами');
+    else bad('маскот: нет состояния без отметок или потерялось описание для скринридера');
+    const moodFrames = readJson(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-moods.json'));
+    if (moodFrames?.frames >= 10 && moodFrames?.neutral === 0 && Array.isArray(moodFrames?.cell) && moodFrames.cell.every((n) => n > 0) &&
+        exists(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-moods.webp')) &&
+        /hero-moods\.webp/.test(css)) {
+      ok(`маскот: ${moodFrames.frames - 1} лиц настроений (ячейки 1..${moodFrames.frames - 1}, 0 — спокойное лицо)`);
     } else {
-      bad('маскот: кадры анимации разного размера с hello.png',
-        'при переключении слоёв персонаж будет дёргаться — пересобери: python3 scripts/build-mascot-frames.py');
+      bad('маскот: нет сетки лиц настроений', 'пересобери: python3 scripts/build-mascot-moods.py');
     }
-
-    const frames = readJson(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-frames.json'));
-    if (frames?.frames >= 17 && exists(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-expressions.webp')) && exists(path.join(ROOT, 'app', 'css', 'hero-animation.css'))) ok('маскот: промежуточные кадры в единой сетке');
-    else bad('маскот: не хватает промежуточных кадров');
-    if (!/liveSway|liveBreathe/.test(css) && /heroExpressionFrames/.test(css)) ok('маскот: только мимика, без покачивания и дыхания');
-    else bad('маскот снова плавает или потерял мимику');
+    /* В ячейке должно быть только лицо: если туда попадёт фигура целиком,
+       она перекроет руки и капюшон из hello.png и «дёрнет» силуэт. */
+    const cellLooksLikeFaceOnly = moodFrames?.cell && moodFrames.cell[0] < 600 && moodFrames.cell[1] < 500 &&
+      Array.isArray(moodFrames.box) && moodFrames.box[0] > 200 && moodFrames.box[3] < 800;
+    if (cellLooksLikeFaceOnly) ok(`маскот: ячейка ${moodFrames.cell.join('×')} — только лицо, без тела`);
+    else bad('маскот: в ячейке сетки не только лицо', 'пересобери: python3 scripts/build-mascot-moods.py');
+    /* Геометрия из генератора и из CSS должна совпадать, иначе лицо «уедет» от позы. */
+    const heroMoodCssBox = (read(path.join(ROOT, 'app', 'css', 'hero-moods.css')).match(/left:([\d.]+)%; top:([\d.]+)%;[\s\S]*?width:([\d.]+)%; height:([\d.]+)%/) || []).slice(1).map(Number);
+    const expectedBox = moodFrames?.box && [moodFrames.box[0] / 10.24, moodFrames.box[1] / 10.24,
+      (moodFrames.box[2] - moodFrames.box[0] + 1) / 10.24, (moodFrames.box[3] - moodFrames.box[1] + 1) / 10.24];
+    if (heroMoodCssBox.length === 4 && expectedBox && heroMoodCssBox.every((n, i) => Math.abs(n - expectedBox[i]) < 0.02)) {
+      ok(`маскот: лицо в позе — left ${heroMoodCssBox[0]}% / top ${heroMoodCssBox[1]}%, ${heroMoodCssBox[2]}×${heroMoodCssBox[3]}%`);
+    } else {
+      bad('маскот: геометрия лица в CSS разошлась с сеткой', 'пересобери: python3 scripts/build-mascot-moods.py');
+    }
+    if (/\.live-mascot-face\{/.test(read(path.join(ROOT, 'app', 'css', 'hero-moods.css'))) &&
+        /css\/hero-moods\.css/.test(read(path.join(ROOT, 'app', 'index.html')))) ok('маскот: геометрия лица подключена к странице');
+    else bad('маскот: app/css/hero-moods.css не подключён', 'пересобери: python3 scripts/build-mascot-moods.py');
+    if (!/heroExpressionFrames|hero-blink|hero-smile|hero-expressions/.test(css + web + read(path.join(ROOT, 'app', 'index.html')))) ok('маскот: старой сетки мимики больше нет');
+    else bad('маскот: осталась старая анимация мимики', 'в этой итерации её заменило лицо = настроение');
+    /* Кнопка чата на главной: в прошлой итерации её звали «Открыть чат». */
+    if (/Пережить вместе/.test(web) && !/Открыть чат/.test(web)) ok('главная: кнопка «Пережить вместе» вместо «Открыть чат»');
+    else bad('главная: кнопка чата называется иначе', 'в этой итерации её переименовали в «Пережить вместе»');
     if (/seaside-keepsakes/.test(web) && exists(path.join(ROOT, 'app', 'assets', 'boards', 'seaside-keepsakes.webp'))) ok('доски: морской коллаж на странице');
     else bad('доски: нет новой иллюстрации');
     const images = read(path.join(ROOT, 'app', 'js', 'image-tools.js'));
