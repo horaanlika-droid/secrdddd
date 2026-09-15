@@ -1381,20 +1381,40 @@ html{color-scheme: light}
 .deeds-carry{width:auto; min-height:0; margin-top:10px; padding:8px 14px; font-size:14px}
 .deeds-foot{margin-top:12px}
 
-/* ---------- v39: гайд «иконка на экран Домой» ----------
-   Тизер на главной — обычная row-карточка плюс тихая строка «Не сейчас»;
-   шаги гайда — нумерованные кружки, чтобы читались как инструкция, а не стена. */
-.install-teaser{padding:0; overflow:hidden}
-.install-teaser .row{display:flex; align-items:center; gap:14px; width:100%;
-  text-align:left; background:none; min-height:70px; padding:14px 18px}
-.install-teaser .row:active{background:var(--card-2)}
-.install-later{display:block; width:100%; padding:10px 0 14px; text-align:center;
-  color:var(--ink-3); background:none}
+/* ---------- v40: подсказка про иконку — маленький всплывающий лист ----------
+   Отдельного экрана-гайда нет: иконка-маскот и заголовок в одну строку,
+   ссылка на мини-приложение с двумя кнопками-значками, ОДНА строка шагов под
+   свою платформу и две тихие кнопки. Подробности живут в <details> — лист
+   не растёт, пока человек сам их не попросил. */
+.sheet-install .grab{margin-bottom:14px}
+.install-head{display:flex; align-items:center; gap:12px}
+.install-ico{flex:none; width:46px; height:46px; border-radius:13px; box-shadow:var(--shadow-sm)}
+.sheet-install .install-head h3{margin:0; font-size:19px; line-height:1.25}
+.sheet-install .mins{color:var(--ink-3); font-size:13.5px; line-height:1.5}
+.sheet-install .install-head .mins{margin-top:3px}
+.install-link{display:flex; align-items:center; gap:8px; margin-top:13px; padding:8px 8px 8px 14px;
+  background:var(--card); border:1px solid var(--line-2); border-radius:15px; box-shadow:var(--shadow-sm)}
+.install-link code{flex:1; min-width:0; font-family:inherit; font-size:14px; font-weight:650;
+  color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.install-copy{flex:none; width:36px; height:36px; border-radius:11px; color:var(--accent-deep);
+  background:var(--accent-soft); display:flex; align-items:center; justify-content:center}
+.install-copy svg{width:17px; height:17px}
+.install-copy:active{transform:scale(.94)}
+.install-step{margin:11px 0 0}
+.install-more{margin-top:13px}
+.install-more summary{cursor:pointer; list-style:none; font-size:14px; font-weight:650; color:var(--accent-deep)}
+.install-more summary::-webkit-details-marker{display:none}
+.install-more[open] summary{margin-bottom:9px}
+.install-more ul{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:8px}
+.install-more li{color:var(--ink-2); font-size:13.5px; line-height:1.55}
+.install-more-link{margin-top:11px; padding:0; background:none; color:var(--ink-3); font-size:13px;
+  text-decoration:underline dotted; text-underline-offset:3px}
+.install-quiet{display:flex; gap:9px; margin-top:15px}
+.install-quiet button{flex:1; min-width:0; padding:12px 0; border-radius:15px; background:var(--card);
+  border:1px solid var(--line-2); color:var(--ink-2); font-size:14.5px; font-weight:650}
+.install-quiet button:first-child{background:var(--accent-soft); border-color:transparent; color:var(--accent-deep)}
+.install-quiet button:active{transform:scale(.985)}
+
+/* Нумерованные списки шагов в практиках: компактная колонка (было частью
+   блока гайда установки — сам гайд в v40 стал листом, раскладка осталась). */
 .steps{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:14px}
-.step{display:flex; gap:12px; align-items:flex-start}
-.step-n{flex:none; width:28px; height:28px; border-radius:50%; background:var(--accent-soft);
-  color:var(--accent-deep); font-weight:800; font-size:14px;
-  display:flex; align-items:center; justify-content:center}
-.step > div{min-width:0}
-.step b{display:block; font-size:15.5px; letter-spacing:-.01em}
-.step > div > span{display:block; color:var(--ink-2); font-size:13.5px; line-height:1.55; margin-top:3px}

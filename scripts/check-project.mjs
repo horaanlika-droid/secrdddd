@@ -770,20 +770,28 @@ for (const [label, lock, pkg, dir] of [
   }
 }
 
-/* ---------- 17. v39: иконка на экран «Домой» и заметка «Дела» ----------
-   Правила из запроса итерации. Смысл каждого:
+/* ---------- 17. v39 → v40: иконка на экран «Домой» и заметка «Дела» ----------
+   Правила из запросов итераций 37 и 38. Смысл каждого:
    — иконка должна быть файлами, а не обещанием: manifest ссылается на
      192/512/maskable, файлы лежат и совпадают с объявленным размером,
-     у apple-touch нет альфы (iOS кладёт прозрачный PNG на чёрную подложку);
-   — гайд учитывает платформу: шаги iPhone, Android и компьютера разные,
-     а в Telegram Mini App есть «шаг ноль» — открыть в браузере;
-   — подсказка не давит: уходит после установки и после «Не сейчас»;
+     у apple-touch нет альфы (iOS кладёт прозрачный PNG на чёрную подложку),
+     а сама картинка — наш маскот, его же подсказка показывает превью;
+   — подсказка незаметная внутри приложения (итерация 38): маленький
+     всплывающий лист, никакого отдельного экрана-гайда и никакой карточки
+     на «Сегодня» — интерфейс она не занимает;
+   — ссылка одна: мини-приложение t.me/<бот>/dibitishka из config.js
+     (с запасной сборкой из bot_username), а не адрес веб-версии;
+   — платформа учитывается: одна строка шагов у iPhone, Android и компьютера
+     своя, а внутри Telegram Mini App честно сказано про «Открыть в браузере»;
+   — подсказка не давит: всплывает один раз, «Позже» откладывает на неделю,
+     после установки молчит, вход навсегда остаётся строкой в профиле;
    — дела живут по дням, как дневник и практики: общий todayKey, вчера
      не исчезает, незакрытое переносится одной кнопкой. */
 {
   const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
   const css = read(path.join(ROOT, 'app', 'css', 'app.css'));
   const appIndex = read(path.join(ROOT, 'app', 'index.html'));
+  const appCfg = read(path.join(ROOT, 'app', 'config.js'));
   const manifest = readJson(path.join(ROOT, 'app', 'manifest.webmanifest'));
   const pngInfo = (p) => {
     try { const b = fs.readFileSync(p); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), color: b[25] }; }
@@ -818,14 +826,30 @@ for (const [label, lock, pkg, dir] of [
   else {
     if (/beforeinstallprompt/.test(web) && /appinstalled/.test(web) && /isStandalone\(/.test(web)) ok('веб ловит beforeinstallprompt/appinstalled и понимает standalone-режим');
     else bad('веб не слушает события установки PWA', 'без beforeinstallprompt кнопка «Установить» не появится, без appinstalled будешь напоминать уже установившим');
-    if (/case 'install'/.test(web) && /function screenInstall\(/.test(web) && /INSTALL_STEPS = \{[\s\S]*ios:[\s\S]*android:[\s\S]*desktop:/.test(web)) ok('гайд #/install: отдельные шаги для iPhone, Android и компьютера');
-    else bad('гайд установки не различает платформы', 'шаги Safari, Chrome и адресной строки разные — общая инструкция врёт');
-    if (/Шаг ноль · ты в Telegram/.test(web) && /Открыть в браузере/.test(web)) ok('гайд: в Telegram Mini App есть «шаг ноль» про браузер');
-    else bad('гайд не объясняет выход из Telegram Mini App', 'внутри Telegram иконку ставит телефон через браузер — без шага ноль человек упрётся в стену');
-    if (/installVisible\(/.test(web) && /install_snoozed/.test(web) && /Не сейчас/.test(web)) ok('подсказка про иконку уходит после установки и после «Не сейчас»');
-    else bad('подсказка про иконку не умеет отстаиваться', 'напоминание без выхода давит сильнее, чем помогает');
-    if (/Иконка на экране «Домой»/.test(web) && /go\('install'\)/.test(web)) ok('профиль держит постоянный вход в гайд');
-    else bad('в профиле нет постоянной ссылки на гайд установки', 'подсказка с главной исчезает — гайд должен оставаться находимым');
+    if (/function installSheet\(/.test(web) && /classList\.add\('sheet-install'\)/.test(web)) ok('подсказка про иконку — маленький всплывающий лист (sheet-install)');
+    else bad('подсказка про иконку не собирается листом', 'итерация 38 просила незаметную всплывашку: sheet() + класс sheet-install, а не новый экран');
+    if (/function screenInstall\(/.test(web) || /INSTALL_STEPS/.test(web) || /case 'install': scr =/.test(web)) bad('вернулся отдельный экран-гайд #/install', 'экран с нумерованными шагами занимал пол-интерфейса: нужен лист с одной строкой под платформу');
+    else ok('отдельного экрана-гайда нет: подсказка не занимает интерфейс');
+    if (/if \(r\.a === 'install'\)/.test(web) && /history\.replaceState\(null, '', '#\/'\)/.test(web)) ok('старая ссылка #/install не ломается — ведёт на «Сегодня» и открывает лист');
+    else bad('старая ссылка #/install никуда не ведёт', 'закладки и прежние сообщения бота с #/install должны открывать подсказку, а не пустой экран');
+    if (/INSTALL_HINT = \{[\s\S]*ios:[\s\S]*android:[\s\S]*desktop:/.test(web)) ok('в подсказке по одной строке шагов для iPhone, Android и компьютера');
+    else bad('подсказка не различает платформы', 'у Safari, Chrome и адресной строки разные меню — общая строка врёт');
+    if (/INSTALL_TG_LINE/.test(web) && /Ты внутри Telegram/.test(web)) ok('в Telegram Mini App подсказка честно объясняет: ярлык ставится снаружи');
+    else bad('подсказка не объясняет, что делать внутри Telegram', 'ярлык на экран «Домой» ставит телефон, а не Telegram — без этой строки человек упрётся в стену');
+    if (/Компьютер · Chrome или Edge/.test(web) && /Создать ярлык/.test(web)) ok('на компьютере подсказка ведёт к ярлыку ссылки, а не к установке веб-версии');
+    else bad('шаг для компьютера обещает не то', 'значок установки в адресной строке ставит веб-версию; для ссылки t.me нужен «Создать ярлык…»');
+    if (/miniappUrl\(/.test(web) && /CFG\.miniapp_url/.test(web) && /MINIAPP_NAME = 'dibitishka'/.test(web)) ok('веб берёт ссылку ярлыка из config.js и умеет собрать её из bot_username');
+    else bad('подсказка не ведёт на мини-приложение Telegram', 'по просьбе итерации 38 ссылка одна: https://t.me/<бот>/dibitishka');
+    if (/miniapp_url:\s*"https:\/\/t\.me\/[A-Za-z0-9_]+\/dibitishka"/.test(appCfg || '')) ok('config.js: miniapp_url — ссылка t.me/<бот>/dibitishka');
+    else bad('в app/config.js нет miniapp_url вида https://t.me/<бот>/dibitishka', 'без него ярлык на экране «Домой» откроет веб-версию, а не мини-приложение в Telegram');
+    if (/install-ico/.test(web) && /assets\/icons\/apple-touch-180\.png/.test(web)) ok('подсказка показывает нашу иконку-маскот (apple-touch 180×180)');
+    else bad('подсказка не показывает иконку', 'человек должен видеть, какой значок встанет на экран «Домой»: у нас это маскот');
+    if (/install_hint_seen/.test(web) && /maybeInstallHint\(/.test(web) && /installVisible\(/.test(web) && /install_snoozed/.test(web)) ok('подсказка всплывает один раз, «Позже» откладывает на неделю, после установки молчит');
+    else bad('подсказка может напоминать снова и снова', 'без install_hint_seen и snooze всплывашка превращается в давление');
+    if (/install-teaser/.test(web) || /install-teaser/.test(css)) bad('карточка-подсказка вернулась на «Сегодня»', 'итерация 38: подсказка не должна занимать место на главной — только всплывать');
+    else ok('на «Сегодня» подсказка место не занимает');
+    if (/Иконка на экране «Домой»/.test(web) && /onclick: \(\) => installSheet\(\)/.test(web)) ok('профиль держит постоянный вход в подсказку (одна строка)');
+    else bad('в профиле нет входа в подсказку', 'всплывашка показывается один раз — дальше человек должен находить её сам');
 
     const deedsAt = web.indexOf("'Дела на сегодня'");
     const practiceAt = web.indexOf("'Практика дня'");
@@ -833,8 +857,12 @@ for (const [label, lock, pkg, dir] of [
     else bad('заметка «Дела» не на своём месте на «Сегодня»', 'порядок: ежедневная цель → дела на сегодня → практика дня');
     if (/deeds: \{\}/.test(web) && /persisted\.deeds/.test(web) && /deedsToday\(/.test(web) && /deedsCarrySource\(/.test(web)) ok('дела хранятся по дням и переносятся со вчера');
     else bad('заметка «Дела» потеряла хранение по дням или перенос', 'state.deeds[todayKey()] — как дневник и практики; вчера не должно исчезать');
-    if (/\.deeds-list\{/.test(css) && /\.deed-check\{/.test(css) && /\.steps\{/.test(css) && /\.step-n\{/.test(css)) ok('стили заметки «Дела» и нумерованных шагов гайда на месте');
-    else bad('нет стилей заметки дел и шагов гайда', 'карточка дел и шаги гайда поедут без своих классов');
+    if (/\.deeds-list\{/.test(css) && /\.deed-check\{/.test(css) && /\.steps\{/.test(css)) ok('стили заметки «Дела» и нумерованных списков практик на месте');
+    else bad('нет стилей заметки дел', 'карточка дел поедет без своих классов');
+    if (/\.sheet-install/.test(css) && /\.install-link\{/.test(css) && /\.install-more\{/.test(css) && /\.install-quiet\{/.test(css)) ok('стили маленького листа-подсказки на месте');
+    else bad('нет стилей листа-подсказки про иконку', 'без .sheet-install/.install-link/.install-quiet лист поедет и снова станет заметным');
+    if (/install-teaser|install-later|\.step-n\{/.test(css)) bad('в стилях остались классы старого экрана-гайда', 'мёртвые .install-teaser/.install-later/.step-n мешают понять, что подсказка теперь лист');
+    else ok('старых классов гайда в стилях не осталось');
   }
 }
 

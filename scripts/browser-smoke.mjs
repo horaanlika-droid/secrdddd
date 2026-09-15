@@ -72,7 +72,10 @@ try {
   page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400&&r.url().startsWith(origin))missing.push(`${r.status()} ${r.url()}`);});
   await page.route('https://telegram.org/**',route=>route.abort());
   await page.route('https://media.tenor.com/**',route=>route.fulfill({contentType:'image/gif',body:Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64'),headers:{'Access-Control-Allow-Origin':'*'}}));
-  await page.addInitScript(()=>{if(!localStorage.getItem('dibitishka.v1'))localStorage.setItem('dibitishka.v1',JSON.stringify({onboarded:true,trial_started_at:Date.now(),mood_schema:2}));});
+  /* v40: install_hint_seen — подсказка про иконку всплывает сама, а этот прогон
+     длинный и кликает по всему приложению: лист перехватывал бы чужие кнопки.
+     Поведение всплывашки проверяется отдельной страницей ниже. */
+  await page.addInitScript(()=>{if(!localStorage.getItem('dibitishka.v1'))localStorage.setItem('dibitishka.v1',JSON.stringify({onboarded:true,trial_started_at:Date.now(),mood_schema:2,install_hint_seen:true}));});
   await page.goto(origin,{waitUntil:'networkidle'});
   await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.locator('.live-mascot').waitFor();
@@ -310,7 +313,8 @@ try {
   check('maximum-tilt test really uses the long saved note',()=>assert(longText.length>2500));
   for(const width of [320,390,768]) {
     await page.setViewportSize({width,height:900});
-    for(const route of ['', 'skills','profile','install','boards',boardRoute.split('#/')[1]]) {
+    // 'install' последним: в v40 это не экран, а лист поверх «Сегодня» — пусть он откроется в самом конце прогона
+    for(const route of ['', 'skills','profile','boards',boardRoute.split('#/')[1],'install']) {
       await page.goto(origin+'/#/'+route,{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});
@@ -333,6 +337,69 @@ try {
     return {pages:pages.length,warnings,bytes:pdf.size};
   });
   check('long poems produce multiple PDF pages and missing media is explicit',()=>{assert(multi.pages>1);assert(multi.warnings.length);assert(multi.bytes>10000);});
+  /* v40: подсказка про иконку на экран «Домой» — маленькая всплывашка со ссылкой
+     на мини-приложение. Проверяем вживую: всплывает сама ровно один раз, много
+     экрана не занимает, на «Сегодня» под неё ничего не стоит, «Позже» откладывает. */
+  const hintPage=await browser.newPage({viewport:{width:390,height:844}});
+  hintPage.on('pageerror',e=>errors.push(e.message));
+  hintPage.on('response',r=>{if(r.status()>=400&&r.url().startsWith(origin))missing.push(`${r.status()} ${r.url()}`);});
+  await hintPage.route('https://telegram.org/**',route=>route.abort());
+  // Состояние не перезаписываем на каждой навигации: «Позже» должно пережить переходы
+  await hintPage.addInitScript(()=>{if(!localStorage.getItem('dibitishka.v1'))localStorage.setItem('dibitishka.v1',JSON.stringify({onboarded:true,trial_started_at:Date.now(),mood_schema:2}));});
+  await hintPage.goto(origin,{waitUntil:'networkidle'});
+  await hintPage.locator('.sheet-install.on').waitFor({timeout:20000});
+  const autoHint=await hintPage.evaluate(()=>{
+    const sh=document.querySelector('.sheet-install');
+    return {seen:JSON.parse(localStorage.getItem('dibitishka.v1')).install_hint_seen===true,
+            link:sh.querySelector('.install-link code').textContent,
+            steps:document.querySelectorAll('.sheet-install .install-step').length,
+            teaser:!!document.querySelector('#app .install-teaser'),
+            clean:!sh.textContent.includes('null'),
+            head:sh.querySelector('.install-head h3').textContent,
+            ico:sh.querySelector('.install-ico').getAttribute('src')};
+  });
+  check('the hint pops up by itself once: mini app link, one platform step, no card on home',()=>{
+    assert.equal(autoHint.seen,true);
+    assert.equal(autoHint.link,'t.me/dbtrobot/dibitishka');
+    assert.equal(autoHint.steps,1);
+    assert.equal(autoHint.teaser,false);
+    assert.equal(autoHint.head,'Иконка на экран «Домой»');
+    assert(autoHint.ico.includes('assets/icons/apple-touch-180.png'));
+    assert.equal(autoHint.clean,true,'no literal «null» text inside the sheet');
+  });
+  await hintPage.getByRole('button',{name:'Позже'}).click();
+  await hintPage.waitForTimeout(500);
+  const snoozed=await hintPage.evaluate(()=>{const st=JSON.parse(localStorage.getItem('dibitishka.v1'));return{days:(st.install_snoozed-Date.now())/86400000,seen:st.install_hint_seen,open:!!document.querySelector('.sheet-install.on')};});
+  check('«Позже» closes the sheet and snoozes the hint for about a week',()=>{
+    assert(snoozed.days>6&&snoozed.days<8,JSON.stringify(snoozed));
+    assert.equal(snoozed.seen,false);
+    assert.equal(snoozed.open,false);
+  });
+  for(const width of [320,390,768]) {
+    await hintPage.setViewportSize({width,height:844});
+    await hintPage.goto(origin+'/#/profile',{waitUntil:'networkidle'});
+    await hintPage.waitForTimeout(700);
+    const popped=await hintPage.locator('.sheet-install').count();
+    await hintPage.getByRole('button',{name:/Иконка на экране «Домой»/}).click();
+    await hintPage.locator('.sheet-install.on').waitFor();
+    await hintPage.waitForTimeout(450);
+    const box=await hintPage.evaluate(()=>{
+      const sh=document.querySelector('.sheet-install'),a=sh.getBoundingClientRect();
+      return {h:Math.round(a.height),vh:innerHeight,scroll:document.documentElement.scrollWidth,vw:innerWidth,
+              fits:a.left>=0&&a.right<=innerWidth+1,details:sh.querySelector('.install-more').open};
+    });
+    check(`${width}px: while snoozed nothing pops up, and the opened hint stays a compact sheet`,()=>{
+      assert.equal(popped,0);
+      assert(box.h<=box.vh*0.6,`the sheet is ${box.h}px of ${box.vh}px — too much interface`);
+      assert(box.scroll<=box.vw,JSON.stringify(box));
+      assert.equal(box.fits,true);
+      assert.equal(box.details,false);
+    });
+    await hintPage.screenshot({path:path.join(ART,`install-hint-${width}.png`)});
+    await hintPage.keyboard.press('Escape'); await hintPage.waitForTimeout(450);
+  }
+  await hintPage.close();
+
   check('browser run has no script errors or missing local assets',()=>{assert.deepEqual(errors,[]);assert.deepEqual(missing,[]);});
   if(failures.length) {
     console.log(`\n✗ упало проверок: ${failures.length} из ${checks+failures.length}`);
