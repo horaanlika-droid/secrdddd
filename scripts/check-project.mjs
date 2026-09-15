@@ -306,14 +306,22 @@ for (const [label, lock, pkg, dir] of [
   if (!files.some((f) => /check|ci|test/i.test(f))) bad('нет CI-workflow с проверками', 'добавь .github/workflows/ci.yml');
   else ok(`CI-workflow на месте: ${files.join(', ')}`);
 
-  // ветки arena/* — временные, триггер на них протухнет сразу после мерджа
+  // ветки arena/* — временные, триггер на них протухнет сразу после мерджа.
+  // Заодно следим за дублем ключа branches: с таким YAML GitHub не запускает
+  // workflow вообще (падает за 0 секунд), а на вид конфиг выглядит рабочим.
   for (const f of files) {
     const text = read(path.join(wf, f));
-    const stale = [...text.matchAll(/branches:\s*\[([^\]]*)\]/g)]
-      .flatMap((m) => m[1].split(',').map((s) => s.trim().replace(/['"]/g, '')))
-      .filter((b) => b && b !== 'main');
+    const listed = [
+      ...[...text.matchAll(/branches:\s*\[([^\]]*)\]/g)].flatMap((m) => m[1].split(',')),
+      ...[...text.matchAll(/branches:\s*\n((?:\s*-\s*\S+\n?)+)/g)].flatMap((m) => m[1].split('\n'))
+    ].map((s) => s.trim().replace(/^-\s*/, '').replace(/['"]/g, '')).filter((b) => b && b !== '[]');
+    const stale = [...new Set(listed.filter((b) => b !== 'main'))];
     if (stale.length) bad(`${f}: триггер на непостоянную ветку`, stale.join(', ') + ' — оставь только main');
     else if (/branches:/.test(text)) ok(`${f}: триггер только на постоянные ветки`);
+    const onBlock = (text.match(/^on:[\s\S]*?\n(?=\S)/m) || [''])[0];
+    const dup = (onBlock.match(/^\s+branches:/gm) || []).length;
+    if (dup > 1) bad(`${f}: в on: два одинаковых ключа branches:`, 'нужен один — иначе workflow падает, не начавшись');
+    else ok(`${f}: on: без дублей ключей`);
   }
 }
 
