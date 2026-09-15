@@ -854,3 +854,228 @@ html{color-scheme: light}
 .chat-note{margin:-4px 4px 0; text-align:center; color:var(--ink-3); font-size:11.5px;
   line-height:1.6; opacity:.85}
 .chat-screen .foot[title]{cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px}
+
+/* ============================================================
+   v25 · эмоции с лицом Дибитишки, живой маскот, папки навыков,
+   доски впечатлений, «Поделиться» и подписка одним блоком
+   ============================================================ */
+
+/* ---------- отметь эмоцию: лица вместо эмодзи ---------- */
+/* Девять состояний: три в ряд, чтобы читалось с одного взгляда.
+   Чипы с лицом НЕ заливаются градиентом при выборе — иначе лицо теряется;
+   выбранное состояние отмечается рамкой, свечением и подписью. */
+.chips.mood-chips{display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:14px}
+.chip.mood{display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:12px 8px 10px; border-radius:22px; text-align:center; background:var(--card)}
+.chip.mood .chip-face{width:52px; height:52px; object-fit:contain;
+  filter:drop-shadow(0 6px 12px rgba(var(--accent-rgb),.18)); transition:transform .22s cubic-bezier(.22,.9,.3,1)}
+.chip.mood .chip-label{font-size:13.5px; font-weight:700; letter-spacing:-.01em; color:var(--ink-2)}
+.chip.mood.on{background:var(--card); border-color:var(--accent);
+  box-shadow:0 12px 26px rgba(var(--accent-rgb),.24), 0 0 0 3px var(--accent-soft)}
+.chip.mood.on .chip-face{transform:scale(1.1) translateY(-2px)}
+.chip.mood.on .chip-label{color:var(--accent-deep)}
+.chip.mood:active .chip-face{transform:scale(.94)}
+.mood-hint{margin:12px 4px 0}
+.mood-axis-face{width:30px; height:30px; object-fit:contain}
+.ric .ric-face{width:36px; height:36px; border-radius:13px; background:#fff; object-fit:contain; padding:1px}
+
+/* ---------- «Поделиться» рядом с заметкой ---------- */
+.share-btn{display:inline-flex; align-items:center; gap:8px; flex:none;
+  padding:11px 18px; border-radius:999px; background:var(--card); border:1px solid var(--line);
+  color:var(--accent-deep); font-weight:700; font-size:14.5px; box-shadow:var(--shadow-sm);
+  transition:transform .14s ease, box-shadow .2s}
+.share-btn svg{width:19px; height:19px}
+.share-btn:active{transform:scale(.96); box-shadow:0 4px 10px rgba(var(--ink-rgb),.12)}
+.mood-note-actions{flex-wrap:wrap}
+.mood-note-actions .mins{flex:1; min-width:150px}
+
+/* ---------- живой маскот на главной ---------- */
+/* Три кадра одной позы лежат стопкой и переключаются по прозрачности:
+   глаза открыты → моргание → улыбка. Плюс мягкое покачивание «с ноги на ногу»
+   и дыхание — всё зациклено, картинка не заканчивается. */
+.hero-mascot-wrap .live-mascot{position:relative; width:min(74vw, 310px); aspect-ratio:1/1; height:auto; max-height:38dvh;
+  cursor:pointer; touch-action:manipulation; transform-origin:50% 94%;
+  filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(var(--accent-rgb),.32));
+  animation:liveSway 6.4s ease-in-out infinite}
+.live-mascot-face{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0}
+.live-mascot-face.is-base{opacity:1; animation:liveBase 6.8s ease-in-out infinite, liveBreathe 4.6s ease-in-out infinite}
+.live-mascot-face.is-blink{animation:liveBlink 6.8s ease-in-out infinite}
+.live-mascot-face.is-smile{animation:liveSmile 6.8s ease-in-out infinite}
+/* окна кадров выровнены по одной длительности — слои не расходятся */
+@keyframes liveBase{0%,84%,93%,100%{opacity:1}86%,91%{opacity:0}}
+@keyframes liveBlink{0%,84%,93%,100%{opacity:0}86%,91%{opacity:1}}
+@keyframes liveSmile{0%,30%,44%,60%,74%,100%{opacity:0}33%,41%,64%,71%{opacity:1}}
+@keyframes liveBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.014)}}
+@keyframes liveSway{0%,100%{transform:rotate(-1.7deg) translateX(-5px)}50%{transform:rotate(1.7deg) translateX(5px)}}
+@media (max-width:420px){ .hero-mascot-wrap .live-mascot{width:290px} }
+
+/* ---------- навыки: милые папки ---------- */
+/* Раздел = папка: свой цвет, своё лицо на обложке, прогресс внутри. */
+.folders{display:flex; flex-direction:column; gap:16px; margin-top:6px}
+.folder{display:flex; align-items:center; gap:16px; width:100%; text-align:left;
+  padding:16px 18px 16px 12px; border-radius:28px; background:var(--card);
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm);
+  transition:transform .14s ease, box-shadow .22s}
+.folder:active{transform:scale(.985)}
+.folder-art{position:relative; flex:none; width:104px; height:104px; display:grid; place-items:center}
+.folder-art img{width:100%; height:100%; object-fit:contain;
+  filter:drop-shadow(0 12px 18px rgba(var(--ink-rgb),.16)); transition:transform .28s cubic-bezier(.22,.9,.3,1)}
+.folder:active .folder-art img{transform:translateY(-3px) rotate(-2.5deg)}
+.folder-badge{position:absolute; right:2px; top:2px; min-width:26px; height:26px; padding:0 7px;
+  border-radius:999px; background:var(--ink); color:#fff; font-size:12.5px; font-weight:800;
+  display:grid; place-items:center; box-shadow:var(--shadow-sm)}
+.folder-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.folder-copy b{font-size:18.5px; font-weight:800; letter-spacing:-.022em; line-height:1.15}
+.folder-sub{font-size:13.5px; color:var(--ink-2); line-height:1.4}
+.folder-track{position:relative; height:8px; border-radius:999px; background:var(--line-2); overflow:hidden; margin-top:9px}
+.folder-track i{display:block; height:100%; border-radius:inherit; width:0;
+  background:linear-gradient(90deg, var(--f-lite, var(--accent-glow)), var(--f, var(--accent)));
+  transition:width .6s cubic-bezier(.22,.9,.3,1)}
+.folder-meta{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-size:12.5px; color:var(--ink-3); margin-top:7px}
+.folder-meta .chev{font-size:16px; color:var(--ink-3)}
+/* цвета папок повторяют палитру приложения (Saphinka: peony/lavender/sky/leaf/grass) */
+.folder.f-peony{--f:#E0A88F; --f-lite:#F3CDBB}
+.folder.f-lavender{--f:#A89CC8; --f-lite:#C9BFE0}
+.folder.f-sky{--f:#7E93C2; --f-lite:#A9BCE0}
+.folder.f-leaf{--f:#B7B279; --f-lite:#D6D2A0}
+.folder.f-grass{--f:#8D8B4C; --f-lite:#B6B478}
+@media (max-width:420px){
+  .folder-art{width:86px; height:86px}
+  .folder-copy b{font-size:17px}
+}
+
+/* ---------- доска впечатлений: тизер на главной ---------- */
+.board-teaser{display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+  padding:16px 18px; border-radius:26px; background:var(--glass-card);
+  border:1px solid rgba(255,255,255,.7); box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%);
+  transition:transform .14s ease}
+.board-teaser:active{transform:scale(.99)}
+.board-teaser-stack{position:relative; flex:none; width:76px; height:66px}
+.board-teaser-stack img{position:absolute; width:46px; height:46px; object-fit:contain;
+  border-radius:15px; background:#fff; box-shadow:0 8px 16px rgba(var(--ink-rgb),.16)}
+.board-teaser-stack img:nth-child(1){left:0; top:14px; transform:rotate(-9deg)}
+.board-teaser-stack img:nth-child(2){left:15px; top:2px; z-index:2}
+.board-teaser-stack img:nth-child(3){left:30px; top:16px; transform:rotate(9deg)}
+.board-teaser-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px}
+.board-teaser-copy b{font-size:16px; font-weight:800; letter-spacing:-.015em}
+.board-teaser-copy span{font-size:13px; color:var(--ink-2); line-height:1.45}
+.board-teaser .chev{color:var(--ink-3); font-size:18px; flex:none}
+
+/* ---------- доски: список ---------- */
+.board-search,.board-input{width:100%; font:inherit; font-size:15.5px; color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:16px;
+  padding:13px 15px; outline:none; box-shadow:var(--shadow-sm); margin-top:14px}
+.board-search:focus,.board-input:focus{border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft)}
+.board-search::placeholder,.board-input::placeholder{color:var(--ink-3)}
+.found-list{margin-top:12px; border-radius:22px; overflow:hidden; background:var(--card);
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm)}
+.found-list .row{display:flex; align-items:center; gap:14px; width:100%; text-align:left; padding:14px 18px; background:none}
+.found-list .row + .row{border-top:1px solid var(--line-2)}
+.found-list .row .ric{width:40px; height:40px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.found-list .row .ric svg{width:20px; height:20px}
+.found-list .row .rmain{flex:1; min-width:0}
+.found-list .row .rmain b{display:block; font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.found-list .row .rmain span{display:block; font-size:12.5px; color:var(--ink-2); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.found-list .mins{padding:14px 18px; margin:0}
+
+.boards-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:420px){ .boards-grid{grid-template-columns:1fr} }
+.board-cover{position:relative; height:206px; padding:13px; border-radius:28px; text-align:left;
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm); overflow:hidden;
+  display:flex; flex-direction:column; justify-content:space-between; transition:transform .15s ease}
+.board-cover:active{transform:scale(.985)}
+.cover-thumbs{display:flex; gap:8px; align-items:flex-start; min-height:118px}
+.cover-thumbs img{width:62px; height:80px; object-fit:cover; border-radius:12px;
+  border:3px solid #fff; background:#fff; box-shadow:0 8px 18px rgba(var(--ink-rgb),.2)}
+.cover-thumbs img:nth-child(1){transform:rotate(-3.5deg)}
+.cover-thumbs img:nth-child(2){transform:rotate(2.5deg) translateY(7px)}
+.cover-thumbs img:nth-child(3){transform:rotate(5deg) translateY(-2px)}
+.cover-quote{display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;
+  font-size:13px; line-height:1.5; color:var(--ink-2);
+  background:rgba(255,255,255,.82); border-radius:16px; padding:11px 13px}
+.cover-foot{display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+  background:rgba(255,255,255,.88); border-radius:16px; padding:10px 13px;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px)}
+.cover-foot b{font-size:15px; font-weight:800; letter-spacing:-.015em}
+.cover-foot span{font-size:12px; color:var(--ink-3); flex:none}
+
+/* ---------- доски: сама доска и плитки ---------- */
+.board-head{display:flex; align-items:center; gap:14px; margin:6px 0 0}
+.board-head-copy{flex:1; min-width:0}
+.board-head-copy b{display:block; font-size:26px; font-weight:800; letter-spacing:-.028em; line-height:1.15}
+.board-head-copy span{display:block; font-size:13.5px; color:var(--ink-2); margin-top:4px}
+.icon-btn{flex:none; width:44px; height:44px; border-radius:16px; background:var(--card);
+  border:1px solid var(--line-2); color:var(--ink-2); font-size:22px; line-height:1;
+  display:grid; place-items:center; box-shadow:var(--shadow-sm)}
+.icon-btn:active{transform:scale(.95)}
+.board-canvas{position:relative; margin-top:14px; padding:16px 14px 18px; border-radius:28px;
+  border:1px solid rgba(255,255,255,.75); box-shadow:var(--shadow-sm);
+  column-count:2; column-gap:12px; min-height:300px; overflow:hidden}
+@media (min-width:520px){ .board-canvas{column-count:3} }
+.board-empty{column-span:all; display:flex; flex-direction:column; gap:6px; align-items:center;
+  text-align:center; padding:44px 18px; color:var(--ink-2)}
+.board-empty b{font-size:16px; color:var(--ink)}
+.board-empty span{font-size:13.5px; line-height:1.5; max-width:34ch}
+.tile{position:relative; break-inside:avoid; -webkit-column-break-inside:avoid; margin:0 0 12px; border-radius:18px;
+  background:#fff; border:1px solid rgba(255,255,255,.9); overflow:hidden; cursor:pointer;
+  box-shadow:0 10px 22px rgba(var(--ink-rgb),.14);
+  transform:rotate(var(--rot,0deg)); transition:transform .2s ease, box-shadow .2s}
+.tile:active{box-shadow:0 6px 14px rgba(var(--ink-rgb),.16)}
+.tile-media{display:block; width:100%; height:auto; object-fit:cover; background:var(--line-2)}
+.tile.size-s .tile-media{aspect-ratio:1/1}
+.tile.size-m .tile-media{aspect-ratio:4/5}
+.tile.size-l .tile-media{aspect-ratio:3/4}
+.tile-note{margin:0; padding:15px 14px 13px; font-size:14.5px; line-height:1.55; color:var(--ink);
+  white-space:pre-wrap; word-break:break-word; background:var(--tint-peony)}
+.tile.size-s .tile-note{font-size:13.5px; padding:12px}
+.tile.size-l .tile-note{font-size:15.5px; padding:18px 16px}
+.tile-gif-mark{position:absolute; left:9px; top:9px; padding:3px 9px; border-radius:999px;
+  background:rgba(11,20,45,.58); color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.08em}
+.tile-cap{display:block; padding:9px 13px 4px; font-size:12.5px; color:var(--ink-2); line-height:1.45}
+.tile-tags{display:block; padding:0 13px 11px; font-size:11.5px; font-weight:700; color:var(--accent-deep)}
+.tile-cap + .tile-tags{padding-top:3px}
+.tile-broken{opacity:.6}
+.media-missing{min-height:120px}
+.board-actions{display:flex; gap:10px; margin-top:16px}
+.board-actions .btn{flex:1}
+.board-actions .btn.secondary{flex:0 0 auto; padding:0 18px}
+
+/* ---------- доски: листы (добавление, фон, новая доска) ---------- */
+.add-grid{display:flex; flex-direction:column; gap:10px; margin-top:14px}
+.add-opt{display:flex; align-items:center; gap:14px; width:100%; text-align:left; padding:14px 16px;
+  border-radius:20px; background:var(--card-2); border:1px solid var(--line-2)}
+.add-opt:active{background:var(--accent-soft)}
+.add-opt .ric{width:42px; height:42px; border-radius:15px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.add-opt .ric svg{width:21px; height:21px}
+.add-opt b{font-size:15.5px; font-weight:700}
+.add-opt span:not(.ric){display:block; font-size:12.5px; color:var(--ink-2); margin-top:2px}
+.add-opt > span:not(.ric){flex:1}
+.bg-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:10px; margin-top:6px}
+.bg-opt{position:relative; height:74px; border-radius:18px; border:1.5px solid var(--line-2);
+  display:flex; align-items:flex-end; justify-content:center; padding:8px; overflow:hidden}
+.bg-opt span{font-size:11.5px; font-weight:700; color:var(--ink); background:rgba(255,255,255,.86);
+  border-radius:999px; padding:3px 9px}
+.bg-opt.on{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+.sheet .mood-note-input{width:100%; margin-top:14px}
+.sheet .board-input + .board-input{margin-top:10px}
+
+/* ---------- подписка и поддержка одним блоком (профиль) ---------- */
+.support-card{margin:0 0 28px; padding:22px; border-radius:28px;
+  background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.8));
+  border:1px solid var(--line-2); box-shadow:var(--shadow)}
+.support-head{display:flex; align-items:center; gap:14px}
+.support-head .ric{width:46px; height:46px; border-radius:16px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.support-head .ric svg{width:22px; height:22px}
+.support-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.support-copy b{font-size:16.5px; font-weight:800; letter-spacing:-.015em}
+.support-copy span{font-size:13px; color:var(--ink-2); line-height:1.45}
+.support-actions{display:flex; gap:10px; margin-top:18px}
+.support-actions .btn{flex:1; min-height:54px; font-size:15.5px}
+.support-actions .btn.secondary{flex:0 0 auto; padding:0 20px}
+.support-note{margin:13px 0 0; line-height:1.5}
+@media (max-width:420px){
+  .support-actions{flex-direction:column}
+  .support-actions .btn.secondary{width:100%}
+}
