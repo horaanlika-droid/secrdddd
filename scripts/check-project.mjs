@@ -490,6 +490,15 @@ for (const [label, lock, pkg, dir] of [
   } else bad('бренд: прелоад без чистого logo-clean.png с прозрачным фоном',
              'фон вырезаем так: python3 scripts/cut_bg.py app/assets/brand/logo-clean.png app/assets/brand/logo-clean.png --white --dmax 26 --satmax 38 --adj-rounds 600');
 
+  /* розовая палитра: первой страницей — логотип 1025, вырезанный без розовой каймы */
+  const logo1025 = path.join(ROOT, 'app', 'assets', 'brand', 'logo-1025-clean.png');
+  if (exists(logo1025) && pngHasAlpha(logo1025) &&
+      /pink:[\s\S]{0,240}logo-1025-clean\.png/.test(web) &&
+      /hero-brand[\s\S]{0,80}PALETTES\[paletteId\(\)\]\.hero/.test(web)) {
+    ok('бренд: розовая палитра — на первой странице логотип 1025 без розовой части (фон в альфе)');
+  } else bad('бренд: розовая палитра без вырезанного логотипа 1025',
+             'режем так: буквы и персонаж из IMG_1025 без розовой каймы и фона, фон в альфа-канал (scripts/cut_bg.py)');
+
   /* доски: фон иллюстраций — прозрачный альфа-канал, а не CSS-маска поверх плотного PNG */
   const webpHasAlpha = (p) => {
     try {

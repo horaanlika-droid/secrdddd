@@ -142,6 +142,14 @@ try {
     assert(q('.splash-logo-clean').src.includes('assets/brand/logo-clean.png'));
     assert(q('.hero-brand').src.includes('assets/brand/logo-1024.png'));
   });
+  await go('profile'); qa('.palette-opt')[1].click(); await go('');
+  check('pink palette puts the 1025 cut (letters + character, no pink halo) on the first page',()=>{
+    assert(q('.hero-brand').src.includes('assets/brand/logo-1025-clean.png'));
+  });
+  await go('profile'); qa('.palette-opt')[0].click(); await go('');
+  check('blue palette restores the 1024 hero logo',()=>{
+    assert(q('.hero-brand').src.includes('assets/brand/logo-1024.png'));
+  });
   await go('chat');
   check('local chat offers eight different starting prompts',()=>assert.equal(qa('.chat-hints .chip').length,8));
   click('Мне тревожно'); await sleep(500); click('Мне тревожно'); await sleep(500);
