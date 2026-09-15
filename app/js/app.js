@@ -91,6 +91,7 @@ const defaultState = {
   deeds_rewarded: {},        // v39: дни, когда весь список дел закрыт (конфетти один раз)
   install_done: false,       // v39: иконку на экран «Домой» поставили — не напоминаем
   install_snoozed: 0,        // v39: до этого момента подсказку про иконку не показываем
+  install_hint_seen: false,  // v40: подсказка уже всплывала — сама больше не лезет
   picked: {},                // примеры из практик, которые человек отметил своими: "practiceId:extrasKey" → [тексты]
   practice_notes: {},        // v28: свой вариант ответа для практик Опоры (affirm, crisis) — текст, который держит
   game: {
@@ -140,13 +141,16 @@ if ((persisted.mood_schema || 1) < 2) {
   save();
 }
 
-/* ---------- v39: иконка на экран «Домой» (установка как приложение) ----------
-   Гайд живёт на отдельном экране #/install (шаги под iPhone/iPad, Android и
-   компьютер), подсказка — карточкой на «Сегодня» и строкой в профиле. Нативный
-   prompt браузера (beforeinstallprompt) перехватываем и показываем кнопку
-   «Установить» прямо в гайде; факт установки запоминаем, чтобы не напоминать
-   лишний раз. В Telegram Mini App иконку ставит сам телефон через браузер —
-   гайд честно начинает с «шага ноль». */
+/* ---------- v39 → v40: иконка на экран «Домой» ----------
+   Отдельного экрана-гайда больше нет: по просьбе итерации 38 подсказка стала
+   незаметной внутри приложения — маленький всплывающий лист на пару строк
+   (один раз поверх «Сегодня»), а постоянный вход остался одной строкой
+   в профиле. Интерфейс она не занимает.
+   Ссылка одна — мини-приложение в Telegram (https://t.me/<бот>/dibitishka):
+   телефон ставит её на экран «Домой», а иконкой становится наш маскот.
+   Нативный prompt браузера (beforeinstallprompt) по-прежнему перехватываем:
+   когда браузер сам умеет установить веб-версию, в листе появляется кнопка
+   в один тап. Факт установки запоминаем, чтобы не напоминать лишний раз. */
 let deferredInstallPrompt = null;
 const isStandalone = () => {
   try {
@@ -168,6 +172,39 @@ const installSeen = () => isStandalone() || !!state.install_done;
 /* подсказку показываем, пока не поставили иконку и не попросили отложить */
 const installVisible = () => !installSeen() && Date.now() >= (state.install_snoozed || 0);
 const appUrl = () => location.href.split('#')[0];
+
+/* Ссылка, которую человек ставит на экран «Домой»: мини-приложение в Telegram.
+   Берём готовую из config.js, а без неё собираем из bot_username — короткое
+   имя приложения всегда dibitishka (@BotFather → /newapp, см. docs/SETUP.md). */
+const MINIAPP_NAME = 'dibitishka';
+const miniappUrl = () => CFG.miniapp_url || (CFG.bot_username ? `https://t.me/${CFG.bot_username}/${MINIAPP_NAME}` : appUrl());
+/* Короткая подпись для строки профиля и для листа — без https://, чтобы влезла. */
+const miniappShown = () => miniappUrl().replace(/^https?:\/\//, '');
+
+/* v40: подсказка всплывает сама ровно один раз — когда прелоад уже ушёл,
+   поверх «Сегодня» и пока не открыт другой лист. «Позже» откладывает на неделю
+   и снова разрешает один всплывающий показ; «Готово» (или установка) закрывает
+   тему совсем. Если момент неудобный — просто попробуем в следующий render(). */
+let installHintScheduled = false, installHintShown = false;
+function maybeInstallHint() {
+  if (installHintShown || installHintScheduled) return;
+  if (!state.onboarded || !installVisible() || state.install_hint_seen) return;
+  installHintScheduled = true;
+  const waitSplash = (tries = 48) => {
+    const splash = $('#splash');
+    if (splash && !splash.classList.contains('gone')) {
+      if (tries > 0) return setTimeout(() => waitSplash(tries - 1), 250);
+      installHintScheduled = false;
+      return;
+    }
+    if (activeSheetClose || route().a !== '') { installHintScheduled = false; return; }
+    installHintShown = true;
+    state.install_hint_seen = true;
+    save();
+    installSheet();
+  };
+  setTimeout(() => waitSplash(), 600);
+}
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const TRIAL_MS = (CFG.subscription?.trial_days ?? 7) * 86400000;
@@ -1140,24 +1177,10 @@ function screenToday() {
     el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
   ));
 
-  // v39: мягкая подсказка про иконку на экране «Домой». Не давим: карточка
-  // уходит после установки (appinstalled / «Готово») и на неделю после «Не сейчас».
-  if (installVisible()) {
-    scr.append(el('div', { class: 'sect' }, 'Дибитишка рядом'));
-    const teaser = el('div', { class: 'card soft install-teaser' });
-    teaser.append(el('button', { class: 'row', onclick: () => go('install') },
-      el('span', { class: 'ric c-sky' }, icon('house')),
-      el('span', { class: 'rmain' },
-        el('b', {}, 'Иконка на экран «Домой»'),
-        el('span', {}, 'Открывай меня в один тап — без вкладок и Telegram')),
-      el('span', { class: 'chev' }, '›')
-    ));
-    teaser.append(el('button', {
-      class: 'install-later mins', type: 'button',
-      onclick: () => { state.install_snoozed = Date.now() + 7 * 86400000; save(); haptic('light'); render(); }
-    }, 'Не сейчас'));
-    scr.append(teaser);
-  }
+  // v40: на «Сегодня» про иконку больше ничего не стоит — ни заголовка
+  // «Дибитишка рядом», ни карточки с «Не сейчас». Подсказка всплывает
+  // маленьким листом один раз (maybeInstallHint в render) и дальше живёт
+  // одной строкой в профиле: главная не стала длиннее ни на пиксель.
 
   scr.append(el('p', { class: 'foot' }, CONTENT.meta.credits));
   return scr;
@@ -1899,39 +1922,18 @@ function screenTask(id) {
   return scr;
 }
 
-/* ---------- v39: гайд «иконка на экран Домой» ----------
-   Шаги зависят от того, где открыто приложение: у Telegram Mini App есть
-   «шаг ноль» (открыть в браузере), у iPhone — Safari и share-лист, у Android —
-   меню Chrome, у компьютера — кнопка установки в адресной строке. Если браузер
-   сам предлагает установку (beforeinstallprompt), даём кнопку в один тап. */
-const INSTALL_STEPS = {
-  ios: {
-    title: 'iPhone и iPad · Safari',
-    steps: [
-      ['Открой Дибитишку в Safari', 'В Chrome и Firefox на iPhone пункта «На экран „Домой“» нет. Если открыл(а) меня там — скопируй ссылку кнопкой ниже и открой в Safari.'],
-      ['Нажми «Поделиться»', 'Это квадратик со стрелкой вверх внизу экрана, в центре панели Safari.'],
-      ['Выбери «На экран „Домой“»', 'Пункт в списке действий share-листа: пролистай его вниз, если не видно сразу.'],
-      ['Нажми «Добавить»', 'Капелька встанет рядом с другими приложениями и будет открываться на весь экран, без вкладок.']
-    ]
-  },
-  android: {
-    title: 'Android · Chrome',
-    steps: [
-      ['Открой Дибитишку в Chrome', 'В других браузерах пункт может называться иначе или прятаться — в Chrome он есть всегда.'],
-      ['Нажми меню «⋮»', 'Три точки справа сверху, рядом с адресной строкой.'],
-      ['Выбери «Установить приложение»', 'Или «Добавить на главный экран» — на старых версиях Chrome пункт называется так.'],
-      ['Подтверди добавление', 'Иконка появится на домашнем экране; приложение откроется без адресной строки.']
-    ]
-  },
-  desktop: {
-    title: 'Компьютер · Chrome или Edge',
-    steps: [
-      ['Открой сайт Дибитишки', 'В Chrome или Edge — они умеют ставить веб-приложения отдельным окном.'],
-      ['Нажми значок установки', 'Он справа в адресной строке: монитор со стрелкой вниз. Или меню «⋮» → «Установить Дибитишку…».'],
-      ['Подтверди в окне установки', 'Приложение откроется в своём окне, с иконкой на панели задач и рабочем столе.']
-    ]
-  }
+/* ---------- v40: маленькая всплывающая подсказка про иконку ----------
+   Вместо отдельного экрана с нумерованными шагами — один лист: иконка-маскот,
+   ссылка на мини-приложение, ОДНА строка шагов под свою платформу и две тихие
+   кнопки. Всё, что длиннее (Shortcuts на iPhone, ярлык из Telegram на Android,
+   честный разговор про размер значка), спрятано в «Если не получается» и
+   раскрывается только когда человек сам попросил. */
+const INSTALL_HINT = {
+  ios: 'iPhone и iPad · Safari: открой ссылку → «Поделиться» → «На экран „Домой“» → «Добавить».',
+  android: 'Android · Chrome: открой ссылку → «⋮» → «Добавить на главный экран».',
+  desktop: 'Компьютер · Chrome или Edge: открой ссылку → «⋮» → «Создать ярлык…» (в «Сохранить и поделиться»).'
 };
+const INSTALL_TG_LINE = 'Ты внутри Telegram: скопируй ссылку — ярлык на экран «Домой» ставится снаружи (на Android это умеет и сам чат с ботом).';
 
 async function nativeInstall() {
   const prompt = deferredInstallPrompt;
@@ -1942,84 +1944,66 @@ async function nativeInstall() {
     prompt.prompt();
     const res = await prompt.userChoice;
     if (res && res.outcome === 'accepted') { state.install_done = true; save(); }
-  } catch (e) { /* человек закрыл окно установки — просто остаёмся в гайде */ }
+  } catch (e) { /* человек закрыл окно установки — просто остаёмся в подсказке */ }
   render();
 }
 
-function screenInstall() {
-  renderTabbar(null);
-  const scr = el('div', { class: 'screen sub' });
-  scr.append(el('div', { class: 'navbar' },
-    el('button', { class: 'back', onclick: () => go('') }, icon('back'), 'Назад'),
-    el('h2', {}, 'Иконка на экран «Домой»')
-  ));
-
-  if (installSeen()) {
-    scr.append(mascot('proud', isStandalone()
-      ? 'Ура! Я живу прямо на твоём экране «Домой».'
-      : 'Похоже, иконка уже стоит. Спасибо, что держишь меня рядом!'));
-    scr.append(el('div', { class: 'card soft' },
-      el('h3', {}, 'Приложение установлено'),
-      el('p', {}, 'Иконка капельки открывается без Telegram и вкладок браузера — на весь экран, как родное приложение. Все записи остаются с тобой, они живут в памяти телефона.'),
-      el('p', { class: 'mins' }, 'Если после обновления браузера иконка пропала — поставь её ещё раз по шагам ниже.')
-    ));
-  } else {
-    scr.append(mascot('hello', 'Поставь меня рядом с остальными приложениями — буду открываться в один тап.'));
-  }
-
-  if (TG_MODE && !isStandalone()) {
-    scr.append(el('div', { class: 'card tinted soft t-sky' },
-      el('p', { class: 'cap' }, 'Шаг ноль · ты в Telegram'),
-      el('h3', {}, 'Сначала открой меня в браузере'),
-      el('p', {}, 'Мини-приложение живёт внутри Telegram, а иконку на экран «Домой» ставит сам телефон — через браузер. Нажми «⋯» справа сверху и выбери «Открыть в браузере» или скопируй ссылку ниже.'),
-      el('p', { class: 'mins' }, 'Записи хранятся в памяти того браузера, где открыто приложение: у веб-версии будет своя копия дневника. Это плата за то, что данные не уходят с телефона.'),
-      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => copyText(appUrl()) }, icon('mail'), 'Скопировать ссылку')
-    ));
-  }
-
+/* v40: подсказка про иконку — маленький лист, а не экран. Внутри ровно то, что
+   нужно для одного действия: ссылка на мини-приложение (скопировать/открыть),
+   одна строка шагов под свою платформу, кнопка установки — только если браузер
+   сам её предлагает, и две тихие кнопки «Готово» / «Позже». */
+function installSheet() {
   const osKey = IS_IOS ? 'ios' : IS_ANDROID ? 'android' : 'desktop';
-  const meta = INSTALL_STEPS[osKey];
-  const list = el('ol', { class: 'steps' });
-  meta.steps.forEach(([t, d], i) => list.append(el('li', { class: 'step' },
-    el('span', { class: 'step-n', 'aria-hidden': 'true' }, String(i + 1)),
-    el('div', {}, el('b', {}, t), el('span', {}, d))
-  )));
-  scr.append(el('div', { class: 'card soft' },
-    el('p', { class: 'cap' }, TG_MODE ? 'Дальше — ' + meta.title : meta.title),
-    el('h3', {}, osKey === 'desktop' ? 'Три шага' : 'Четыре шага'),
-    list
-  ));
-
-  const nativeBtn = el('button', { class: 'btn', style: 'margin-top:14px', onclick: nativeInstall }, icon('install'), 'Установить приложение');
-  if (!deferredInstallPrompt || installSeen()) nativeBtn.classList.add('hidden');
-  scr.append(nativeBtn);
-
-  scr.append(el('div', { class: 'group', style: 'margin-top:14px' },
-    el('button', { class: 'row', onclick: () => copyText(appUrl()) },
-      el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('mail')),
-      el('span', { class: 'rmain' }, el('b', {}, 'Скопировать ссылку на приложение'), el('span', {}, 'Чтобы открыть в нужном браузере')),
-      el('span', { class: 'chev' }, '›')
-    ),
-    el('button', { class: 'row', onclick: () => {
-      state.install_done = true;
-      save();
-      haptic('success');
-      toast('Готово! Гайд останется в профиле — на случай, если иконку придётся ставить заново.');
-      go('');
-    } },
-      el('span', { class: 'ric c-grass' }, icon('check')),
-      el('span', { class: 'rmain' }, el('b', {}, 'Готово, иконка на экране'), el('span', {}, 'Убрать подсказку с главной')),
-      el('span', { class: 'chev' }, '›')
-    )
-  ));
-  if (!installSeen()) {
-    scr.append(el('button', {
-      class: 'btn ghost', style: 'margin-top:10px',
-      onclick: () => { state.install_snoozed = Date.now() + 7 * 86400000; save(); haptic('light'); go(''); }
-    }, 'Позже, напомнить через неделю'));
-  }
-  scr.append(el('p', { class: 'foot' }, 'Гайд всегда живёт в профиле: раздел «Связь и вход» → «Иконка на экране „Домой“».'));
-  return scr;
+  const link = miniappUrl();
+  sheet((sh, close) => {
+    sh.classList.add('sheet-install');
+    /* Важно: sh.append — это DOM-метод, он превращает null в текст «null».
+       Поэтому условные узлы собираем в массив и фильтруем сами. */
+    sh.append(...[
+      el('div', { class: 'install-head' },
+        el('img', { class: 'install-ico', src: 'assets/icons/apple-touch-180.png', alt: '', width: 46, height: 46 }),
+        el('div', {},
+          el('h3', {}, 'Иконка на экран «Домой»'),
+          el('p', { class: 'mins' }, installSeen()
+            ? 'Похоже, я уже стою на твоём экране. Спасибо, что держишь меня рядом!'
+            : 'Одна ссылка — и я открываюсь в один тап, внутри Telegram.')
+        )
+      ),
+      el('div', { class: 'install-link' },
+        el('code', {}, miniappShown()),
+        el('button', { class: 'install-copy', type: 'button', title: 'Скопировать ссылку', 'aria-label': 'Скопировать ссылку', onclick: () => { haptic('light'); copyText(link); } }, icon('mail')),
+        el('button', { class: 'install-copy', type: 'button', title: 'Открыть ссылку', 'aria-label': 'Открыть ссылку', onclick: () => { haptic('light'); openLink(link); } }, icon('send'))
+      ),
+      el('p', { class: 'mins install-step' }, INSTALL_HINT[osKey]),
+      TG_MODE && !isStandalone() ? el('p', { class: 'mins install-step' }, INSTALL_TG_LINE) : null,
+      el('details', { class: 'install-more' },
+        el('summary', {}, 'Если не получается'),
+        el('ul', {},
+          el('li', {}, 'iPhone: ярлык на ссылку умеет делать приложение «Команды» (Shortcuts) — «+» → «Открыть URL» → вставь ссылку → «⋯» сверху → «На экран „Домой“». Там же задаются имя и картинка.'),
+          el('li', {}, 'Android: ярлык ставит и сам Telegram — чат с ботом → тап по имени → «⋮» → «Добавить на главный экран». Значком станет аватар бота, поэтому в аватар бота ставим ту же капельку.'),
+          el('li', {}, 'Иконка — наш маскот: iPhone берёт её сам из apple-touch-icon, а в «Командах» и на Android картинку можно выбрать вручную — квадратная капелька без прозрачности открывается кнопкой ниже (удержи, чтобы сохранить в фото).'),
+          el('li', {}, 'Если вместо капельки встал значок Telegram или браузера — картинку взял лаунчер, и её можно поменять: на Android удерживай ярлык → «Изменить значок», на iPhone картинка выбирается в «Командах» до шага «На экран „Домой“».'),
+          el('li', {}, 'Честно про «маленькую иконку»: размер значка задаёт лаунчер, меньше своей сетки он его не сделает. Зато подпись можно стереть или заменить на свою, а ярлык спрятать в папку — так он совсем не бросается в глаза.')
+        ),
+        el('button', { class: 'install-more-link', type: 'button', onclick: () => openLink('assets/icons/apple-touch-180.png') }, 'Показать иконку-капельку')
+      )
+    ].filter(Boolean));
+    // Браузер сам предлагает установку веб-версии — даём кнопку в один тап.
+    if (deferredInstallPrompt && !installSeen()) {
+      sh.append(el('button', { class: 'btn', style: 'margin-top:12px', onclick: async () => { close(); await nativeInstall(); } }, icon('install'), 'Установить приложение'));
+    }
+    sh.append(el('div', { class: 'install-quiet' },
+      el('button', { type: 'button', onclick: () => {
+        state.install_done = true; save(); haptic('success'); close();
+        toast('Готово! Подсказка больше не появится.');
+      } }, 'Готово'),
+      installSeen() ? null : el('button', { type: 'button', onclick: () => {
+        state.install_snoozed = Date.now() + 7 * 86400000;
+        state.install_hint_seen = false;   // через неделю позволим всплыть ещё один раз
+        save(); haptic('light'); close();
+      } }, 'Позже')
+    ));
+  });
 }
 
 function screenWorkbook() {
@@ -2174,11 +2158,12 @@ function screenProfile() {
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
-  rows.push(el('button', { class: 'row', onclick: () => go('install') },
+  // v40: строка открывает ту же маленькую подсказку — отдельного экрана нет.
+  rows.push(el('button', { class: 'row', onclick: () => installSheet() },
     el('span', { class: 'ric c-sky' }, icon('house')),
     el('span', { class: 'rmain' },
       el('b', {}, 'Иконка на экране «Домой»'),
-      el('span', {}, installSeen() ? 'Приложение установлено' : 'Гайд: iPhone, Android, компьютер')),
+      el('span', {}, installSeen() ? 'Уже стоит' : miniappShown())),
     el('span', { class: 'chev' }, '›')
   ));
   if (!TG_MODE) rows.push(el('button', { class: 'row', onclick: authSheet },
@@ -3162,6 +3147,14 @@ function subscriptionCard() {
 /* ---------- render ---------- */
 function render() {
   const r = route();
+  /* v40: экрана #/install больше нет. Старая ссылка (из закладки или из
+     сообщения бота) приводит на «Сегодня» и открывает ту же подсказку. */
+  let installDeepLink = false;
+  if (r.a === 'install') {
+    try { history.replaceState(null, '', '#/'); } catch (e) { location.hash = '#/'; }
+    r.a = ''; r.b = '';
+    installDeepLink = true;
+  }
   document.documentElement.dataset.screen = r.a || 'today';
   const app = $('#app');
   if (typeof screenCleanup === 'function') { try { screenCleanup(); } catch (e) {} }
@@ -3179,15 +3172,16 @@ function render() {
     case 'diary': scr = screenDiary(); break;
     case 'tasks': scr = screenTasks(); break;
     case 'task': scr = screenTask(r.b); break;
-    case 'install': scr = screenInstall(); break;
     case 'workbook': scr = screenWorkbook(); break;
     case 'merch': scr = screenMerch(); break;
     case 'profile': scr = screenProfile(); break;
     default: scr = screenToday();
   }
   app.append(scr);
+  if (installDeepLink) installSheet();
   bindMascotFriends(app);
   hydrateMedia(app);          // картинки досок живут в IndexedDB — подставляем ссылки
+  maybeInstallHint();         // v40: один раз всплываем сами, дальше — только из профиля
   window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);

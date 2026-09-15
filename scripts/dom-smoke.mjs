@@ -20,12 +20,16 @@ async function until(fn, description = 'condition') {
   const end = Date.now() + 5000;
   while (!fn()) { if (Date.now() > end) throw new Error('Timed out: ' + description); await sleep(15); }
 }
-async function app(seed = {}, { boardSeed, privateMode = false, apiContent = null } = {}) {
+async function app(seed = {}, { boardSeed, privateMode = false, apiContent = null, config = null } = {}) {
   const dom = new JSDOM(html, { url: 'https://dibi.test/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   const objectUrls = new Map(); let objectId = 0;
-  w.DIBI_CONFIG = { bot_public_url: apiContent ? 'https://bot.dibi.test' : '', bot_username: 'test', subscription: { trial_days: 7 } };
-  w.localStorage.setItem(DB, JSON.stringify({ onboarded: true, trial_started_at: Date.now(), mood_schema: 2, ...seed }));
+  w.DIBI_CONFIG = Object.assign({ bot_public_url: apiContent ? 'https://bot.dibi.test' : '', bot_username: 'test', subscription: { trial_days: 7 } }, config || {});
+  /* v40: install_hint_seen — подсказка про иконку всплывает сама. В общих
+     прогонах она считается показанной, чтобы не закрывать чужие листы в самый
+     неподходящий момент; её собственное поведение проверяется отдельным
+     запуском (см. «pops up by itself once»). */
+  w.localStorage.setItem(DB, JSON.stringify({ onboarded: true, trial_started_at: Date.now(), mood_schema: 2, install_hint_seen: true, ...seed }));
   if (boardSeed !== undefined) w.localStorage.setItem(BOARDS, JSON.stringify(boardSeed));
   w.fetch = async url => {
     const href = String(url);
@@ -166,32 +170,61 @@ try {
     assert.equal(items.length,1);
     assert.equal(items[0].text,'Позвонить маме');
   });
-  /* v39: гайд про иконку на экране «Домой» */
-  check('home offers the add-to-home-screen guide until installed or snoozed',()=>assert(q('.install-teaser')));
-  click('Не сейчас'); await sleep(30);
-  check('«Не сейчас» snoozes the teaser for a week',()=>{
+  /* v40: подсказка про иконку — маленькая и всплывающая, со ссылкой на мини-приложение */
+  check('home keeps no install card or guide section: the hint takes no interface space',()=>{
     assert(!q('.install-teaser'));
-    assert(state().install_snoozed>Date.now()+6*86400000);
-  });
-  await go('install');
-  check('install guide lists numbered platform steps and keeps the link action',()=>{
-    assert(qa('.steps .step').length>=3);
-    assert(qa('.steps .step-n').every(n=>/^\d+$/.test(n.textContent)));
-    assert(btnWith('Скопировать ссылку на приложение'));
-  });
-  btnWith('Готово, иконка на экране').click(); await sleep(40);
-  check('marking the icon installed is remembered and hides the teaser',()=>{
-    assert.equal(state().install_done,true);
-    assert(!q('.install-teaser'));
-  });
-  await go('install');
-  check('installed state greets instead of nagging',()=>{
-    assert(q('#app').textContent.includes('Приложение установлено'));
+    assert(!q('#app').textContent.includes('Дибитишка рядом'));
+    assert.equal(qa('#app .step-n').length,0);
   });
   await go('profile');
-  check('profile keeps a permanent entry to the install guide',()=>{
+  check('profile row is the permanent one-line entry and shows the mini app link',()=>{
+    const row=btnWith('Иконка на экране «Домой»');
+    assert(row);
+    assert(row.textContent.includes('t.me/test/dibitishka'));
+  });
+  btnWith('Иконка на экране «Домой»').click(); await sleep(60);
+  check('the entry opens one small sheet: mascot icon, link, a single platform step, details closed',()=>{
+    assert(q('.sheet-install.on'));
+    assert(q('.sheet-install .install-ico').getAttribute('src').includes('assets/icons/apple-touch-180.png'));
+    assert.equal(q('.sheet-install .install-link code').textContent,'t.me/test/dibitishka');
+    assert.equal(qa('.sheet-install .install-step').length,1);
+    assert.equal(q('.sheet-install .install-more').open,false);
+    assert(!q('.sheet-install').textContent.includes('null'),'условные узлы не должны превращаться в текст «null»');
+    assert(!q('.sheet-install .navbar'));
+    assert(q('.sheet-install .install-copy[aria-label="Скопировать ссылку"]'));
+    assert(q('.sheet-install .install-copy[aria-label="Открыть ссылку"]'));
+  });
+  q('.sheet-install .install-copy[aria-label="Скопировать ссылку"]').click(); await sleep(40);
+  check('the link is copyable without leaving the sheet',()=>{
+    // jsdom не умеет execCommand/clipboard — важен сам отклик и что лист остался
+    assert(/Скопировано|Скопировать не вышло/.test(q('.toast').textContent),q('.toast').textContent);
+    assert(q('.sheet-install.on'));
+  });
+  btnWith('Позже').click(); await sleep(400);
+  check('«Позже» closes the sheet, snoozes for a week and allows one more pop later',()=>{
+    assert(!q('.sheet-install.on'));
+    assert(state().install_snoozed>Date.now()+6*86400000);
+    assert.equal(state().install_hint_seen,false);
+  });
+  await go(''); await go('profile');
+  check('while snoozed nothing pops up on its own, the profile entry stays',()=>{
+    assert(!q('.sheet-install'));
     assert(btnWith('Иконка на экране «Домой»'));
   });
+  btnWith('Иконка на экране «Домой»').click(); await sleep(60);
+  btnWith('Готово').click(); await sleep(400);
+  check('«Готово» remembers the icon so the hint stays away',()=>{
+    assert.equal(state().install_done,true);
+    assert(!q('.sheet-install.on'));
+  });
+  await go('install');
+  check('the retired #/install link lands on home and reopens the sheet instead of a separate screen',()=>{
+    assert.equal(w.location.hash,'#/');
+    assert(q('.sheet-install.on'));
+    assert(q('.sheet-install').textContent.includes('Похоже, я уже стою на твоём экране'));
+    assert(!q('#app').textContent.includes('Четыре шага'));
+  });
+  q('.sheet-install').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})); await sleep(380);
   await go('');
   check('splash shows the 3D mascot with orbiting elements and an XP-style loading bar',()=>{
     assert(q('.splash-mascot').src.includes('assets/brand/splash-mascot-3d.png'));
@@ -325,6 +358,31 @@ try {
     assert.equal(items.length,1);
     assert.equal(items[0].text,'Полить цветок');
     assert.equal(items[0].done,false);
+  });
+  current.dom.window.close();
+  /* v40: подсказка всплывает сама — один раз, маленьким листом, и больше не лезет */
+  current=await app({ install_hint_seen:false });
+  current.q('#splash').classList.add('gone');   // прелоад в jsdom идёт 3.2 с — закрываем, как в жизни
+  await until(()=>current.q('.sheet-install.on'),'the home-screen hint pops up by itself');
+  check('the hint pops up by itself once: home stays clean, state remembers the pop',()=>{
+    assert.equal(current.state().install_hint_seen,true);
+    assert(!current.q('#app .install-teaser'));
+    assert.equal(current.q('.sheet-install .install-link code').textContent,'t.me/test/dibitishka');
+  });
+  current.q('.sheet-install').dispatchEvent(new current.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  await sleep(420);
+  await current.go('profile'); await current.go(''); await sleep(800);
+  check('after the first pop the hint does not reopen on every screen',()=>{
+    assert.equal(current.qa('.sheet-install').length,0);
+    assert.equal(current.state().install_hint_seen,true);
+  });
+  current.dom.window.close();
+  current=await app({},{config:{miniapp_url:'https://t.me/dbtrobot/dibitishka'}});
+  await current.go('profile');
+  check('miniapp_url from config.js wins over the link built from bot_username',()=>{
+    const row=[...current.w.document.querySelectorAll('button')].find(b=>b.textContent.includes('Иконка на экране «Домой»'));
+    assert(row,'profile entry exists');
+    assert(row.textContent.includes('t.me/dbtrobot/dibitishka'),row.textContent);
   });
   current.dom.window.close();
   current=await app({ onboarded: false });
