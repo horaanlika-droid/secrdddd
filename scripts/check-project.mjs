@@ -479,16 +479,16 @@ for (const [label, lock, pkg, dir] of [
     ok('app/js/app.js: локальный чат расширен и защищён от немедленного повтора');
   } else bad('app/js/app.js: мало вариантов локального чата', 'нужно минимум 16 советов, 8 подсказок и защита от повтора');
 
-  /* фирменный локап на прелоаде: прошлый wordmark с чисто вырезанным фоном */
+  /* чистый локап на прелоаде: logo-clean.png с фоном, вырезанным в альфу */
   const pngHasAlpha = (p) => { try { const b = fs.readFileSync(p); return b.subarray(12, 16).toString('latin1') === 'IHDR' && b[24] === 8 && b[25] === 6; } catch { return false; } };
-  const wordmarkBlue = path.join(ROOT, 'app', 'assets', 'brand', 'logo-wordmark.png');
-  const wordmarkPink = path.join(ROOT, 'app', 'assets', 'brand', 'logo-wordmark-pink.png');
-  if (exists(wordmarkBlue) && exists(wordmarkPink) && pngHasAlpha(wordmarkBlue) && pngHasAlpha(wordmarkPink) &&
-      /logo-wordmark\.png/.test(appIndex) && /splash-art[\s\S]{0,200}mascot\/splash\.png/.test(appIndex) &&
-      /hero-brand[^\n]*brandLogo/.test(web)) {
-    ok('бренд: прелоад и главная на старом локапе — фон вырезан в альфа, маскот на месте');
-  } else bad('бренд: splash без logo-wordmark.png с прозрачным фоном или потерян маскот',
-             'фон вырезаем так: python3 scripts/cut_bg.py app/assets/brand/logo-wordmark.png app/assets/brand/logo-wordmark.png --white --dmax 26 --satmax 38 --adj-rounds 600');
+  const logoClean = path.join(ROOT, 'app', 'assets', 'brand', 'logo-clean.png');
+  if (exists(logoClean) && pngHasAlpha(logoClean) &&
+      /splash-logo-clean[\s\S]{0,120}logo-clean\.png/.test(appIndex) &&
+      /<link rel="preload" as="image" href="assets\/brand\/logo-clean\.png"/.test(appIndex) &&
+      /\.splash-logo-clean\{/.test(css)) {
+    ok('бренд: прелоад на чистом logo-clean.png — фон в альфе, без строки «app by»');
+  } else bad('бренд: прелоад без чистого logo-clean.png с прозрачным фоном',
+             'фон вырезаем так: python3 scripts/cut_bg.py app/assets/brand/logo-clean.png app/assets/brand/logo-clean.png --white --dmax 26 --satmax 38 --adj-rounds 600');
 
   /* доски: фон иллюстраций — прозрачный альфа-канал, а не CSS-маска поверх плотного PNG */
   const webpHasAlpha = (p) => {

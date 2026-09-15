@@ -138,10 +138,9 @@ try {
   await go('diary');
   check('confirmed note appears in diary with sprite heads',()=>{assert(q('#app').textContent.includes('Не теряй черновик'));assert(qa('.ric-face').every(n=>n.classList.contains('mood-sprite')));});
   await go('');
-  check('splash keeps the previous wordmark logo + mascot, background cut to alpha',()=>{
-    assert(q('.splash-wordmark').src.includes('assets/brand/logo-wordmark.png'));
-    assert(q('.splash-art').src.includes('assets/mascot/splash.png'));
-    assert(q('.hero-brand').src.includes('assets/brand/logo-wordmark.png'));
+  check('splash shows the clean logo (logo-clean.png), background cut to alpha',()=>{
+    assert(q('.splash-logo-clean').src.includes('assets/brand/logo-clean.png'));
+    assert(q('.hero-brand').src.includes('assets/brand/logo-1024.png'));
   });
   await go('chat');
   check('local chat offers eight different starting prompts',()=>assert.equal(qa('.chat-hints .chip').length,8));
