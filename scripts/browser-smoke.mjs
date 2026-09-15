@@ -40,7 +40,11 @@ let browser, checks=0;
    шага не читается, а аннотацию видно прямо в проверках. */
 const failures=[];
 const check=(name,fn)=>{
-  try { fn(); checks++; console.log('  ✓ '+name); }
+  try {
+    const result=fn();
+    if(result&&typeof result.then==='function') throw new Error('проверка вернула промис: check() синхронный, await — снаружи');
+    checks++; console.log('  ✓ '+name);
+  }
   catch (e) {
     const message=String(e&&e.message||e).split('\n')[0];
     failures.push({name,message});
@@ -74,20 +78,36 @@ try {
   await page.locator('.live-mascot').waitFor();
   /* Пиксельная проверка обещания «меняется только выражение лица»: снимаем
      персонажа целиком, ищем прямоугольник различий и сравниваем тело.
-     Два условия честного сравнения:
+     Чтобы сравнивать именно персонажа, а не фон:
      — координаты считаем от документа: клики прокручивают страницу, и
        координаты окна поехали бы сами по себе, без движения персонажа;
-     — перед каждым снимком возвращаемся в начало страницы: фон за персонажем
-       (fixed-градиент `#bg-blobs`) зависит от положения в окне, и при разной
-       прокрутке различался бы он, а не лицо. */
+     — на время снимка убираем всё, что рисуется за персонажем: fixed-градиент
+       `#bg-blobs` и стекло карточки (`backdrop-filter` показывает фон, который
+       зависит от положения в окне), ореол-подсветку, тосты и конфетти;
+     — возвращаемся в начало страницы и выключаем проявление лица. */
+  const HERO_ISOLATION=[
+    'html,body{background:#fff!important}',
+    '#bg-blobs,.hero::before,.hero-mascot-wrap::before,.toast,.confetti{display:none!important}',
+    '.hero{background:#fff!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important}',
+    '.live-mascot-face{animation:none!important}'
+  ].join('');
   const heroShot=async()=>{
     await page.evaluate(()=>scrollTo(0,0));
-    await page.waitForTimeout(80);
-    return PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
+    const tag=await page.addStyleTag({content:HERO_ISOLATION});
+    await page.waitForTimeout(60);
+    const png=PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
+    await tag.evaluate(node=>node.remove());
+    return png;
   };
-  const diffBox=(a,b)=>{let box=null;for(let y=0;y<a.height;y++)for(let x=0;x<a.width;x++){const i=(y*a.width+x)*4;
-    if(a.data[i]!==b.data[i]||a.data[i+1]!==b.data[i+1]||a.data[i+2]!==b.data[i+2]||a.data[i+3]!==b.data[i+3])
-      box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};}return box;};
+  /* Сравнение двух кадров: прямоугольник, число различных пикселей и размеры
+     обоих кадров — по сообщению должно быть понятно, что именно разошлось. */
+  const diffStats=(a,b)=>{let box=null,count=0;
+    const w=Math.min(a.width,b.width),h=Math.min(a.height,b.height);
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*a.width+x)*4,j=(y*b.width+x)*4;
+      if(a.data[i]!==b.data[j]||a.data[i+1]!==b.data[j+1]||a.data[i+2]!==b.data[j+2]||a.data[i+3]!==b.data[j+3]){
+        count++;
+        box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};}}
+    return {box,count,aSize:[a.width,a.height],bSize:[b.width,b.height]};};
   const heroState=async()=>page.locator('.live-mascot').evaluate(node=>{const r=node.getBoundingClientRect(),face=node.querySelector('.live-mascot-face');
     return {hasMood:node.classList.contains('has-mood'),label:node.getAttribute('aria-label'),faceDisplay:getComputedStyle(face).display,
       faceX:face.style.getPropertyValue('--face-x'),faceY:face.style.getPropertyValue('--face-y'),base:node.querySelector('img').getAttribute('src'),
@@ -95,6 +115,13 @@ try {
       transform:getComputedStyle(node).transform};});
   const calm=await heroState();
   const calmPixels=await heroShot();
+  // Самопроверка: два снимка одного и того же состояния обязаны совпасть.
+  // Иначе «различия» ниже показывали бы шум съёмки, а не смену выражения.
+  const repeatPixels=await heroShot();
+  check('two shots of the same hero state are pixel-identical',()=>{
+    const stats=diffStats(calmPixels,repeatPixels);
+    assert.equal(stats.count,0,`различий ${stats.count} (${JSON.stringify(stats.box)}), кадры ${stats.aSize}/${stats.bSize}`);
+  });
   check('hero starts as the calm hello.png: no mood yet, no atlas download',()=>{
     assert.equal(calm.hasMood,false);
     assert.equal(calm.faceDisplay,'none');
@@ -141,12 +168,13 @@ try {
     const face=moodAtlas.box, scale=mood.rect.w/1024, slack=3;
     const box={x0:Math.floor(face[0]*scale)-slack,y0:Math.floor(face[1]*scale)-slack,
       x1:Math.ceil(face[2]*scale)+slack,y1:Math.ceil(face[3]*scale)+slack};
-    const diff=diffBox(calmPixels,moodPixels);
-    assert(diff,'the mood face is actually rendered');
-    assert(diff.x0>=box.x0&&diff.y0>=box.y0&&diff.x1<=box.x1&&diff.y1<=box.y1,
-      `прямоугольник различий ${JSON.stringify(diff)} вне области лица ${JSON.stringify(box)}`);
+    const stats=diffStats(calmPixels,moodPixels);
+    assert(stats.count>0,'лицо настроения действительно нарисовано');
+    const d=stats.box;
+    assert(d.x0>=box.x0&&d.y0>=box.y0&&d.x1<=box.x1&&d.y1<=box.y1,
+      `различий ${stats.count} px, прямоугольник ${JSON.stringify(d)}, кадры ${stats.aSize}/${stats.bSize} — вне области лица ${JSON.stringify(box)}`);
     const start=Math.min(calmPixels.height,box.y1+1)*calmPixels.width*4;
-    assert(calmPixels.data.subarray(start).equals(moodPixels.data.subarray(start)),'body below the face is pixel-identical');
+    assert(calmPixels.data.subarray(start).equals(moodPixels.data.subarray(start)),'тело ниже лица совпадает попиксельно');
   });
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   const reloaded = await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries);
