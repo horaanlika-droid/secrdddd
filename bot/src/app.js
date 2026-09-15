@@ -21,6 +21,7 @@ import { removeWhiteBackground } from './bgremove.js';
 import { acquirePort } from './port.js';
 import * as tribute from './tribute.js';
 import * as ai from './ai.js';
+import * as agents from './agents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.TG_TOKEN || '';
@@ -437,6 +438,13 @@ bot.command('diag', async (ctx) => {
       ? `  тест живого чата: ок ✅ (${test.model}, ${test.ms} мс) — «${test.answer}»`
       : `  тест живого чата: ❌ ${test.error} → ${test.detail || test.hint}`,
     '',
+    rep.agents.enabled
+      ? `Agents API: включён · модель ${rep.agents.model} · сессий ${rep.agents.sessions} (создано ${rep.agents.created}, закрыто ${rep.agents.closed}) · ходов ${rep.agents.turns} · фолбэков ${rep.agents.fallbacks}` +
+        `\n  исполнитель: ${rep.agents.executor_cmd ? 'автозапуск' : 'вручную (AGENTS_EXECUTOR_CMD не задан)'} · ключ окружения: ${rep.agents.executor_key ? 'есть' : 'НЕТ (OPENAI_EXECUTOR_API_KEY)'}` +
+        (rep.agents.live?.length ? '\n  ' + rep.agents.live.map((x) => `${x.key}: ${x.session_id} · окружение ${x.environment_state} · ${x.executor}${x.idle_s !== null ? ' · покой ' + x.idle_s + ' с' : ''}`).join('\n  ') : '') +
+        (rep.agents.last_error ? `\n  ⚠️ ${rep.agents.last_error}: ${rep.agents.last_error_detail || ''}` : '')
+      : 'Agents API: выключен (AGENTS_ENABLED=1) — чат идёт через chat/completions',
+    '',
     `База: ${rep.db.file} · пользователей ${rep.users}, из них говорили ${rep.db.users_talked}`,
     a.configured && rep.users === 0 ? '  ⚠️ база пустая, а HTTP жив: похоже, данные не переживают рестарт (том не примонтирован) или Telegram читает другая копия' : '',
     '',
@@ -523,8 +531,27 @@ bot.command('reset', (ctx) => {
   const u = getUser(ctx);
   u.chat = [];
   save();
+  // у Agents API память живёт в сессии, а не в u.chat — чистый лист только
+  // вместе с закрытой сессией (иначе «reset» сбросит только половину памяти)
+  agents.closeSession('tg:' + ctx.from.id, 'reset').catch(() => {});
   ctx.reply('Окей, начинаем с чистого листа. Я тут 💧');
 });
+
+/* ---------- один ход диалога: Agents API (если включён) или chat/completions ----------
+   AGENTS_ENABLED=1 даёт диалогу persistent-сессию с изолированным окружением
+   (бот/src/agents.js). Если сессия или окружение подвели — человек этого не
+   замечает: тихо уходим в chat/completions, а владелец получает причину. */
+async function chatAnswer({ key, userText, history, userContext, channel, onDelta }) {
+  if (!agents.agentsEnabled()) return ai.complete({ userText, history, userContext, channel });
+  const res = await agents.ask({ key, userText, userContext, channel, onDelta });
+  if (res && !res.error) return { ...res, backend: 'agents' };
+  alertAdmins('agents:' + res?.error,
+    `⚠️ Agents API недоступен (${res?.error})\n${res?.detail || ''}\nотвечаю через chat/completions · /diag → agents`,
+    300000);
+  console.warn(`[agents] фолбэк в chat/completions: ${res?.error} ${res?.detail || ''}`);
+  const alt = await ai.complete({ userText, history, userContext, channel });
+  return alt && !alt.error ? { ...alt, backend: 'chat/completions', agents_error: res?.error } : alt;
+}
 
 bot.on('message:text', async (ctx) => {
   if (db.broadcast?.awaiting && isAdmin(ctx)) return handleDraft(ctx, false);
@@ -555,11 +582,22 @@ bot.on('message:text', async (ctx) => {
       level: null, streak: null, mastered: [],
       whoami: null, anchors: null, crisis: null
     };
-    const res = await ai.complete({
+    let live = null, liveBuf = '', liveAt = 0;
+    if (agents.agentsEnabled()) live = await ctx.reply('…').catch(() => null);
+    const onDelta = live ? (d) => {
+      if (!d) return;
+      liveBuf += d;
+      if (Date.now() - liveAt < 1200) return;   // Telegram не любит частые edit
+      liveAt = Date.now();
+      ctx.api.editMessageText(ctx.chat.id, live.message_id, liveBuf).catch(() => {});
+    } : null;
+    const res = await chatAnswer({
+      key: 'tg:' + ctx.from.id,
       userText: text,
       history: u.chat || [],
       userContext,
-      channel: 'telegram'
+      channel: 'telegram',
+      onDelta
     });
     clearInterval(typing);
     if (!res || res.error) {
@@ -571,12 +609,18 @@ bot.on('message:text', async (ctx) => {
       const tech = isAdmin(ctx)
         ? `\n\n(технически: ${res?.error}${res?.detail ? ' — ' + String(res.detail).slice(0, 180) : ''}\n${ai.errorHint(res?.error)}\n/diag — полная диагностика)`
         : '';
+      const out = ai.localReply(text, userContext) + tech;
       // не добавляем в историю, чтобы при следующем запросе контекст не ломался
-      return ctx.reply(ai.localReply(text, userContext) + tech).catch(() => {});
+      if (live) return ctx.api.editMessageText(ctx.chat.id, live.message_id, out.slice(0, 4000)).catch(() => ctx.reply(out).catch(() => {}));
+      return ctx.reply(out).catch(() => {});
     }
     u.chat = ai.pushHistory(u.chat, 'user', text);
     u.chat = ai.pushHistory(u.chat, 'assistant', res.text);
     save();
+    if (live) {
+      const done = await ctx.api.editMessageText(ctx.chat.id, live.message_id, res.text.slice(0, 4000)).catch(() => null);
+      if (done) return;
+    }
     for (const part of splitMessage(res.text)) await ctx.reply(part).catch(() => {});
   } catch (e) {
     clearInterval(typing);
@@ -763,7 +807,10 @@ function statusReport(opts = {}) {
   }
   if (!aiH.configured) problems.push('OPENAI_API_KEY не задан — и Telegram, и веб отвечают шаблонами');
   else if (!aiH.last_ok_at) problems.push(`ни одного успешного ответа модели: ${aiH.last_error_detail || aiH.last_error || 'запросов ещё не было'}`);
-  else if (aiH.last_error && now - (aiH.last_error_at || 0) < 600000) problems.push(`последняя ошибка OpenAI: ${aiH.last_error}`);
+  else if (aiH.last_error && now - (aiH.last_error_at || 0) < 600000) problems.push(`последняя ошибка OpenAI: ${aiH.last_error}`);  const ag = agents.agentsDiagnostics();
+  if (ag.enabled && ag.last_error) problems.push(`agents: ${ag.last_error}${ag.last_error_detail ? ' — ' + ag.last_error_detail : ''}`);
+  if (ag.enabled && !ag.executor_key) problems.push('agents: не задан OPENAI_EXECUTOR_API_KEY — исполнителю нечем подключаться к окружению');
+  if (ag.enabled && !ag.executor_cmd) problems.push('agents: AGENTS_EXECUTOR_CMD не задан — codex exec-server надо запускать вручную');
 
   return {
     ok: true,
@@ -784,6 +831,7 @@ function statusReport(opts = {}) {
     },
     ai_health: aiH,
     ai_hint: aiH.last_error ? ai.errorHint(aiH.last_error) : null,
+    agents: agents.agentsDiagnostics(),
     tribute: tribute.tributeStatus(),
     db: { file: dbFile, users_talked: talked },
     problems
@@ -850,7 +898,10 @@ const server = http.createServer(async (req, res) => {
           userContext.premium = isPremium(user);
         }
         userContext.todayPractice = todayPractice()?.title;
-        const out = await ai.complete({ userText: msg, history: hist, userContext, channel: 'web' });
+        const out = await chatAnswer({
+          key: 'web:' + (uid || ip),
+          userText: msg, history: hist, userContext, channel: 'web'
+        });
         if (!out || out.error) {
           /* Человеку — тёплый ответ из его же записей, никогда «проверь OPENAI_API_KEY»:
              техническое сообщение в чате поддержки только пугает. Причину — админу
@@ -859,6 +910,7 @@ const server = http.createServer(async (req, res) => {
           return json(res, 200, {
             ok: false, ai: true, error: out?.error || 'unknown',
             text: ai.localReply(msg, userContext), local: true,
+            backend: out?.backend || null,
             ...(process.env.DIAG_PUBLIC === '1' ? { hint: ai.errorHint(out?.error), detail: out?.detail || null } : {})
           });
         }
@@ -867,7 +919,11 @@ const server = http.createServer(async (req, res) => {
           user.web_chat = ai.pushHistory(user.web_chat, 'assistant', out.text);
           save();
         }
-        return json(res, 200, { ok: true, ai: true, text: out.text, model: out.model });
+        return json(res, 200, {
+          ok: true, ai: true, text: out.text,
+          model: out.model, backend: out.backend || 'chat/completions',
+          ...(out.agents_error ? { agents_fallback: out.agents_error } : {})
+        });
       } catch (e) {
         return json(res, 400, { ok: false, error: 'bad_request' });
       }
@@ -1012,6 +1068,8 @@ acquirePort(server, PORT, { host: '0.0.0.0' })
     console.log(`[http] API on :${actual}`);
     if (actual !== PORT) console.warn(`[http] порт ${PORT} был занят — я на ${actual}. Для вева это значит: обнови bot_public_url/проброс порта, иначе чат не достучится.`);
     console.log(ai.aiStatusLine());
+    const line = agents.agentsStatusLine();
+    if (line) console.log(line);
   })
   .catch((e) => {
     console.error('[http] ' + (e?.message || e));
@@ -1029,6 +1087,8 @@ async function shutdown(signal) {
   console.log(`[bot] ${signal} — сохраняю базу и освобождаю порт`);
   try { flush(); } catch (e) { console.error('[db] не записал: ' + (e?.message || e)); }
   try { await bot.stop(); } catch { /* polling мог и не подняться */ }
+  // исполнители окружения (codex exec-server) не должны пережить процесс
+  try { agents.closeAllSessions('shutdown'); } catch { /* и не было ни одного */ }
   try { server.close(); } catch { /* уже закрыт */ }
   process.exit(0);
 }

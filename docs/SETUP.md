@@ -268,3 +268,105 @@ docker restart dibitishka-bot              # или остановить то, �
 Полезно знать: `ai: true` в /health означает только «переменная `OPENAI_API_KEY`
 не пустая». Что ключ рабочий, модель существует, а на аккаунте есть деньги —
 это уже `ai_health.last_error` или `/diag`.
+
+## Агенты: сессия и self-hosted окружение (необязательно)
+
+По умолчанию чат ходит в `chat/completions` (`bot/src/ai.js`): один запрос —
+один ответ, ничего не крутится между репликами. Это правильный режим для
+«мне тяжело сейчас».
+
+Второй бэкенд — [Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview):
+у диалога появляется **сессия** (память треда живёт на стороне API) и
+**окружение**, где агент читает файлы, запускает код и работает инструментами
+(`bot/src/agents.js`). Включать стоит, если Дибитишке правда нужны тетрадь
+в файлах, репозиторий или длинные многошаговые задачи. Для чата поддержки —
+обычно нет: это лишние деньги (контейнерное время), лишние scope'ы ключа и
+песочница, в которой крутится код от модели.
+
+### 1. Ключ приложения: права
+
+`OPENAI_API_KEY` должен иметь `api.agents.read`, `api.agents.write` и
+`api.responses.write`. Без них создание сессии отвечает 403 — в логе и в
+`/diag` это видно как `agents: auth`.
+
+### 2. Ключ окружения (отдельный!)
+
+platform.openai.com/agents → **Environments → Keys** → создать ключ, у которого
+разрешено только подключение окружения, всё остальное — **None**. На бот-хосте:
+
+```
+OPENAI_EXECUTOR_API_KEY=sk-env-...   # бот передаст его исполнителю как CODEX_API_KEY
+```
+
+Ключ приложения в песочницу не уходит: `bot/src/agents.js` собирает процессу
+исполнителя только `PATH`, `HOME`, `CODEX_API_KEY` (плюс то, что ты сам
+перечислишь в `AGENTS_EXECUTOR_ENV`).
+
+### 3. Исполнитель окружения
+
+Внутри окружения (контейнер, ВМ, та же машина в изоляции) должен стоять Codex CLI:
+
+```bash
+mkdir -p /workspace && npm install -g @openai/codex@alpha
+```
+
+Наружу разрешены `https://api.openai.com` (регистрация) и
+`wss://codex-cloud-environments.chatgpt.com` (команды и результаты) — все
+соединения исходящие, реверс-прокси окружению не нужен.
+
+### 4. Переменные на бот-хосте
+
+```
+AGENTS_ENABLED=1
+AGENTS_MODEL=gpt-4o-mini
+AGENTS_WORKSPACE=/workspace
+AGENTS_EXECUTOR_CMD=codex exec-server --remote "{remote_url}" --environment-id "{environment_id}"
+```
+
+`{remote_url}` и `{environment_id}` подставляет сам бот из ответа
+`POST /v1/agents/sessions` — **их нельзя захардкодить**: у каждой сессии своё
+окружение и свой исполнитель. Поэтому пара вида
+
+```
+codex exec-server --remote "https://api.openai.com/v1/agents/api/connect/rt_xxxx" \
+                  --environment-id "ccarenv_b64_..."
+```
+
+из доков/showcase — это **одна конкретная** сессия, созданная ранее. Ручной
+запуск такой команды годится только для проверки «вот оно живёт»; как только
+сессию закроют или она протухнет, исполнитель подключится не сможет, и чат
+будет висеть до `AGENTS_TURN_TIMEOUT_MS`. Правильно — чтобы команду запускал
+бот (`AGENTS_EXECUTOR_CMD`), либо чтобы ты видел актуальные значения в
+`/diag` (там `session_id`, состояние окружения и pid исполнителя).
+
+Не задаёшь `AGENTS_EXECUTOR_CMD` — бот не трогает процессы, а пишет готовую
+команду в лог и в `/diag`; тогда запускай её вручную в нужном окружении.
+Токен из `remote_url` бот нигде целиком не печатает (`connect/rt_***`), и в
+`/health` он не попадает.
+
+### 5. Как это выглядит в рантайме
+
+```
+[agents] сессия ses_01ABC для «tg:123» · окружение ccarenv_b64_***
+[agents] исполнитель запущен: pid 4213 для окружения ccarenv_b64_***
+```
+
+Состояния окружения: `pending` (ждём исполнителя) → `connected` (агент
+набирает ход) → `failed` (не подключился). Если окружение так и не пришло,
+бот не молчит: ход прерывается с `environment_pending` / `environment_failed`,
+человек получает тёплый ответ из своих записей, а владелец — причину.
+
+В `/health`:
+
+```json
+"agents": { "enabled": true, "sessions": 3, "turns": 41, "fallbacks": 0,
+            "executor_cmd": true, "executor_key": true, "last_error": null,
+            "live": [{ "key": "tg:123", "session_id": "ses_01…", "environment_state": "connected",
+                       "executor": "работает (pid 4213)", "idle_s": 12 }] }
+```
+
+### 6. Откат
+
+`AGENTS_ENABLED=0` + перезапуск — чат снова только на `chat/completions`.
+Сессии на стороне OpenAI при закрытии процесса удаляются (`closeAllSessions`
+по SIGTERM), `reset` в Telegram закрывает сессию диалога сразу.

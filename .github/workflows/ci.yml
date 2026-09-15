@@ -64,6 +64,10 @@ jobs:
       # insufficient_quota, таймауты — чинятся сами, и это не должно отвалиться.
       - name: живой чат — параметры модели и коды ошибок (мок OpenAI)
         run: npm run ai-test
+      # Контракт Agents API (сессия, exec-server, поток событий) — против
+      # подставного API: чтобы «сессия + окружение» не развалилось в проде.
+      - name: agents-бэкенд — сессия, исполнитель, поток событий (мок API)
+        run: npm run agents-test
       - name: автоочистка порта при деплое
         run: node scripts/port-clash.mjs
 

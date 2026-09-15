@@ -2,6 +2,15 @@
 
 > **Это итерация номер 24** (15.09.2026).
 > Что изменилось:
+> - **Второй бэкенд чата — Agents API с сессией и окружением** (`bot/src/agents.js`,
+>   `AGENTS_ENABLED=1`): у диалога появляется persistent-сессия (память треда на
+>   стороне API), а рядом — self-hosted окружение, где агент читает файлы и запускает
+>   код. Бот сам создаёт сессию, подставляет `remote_url`/`environment.id` в
+>   `codex exec-server` (`AGENTS_EXECUTOR_CMD`), следит за состоянием окружения,
+>   закрывает сессии по `reset` и по SIGTERM. Без флага и в случае любой осечки
+>   агентов — обычный `chat/completions`, а человек вообще ничего не замечает.
+>   Секреты окружения (connect-токен, `CODEX_API_KEY`) не светятся ни в логах,
+>   ни в `/health`, ни в песочнице. Проверка контракта — `npm run agents-test`.
 > - **«Чат молчит» теперь имеет причину.** `GET /health` отдаёт `telegram.polling`
 >   (running / retry / dead + `poll_error: conflict|auth|network`), `ai_health`
 >   (модель, счётчики, последняя ошибка и текст из ответа OpenAI), `problems[]`

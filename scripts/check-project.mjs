@@ -470,6 +470,51 @@ for (const [label, lock, pkg, dir] of [
   else bad('docs/SETUP.md: нет раздела «чат молчит» с /diag и npm run ai-check', 'человек не должен гадать, где смотреть причину');
 }
 
+/* ---------- 15. agents-бэкенд: контракт и тишина о секретах ----------
+   Отдельный рубеж: сессия Agents API + self-hosted окружение. Ловит то,
+   что невозможно проверить без mock-сервера: путь и заголовок беты, форма
+   input-события, признаки конца хода, и главное — что connect-токен
+   окружения не уезжает ни в логи, ни в /health, ни в окружение процесса. */
+{
+  const ag = read(path.join(BOT, 'src', 'agents.js'));
+  const app = read(path.join(BOT, 'src', 'app.js'));
+  const envEx = read(path.join(ROOT, '.env.example'));
+  const docs = read(path.join(ROOT, 'docs', 'SETUP.md'));
+  const pkg = readJson(path.join(ROOT, 'package.json'));
+  const ci = read(path.join(ROOT, '.github', 'workflows', 'ci.yml'));
+  if (!ag) bad('нет bot/src/agents.js', 'agents-бэкенд (сессия + окружение) — см. docs/SETUP.md');
+  else {
+    const contract = [
+      ['/agents/sessions', 'путь создания сессии'],
+      ["'agents=v1'", 'заголовок OpenAI-Beta: agents=v1'],
+      ['agent.session.input.message', 'форма input-события'],
+      ['agent.session.turn.output_text.delta', 'чтение дельт текста'],
+      ['agent.session.turn.completed', 'признак конца хода (idle — не он)'],
+      ['agent.session.environment.failed', 'реакция на неподключённое окружение']
+    ];
+    const missing = contract.filter(([needle]) => !ag.includes(needle));
+    if (!missing.length) ok(`bot/src/agents.js: контракт Agents API на месте (${contract.length} пунктов)`);
+    else bad('bot/src/agents.js потерял часть контракта: ' + missing.map(([, w]) => w).join(', '));
+
+    const diag = ag.slice(ag.indexOf('export function agentsDiagnostics'), ag.indexOf('/* ---------- HTTP')) || '';
+    if (ag.includes('maskSecret(') && !/remote_url:/.test(diag)) ok('bot/src/agents.js: remote_url маскируется и не светится в диагностике');
+    else bad('bot/src/agents.js: connect-токен окружения виден снаружи', 'remote_url содержит одноразовый токен подключения — только маска, и никогда в /health');
+    if (!/env:\s*\{\.\.\.process\.env/.test(ag)) ok('bot/src/agents.js: в песочницу не льётся окружение процесса');
+    else bad('bot/src/agents.js: исполнителю передаётся ...process.env', 'вместе с OPENAI_API_KEY и ADMIN_IDS попадёт в песочницу, где крутится код от модели');
+  }
+  if (/agentsEnabled\(\)/.test(app) && /фолбэк в chat\/completions/.test(app)) ok('bot/src/app.js: agents с автоматическим фолбэком на chat/completions');
+  else bad('bot/src/app.js: у agents-бэкенда нет фолбэка', 'человек не должен остаться без ответа из-за недоступного окружения');
+  if (/closeAllSessions/.test(app)) ok('bot/src/app.js: исполнители закрываются по SIGTERM');
+  else bad('bot/src/app.js: codex exec-server переживёт останов процесса', 'нужен closeAllSessions() в shutdown');
+
+  if (/AGENTS_ENABLED/.test(envEx) && /OPENAI_EXECUTOR_API_KEY/.test(envEx)) ok('.env.example: переменные agents-бэкенда описаны');
+  else bad('.env.example: нет блока AGENTS_* / OPENAI_EXECUTOR_API_KEY');
+  if (/exec-server/.test(docs) && /AGENTS_EXECUTOR_CMD/.test(docs)) ok('docs/SETUP.md: запуск окружения и исполнителя описан');
+  else bad('docs/SETUP.md: не описан codex exec-server / AGENTS_EXECUTOR_CMD');
+  if (pkg?.scripts?.['agents-test'] && ci?.includes('agents-test') && exists(path.join(ROOT, 'scripts', 'agents-mock-check.mjs'))) ok('npm run agents-test: мок Agents API в CI');
+  else bad('нет agents-test в package.json/CI', 'контракт беты надо проверяять без живого ключа');
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');
