@@ -1017,6 +1017,14 @@ const server = http.createServer(async (req, res) => {
       is_premium: isPremium(user)
     });
   }
+  if (req.method === 'GET' && u.pathname === '/pay-url') {
+    /* Веб открывает окно Tribute сразу внутри приложения (как «Разовый донат»),
+       поэтому отдаём актуальную monthly-ссылку Donation Request. Секретов в
+       ней нет: это публичная страница оплаты, та же, куда ведёт кнопка /pay.
+       Без настроенного Tribute ok=false — веб покажет прежнюю шторку. */
+    const url = tribute.getPayUrl();
+    return json(res, 200, { ok: tribute.tributeConfigured(), url: url || '' });
+  }
   if (req.method === 'POST' && u.pathname === '/me/reminder') {
     let body = '';
     req.on('data', c => body += c);

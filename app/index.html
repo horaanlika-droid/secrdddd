@@ -10,8 +10,8 @@
 <title>Дибитишка</title>
 <link rel="icon" type="image/png" href="assets/mascot/icon.png">
 <link rel="apple-touch-icon" href="assets/mascot/icon.png">
-<link rel="stylesheet" href="css/app.css?v=32-folders-boards-logo">
-<link rel="preload" as="image" href="assets/brand/splash-lockup.png" fetchpriority="high">
+<link rel="stylesheet" href="css/app.css?v=35-inapp-pay-privacy">
+<link rel="preload" as="image" href="assets/brand/logo-clean.png" fetchpriority="high">
 <link rel="stylesheet" href="css/hero-moods.css?v=28">
 <script src="config.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -19,11 +19,11 @@
 <body>
 <div id="splash" aria-hidden="true">
   <div class="splash-inner">
-    <!-- Локап из IMG_0969: маскот + надпись «ДИБИТИШКА» и «app by @stonym0ntana».
-         Фон снаружи вырезан в альфа-канал (scripts/cut_bg.py), так что на
-         градиентном прелоаде нет ни белой плашки, ни подложки. Напечатанные
-         точки под надписью обрезаны — вместо них живые .splash-dots. -->
-    <img class="splash-lockup" src="assets/brand/splash-lockup.png" alt="Дибитишка" width="914" height="537" fetchpriority="high">
+    <!-- Чистый локап (v33): маскот + надпись «ДИБИТИШКА» без строки
+         «app by @stonym0ntana». Фон снаружи вырезан в альфа-канал
+         (scripts/cut_bg.py), так что на градиентном прелоаде нет ни белой
+         плашки, ни подложки. Точки под надписью живые — .splash-dots. -->
+    <img class="splash-logo-clean" src="assets/brand/logo-clean.png" alt="Дибитишка" width="800" height="347" fetchpriority="high">
     <div class="splash-tagline">Бережно · шаг за шагом · рядом</div>
     <div class="splash-dots" aria-hidden="true"><i></i><i></i><i></i></div>
   </div>
@@ -32,6 +32,6 @@
 <main id="app" aria-live="polite"></main>
 <div id="sheet-root"></div>
 <nav id="tabbar" hidden></nav>
-<script type="module" src="js/app.js?v=32-folders-boards-logo"></script>
+<script type="module" src="js/app.js?v=35-inapp-pay-privacy"></script>
 </body>
 </html>

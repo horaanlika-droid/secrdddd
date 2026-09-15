@@ -29,7 +29,8 @@ window.DIBI_CONFIG = {
   },
 
   // Донат разработчикам — разовая поддержка через Tribute (ссылка-приложение).
-  donate_url: "https://t.me/tribute/app?startapp=dLSm",
+  // v35: обе ссылки (разовый донат и ежемесячный) ведут на один Donation Request dQui.
+  donate_url: "https://t.me/tribute/app?startapp=dQui",
 
   // Соцсети (заглушки — замени на свои)
   social: {

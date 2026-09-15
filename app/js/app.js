@@ -194,8 +194,14 @@ const daySeed = () => Math.floor(Date.now() / 86400000);
    вокруг букв чисто вырезан в альфа-канал (scripts/cut_bg.py), поэтому
    белая подложка под надписью не нужна ни на одной палитре. */
 const PALETTES = {
-  blue: { title: 'Голубая', note: 'Небо и мягкий синий', bg: '#EDF3FE', logo: 'assets/brand/logo-wordmark.png' },
-  pink: { title: 'Розовая', note: 'Пудра, пион, тёплый свет', bg: '#FCEFF5', logo: 'assets/brand/logo-wordmark-pink.png' }
+  blue: { title: 'Голубая', note: 'Небо и мягкий синий', bg: '#EDF3FE', logo: 'assets/brand/logo-wordmark.png',
+          hero: 'assets/brand/logo-1024.png', heroW: 1100, heroH: 493 },
+  /* hero розовой палитры — логотип из IMG_1025, вырезанный без розовой части:
+     только буквы и персонаж, без розовой каймы-стикера и фона (фон снят в
+     альфа-канал, scripts/cut_bg.py), поэтому на розовом небе нет ни плашки,
+     ни обводки. */
+  pink: { title: 'Розовая', note: 'Пудра, пион, тёплый свет', bg: '#FCEFF5', logo: 'assets/brand/logo-wordmark-pink.png',
+          hero: 'assets/brand/logo-1025-clean.png', heroW: 1200, heroH: 514 }
 };
 const paletteId = () => (PALETTES[state.palette] ? state.palette : 'blue');
 const brandLogo = () => PALETTES[paletteId()].logo;
@@ -637,9 +643,12 @@ function heroPoster({ dateStr }) {
   const phrase = dailyPhrase();
   const isLong = phrase.length > 48;
   return el('section', { class: 'hero' },
-    /* v32: на странице «Сегодня» логотип — из IMG_1024 (маскот над надписью,
-       без «app by»). Фон вырезан в альфа-канал, палитра его не меняет. */
-    el('img', { class: 'hero-brand', src: 'assets/brand/logo-1024.png', alt: 'Дибитишка', width: 1100, height: 493 }),
+    /* v33: логотип страницы «Сегодня» зависит от палитры. Голубая — IMG_1024
+       (маскот над надписью, с голубой волной). Розовая — вырезанный логотип
+       из IMG_1025: буквы и персонаж без розовой каймы и фона (logo-1025-clean.png,
+       фон в альфа-канале). setPalette() вызывает render(), поэтому картинка
+       меняется сразу при переключении. */
+    el('img', { class: 'hero-brand', src: PALETTES[paletteId()].hero, alt: 'Дибитишка', width: PALETTES[paletteId()].heroW, height: PALETTES[paletteId()].heroH }),
     el('div', { class: 'hero-phrase' + (isLong ? ' long' : '') }, phrase),
     el('p', { class: 'hero-date' }, dateStr),
     el('div', { class: 'hero-mascot-wrap' }, liveMascot()),
@@ -757,6 +766,10 @@ function route() {
 }
 
 /* ---------- screens ---------- */
+/* Дисклеймер о данных: человек должен сразу понимать, что его записи и фото
+   никуда не уходят. Показываем на онбординге и держим постоянным блоком
+   в профиле. */
+const PRIVACY_NOTE = 'Всё, что ты пишешь и показываешь Дибитишке — эмоции, заметки, дневник, доски и фото — остаётся только на твоём телефоне, в локальной памяти приложения. Мы ничего не собираем, не храним на серверах и не передаём третьим лицам.';
 function screenWelcome() {
   renderTabbar(null);
   const slides = [
@@ -779,6 +792,7 @@ function screenWelcome() {
   const note = el('p', { class: 'onboard-note' },
     `Первая неделя бесплатно, потом ${plansLine()}.`
   );
+  const privacy = el('p', { class: 'onboard-note privacy-note' }, '🔒 ', PRIVACY_NOTE);
   const finish = () => {
     state.onboarded = true;
     if (!state.trial_started_at) state.trial_started_at = Date.now();
@@ -799,7 +813,7 @@ function screenWelcome() {
   nextBtn.onclick = () => { haptic('medium'); if (i < slides.length - 1) { i++; draw(); } };
   cta.onclick = () => { haptic('medium'); finish(); };
   draw();
-  scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note);
+  scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note, privacy);
   return scr;
 }
 
@@ -815,8 +829,29 @@ function paywallCard(scr) {
   scr.append(c);
 }
 
-function openPay() {
+/* v34: оплата открывается внутри приложения — сразу окно Tribute, как это
+   делает кнопка «Разовый донат». Monthly-ссылку Donation Request хранит бот
+   (/tribute set <ссылка>), веб забирает её с GET /pay-url и отдаёт openLink:
+   t.me-ссылки уходят в tg.openTelegramLink, то есть Tribute открывается
+   поверх приложения, без выхода в браузер и без крюка через чат бота.
+   Кэш держит ссылку до перезагрузки, чтобы повторный клик открывал окно
+   мгновенно. Если бот недоступен или Tribute не настроен — fallback:
+   прежняя шторка с объяснением и deep-link pay_m1 в бота. */
+let payUrlCache = '';
+async function fetchPayUrl() {
+  if (payUrlCache) return payUrlCache;
+  if (!API_BASE) return '';
+  try {
+    const r = await fetch(apiUrl('/pay-url'), { cache: 'no-cache' });
+    const j = await r.json();
+    if (j && j.ok && j.url) payUrlCache = j.url;
+  } catch (e) { /* бот недоступен — покажем шторку с deep-link */ }
+  return payUrlCache;
+}
+async function openPay() {
   haptic('medium');
+  const payUrl = await fetchPayUrl();
+  if (payUrl) { openLink(payUrl); return; }
   sheet((sh, close) => {
     const p = PLANS()[0];
     const payBtn = el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
@@ -1841,6 +1876,9 @@ function screenProfile() {
     ));
   }
   scr.append(pick, el('p', { class: 'mins', style: 'margin:8px 4px' }, 'Тема всегда светлая — цвет выбирай под настроение.'));
+
+  scr.append(el('div', { class: 'sect' }, 'Приватность'));
+  scr.append(el('p', { class: 'mins privacy-note' }, '🔒 ', PRIVACY_NOTE));
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];
