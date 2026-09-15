@@ -139,6 +139,60 @@ try {
   await go('diary');
   check('confirmed note appears in diary with sprite heads',()=>{assert(q('#app').textContent.includes('Не теряй черновик'));assert(qa('.ric-face').every(n=>n.classList.contains('mood-sprite')));});
   await go('');
+  /* v39: заметка «Дела» на «Сегодня» — свои дела на день, локально и по дням */
+  const dNow = new Date();
+  const dayKey = `${dNow.getFullYear()}-${String(dNow.getMonth() + 1).padStart(2, '0')}-${String(dNow.getDate()).padStart(2, '0')}`;
+  const btnWith = (text, root = w.document) => [...root.querySelectorAll('button')].find(x => x.textContent.includes(text));
+  check('home shows the daily deeds note',()=>assert(q('.deeds-card')));
+  input(q('.deeds-input'),'Позвонить маме'); q('.deeds-add').click(); await sleep(30);
+  input(q('.deeds-input'),'Полить цветок'); q('.deeds-add').click(); await sleep(30);
+  check('deeds save under the day key and render as a list',()=>{
+    const items=state().deeds[dayKey].items;
+    assert.equal(items.length,2);
+    assert.equal(items[0].text,'Позвонить маме');
+    assert.equal(qa('.deed').length,2);
+    assert.equal(q('.deeds-count').textContent,'0 из 2 сделано');
+    assert(!btnWith('Перенести'),'carry button stays hidden while today has deeds');
+  });
+  qa('.deed-check')[0].click(); await sleep(30);
+  check('checking a deed persists and updates the counter',()=>{
+    assert.equal(state().deeds[dayKey].items[0].done,true);
+    assert.equal(q('.deeds-count').textContent,'1 из 2 сделано');
+    assert(qa('.deed')[0].classList.contains('done'));
+  });
+  qa('.deed-del')[1].click(); await sleep(30);
+  check('removing a deed keeps the rest of the list',()=>{
+    const items=state().deeds[dayKey].items;
+    assert.equal(items.length,1);
+    assert.equal(items[0].text,'Позвонить маме');
+  });
+  /* v39: гайд про иконку на экране «Домой» */
+  check('home offers the add-to-home-screen guide until installed or snoozed',()=>assert(q('.install-teaser')));
+  click('Не сейчас'); await sleep(30);
+  check('«Не сейчас» snoozes the teaser for a week',()=>{
+    assert(!q('.install-teaser'));
+    assert(state().install_snoozed>Date.now()+6*86400000);
+  });
+  await go('install');
+  check('install guide lists numbered platform steps and keeps the link action',()=>{
+    assert(qa('.steps .step').length>=3);
+    assert(qa('.steps .step-n').every(n=>/^\d+$/.test(n.textContent)));
+    assert(btnWith('Скопировать ссылку на приложение'));
+  });
+  btnWith('Готово, иконка на экране').click(); await sleep(40);
+  check('marking the icon installed is remembered and hides the teaser',()=>{
+    assert.equal(state().install_done,true);
+    assert(!q('.install-teaser'));
+  });
+  await go('install');
+  check('installed state greets instead of nagging',()=>{
+    assert(q('#app').textContent.includes('Приложение установлено'));
+  });
+  await go('profile');
+  check('profile keeps a permanent entry to the install guide',()=>{
+    assert(btnWith('Иконка на экране «Домой»'));
+  });
+  await go('');
   check('splash shows the 3D mascot with orbiting elements and an XP-style loading bar',()=>{
     assert(q('.splash-mascot').src.includes('assets/brand/splash-mascot-3d.png'));
     assert(q('.splash-wordmark').src.includes('assets/brand/splash-wordmark-hq.png'));
@@ -179,7 +233,7 @@ try {
     const replies=qa('.msg.bot .bubble').map(n=>n.textContent);
     assert(replies.length>=2); assert.notEqual(replies.at(-1),replies.at(-2));
   });
-  for (const route of ['skills', ...CONTENT.blocks.map(b=>'skills/'+b.id), 'p/'+CONTENT.blocks[0].practices[0].id, 'chat', 'profile', 'tasks', 'task/'+CONTENT.tasks[0].id, 'workbook','merch','boards']) {
+  for (const route of ['skills', ...CONTENT.blocks.map(b=>'skills/'+b.id), 'p/'+CONTENT.blocks[0].practices[0].id, 'chat', 'profile', 'tasks', 'task/'+CONTENT.tasks[0].id, 'workbook','merch','install','boards']) {
     await go(route); check('route '+route+' renders',()=>assert(q('#app .screen')));
   }
   check('boards use the generated creative-mess composition',()=>assert(q('.boards-hero img').src.includes('creative-mess.webp')));
@@ -256,6 +310,21 @@ try {
   check('new local content supersedes an older persisted API copy',()=>{
     assert(current.q('#app').textContent.includes('Минимальный донат'));
     assert(!current.q('#app').textContent.includes('СТАРАЯ ЦЕНА ИЗ API'));
+  });
+  current.dom.window.close();
+  const yDay=new Date(); yDay.setDate(yDay.getDate()-1);
+  const yKey=`${yDay.getFullYear()}-${String(yDay.getMonth()+1).padStart(2,'0')}-${String(yDay.getDate()).padStart(2,'0')}`;
+  const tDay=new Date();
+  const tKey=`${tDay.getFullYear()}-${String(tDay.getMonth()+1).padStart(2,'0')}-${String(tDay.getDate()).padStart(2,'0')}`;
+  current=await app({deeds:{[yKey]:{items:[{id:'y1',text:'Полить цветок',done:false},{id:'y2',text:'Вчерашнее сделано',done:true}]}}});
+  check('open deeds from yesterday carry into a fresh today',()=>{
+    const carry=[...current.w.document.querySelectorAll('button')].find(b=>b.textContent.includes('Перенести'));
+    assert(carry,'carry button is offered on an empty today list');
+    carry.click();
+    const items=current.state().deeds[tKey].items;
+    assert.equal(items.length,1);
+    assert.equal(items[0].text,'Полить цветок');
+    assert.equal(items[0].done,false);
   });
   current.dom.window.close();
   current=await app({ onboarded: false });

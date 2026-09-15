@@ -770,6 +770,74 @@ for (const [label, lock, pkg, dir] of [
   }
 }
 
+/* ---------- 17. v39: иконка на экран «Домой» и заметка «Дела» ----------
+   Правила из запроса итерации. Смысл каждого:
+   — иконка должна быть файлами, а не обещанием: manifest ссылается на
+     192/512/maskable, файлы лежат и совпадают с объявленным размером,
+     у apple-touch нет альфы (iOS кладёт прозрачный PNG на чёрную подложку);
+   — гайд учитывает платформу: шаги iPhone, Android и компьютера разные,
+     а в Telegram Mini App есть «шаг ноль» — открыть в браузере;
+   — подсказка не давит: уходит после установки и после «Не сейчас»;
+   — дела живут по дням, как дневник и практики: общий todayKey, вчера
+     не исчезает, незакрытое переносится одной кнопкой. */
+{
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const css = read(path.join(ROOT, 'app', 'css', 'app.css'));
+  const appIndex = read(path.join(ROOT, 'app', 'index.html'));
+  const manifest = readJson(path.join(ROOT, 'app', 'manifest.webmanifest'));
+  const pngInfo = (p) => {
+    try { const b = fs.readFileSync(p); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), color: b[25] }; }
+    catch { return null; }
+  };
+
+  if (!manifest) bad('нет app/manifest.webmanifest — браузеру неоткуда взять иконку приложения');
+  else {
+    const byPurpose = {};
+    for (const ic of manifest.icons || []) byPurpose[ic.purpose || 'any'] = ic;
+    const want = { any: '512x512', maskable: '512x512' };
+    const missing = Object.entries(want).filter(([pu]) => !byPurpose[pu]).map(([pu]) => pu);
+    if (!missing.length) ok('manifest: иконки any и maskable объявлены');
+    else bad(`manifest: нет иконок назначения ${missing.join(', ')}`, 'без maskable лаунчер обрежет капюшон маски-кругом');
+    const broken = (manifest.icons || []).filter((ic) => {
+      const info = pngInfo(path.join(ROOT, 'app', ic.src.replace(/^\.\//, '')));
+      return !info || `${info.w}x${info.h}` !== ic.sizes;
+    });
+    if (!broken.length) ok(`manifest: все ${manifest.icons.length} файла иконок лежат и совпадают с sizes`);
+    else bad('manifest ссылается на несуществующие или несовпадающие иконки: ' + broken.map((i) => i.src).join(', '),
+             'пересобери: python3 scripts/build-app-icons.py');
+    const touch = pngInfo(path.join(ROOT, 'app', 'assets', 'icons', 'apple-touch-180.png'));
+    if (touch && touch.w === 180 && touch.color === 2) ok('apple-touch-icon 180×180 без альфы (iOS не положит его на чёрный квадрат)');
+    else bad('apple-touch-icon отсутствует, не 180×180 или с альфой', 'пересобери: python3 scripts/build-app-icons.py');
+    if (exists(path.join(ROOT, 'scripts', 'build-app-icons.py'))) ok('нарезка иконок воспроизводима: scripts/build-app-icons.py');
+    else bad('нет scripts/build-app-icons.py', 'иконки должны пересобираться из assets/mascot/icon.png, а не правиться руками');
+  }
+  if (/rel="manifest"/.test(appIndex) && /rel="apple-touch-icon" sizes="180x180"/.test(appIndex)) ok('index.html подключает manifest и apple-touch-icon');
+  else bad('index.html не подключает manifest/apple-touch-icon', 'без тегов iOS и Android не соберут иконку приложения');
+
+  if (!web) bad('нет app/js/app.js');
+  else {
+    if (/beforeinstallprompt/.test(web) && /appinstalled/.test(web) && /isStandalone\(/.test(web)) ok('веб ловит beforeinstallprompt/appinstalled и понимает standalone-режим');
+    else bad('веб не слушает события установки PWA', 'без beforeinstallprompt кнопка «Установить» не появится, без appinstalled будешь напоминать уже установившим');
+    if (/case 'install'/.test(web) && /function screenInstall\(/.test(web) && /INSTALL_STEPS = \{[\s\S]*ios:[\s\S]*android:[\s\S]*desktop:/.test(web)) ok('гайд #/install: отдельные шаги для iPhone, Android и компьютера');
+    else bad('гайд установки не различает платформы', 'шаги Safari, Chrome и адресной строки разные — общая инструкция врёт');
+    if (/Шаг ноль · ты в Telegram/.test(web) && /Открыть в браузере/.test(web)) ok('гайд: в Telegram Mini App есть «шаг ноль» про браузер');
+    else bad('гайд не объясняет выход из Telegram Mini App', 'внутри Telegram иконку ставит телефон через браузер — без шага ноль человек упрётся в стену');
+    if (/installVisible\(/.test(web) && /install_snoozed/.test(web) && /Не сейчас/.test(web)) ok('подсказка про иконку уходит после установки и после «Не сейчас»');
+    else bad('подсказка про иконку не умеет отстаиваться', 'напоминание без выхода давит сильнее, чем помогает');
+    if (/Иконка на экране «Домой»/.test(web) && /go\('install'\)/.test(web)) ok('профиль держит постоянный вход в гайд');
+    else bad('в профиле нет постоянной ссылки на гайд установки', 'подсказка с главной исчезает — гайд должен оставаться находимым');
+
+    const deedsAt = web.indexOf("'Дела на сегодня'");
+    const practiceAt = web.indexOf("'Практика дня'");
+    if (deedsAt > 0 && practiceAt > deedsAt) ok('главная: заметка «Дела» стоит между целью и практикой дня');
+    else bad('заметка «Дела» не на своём месте на «Сегодня»', 'порядок: ежедневная цель → дела на сегодня → практика дня');
+    if (/deeds: \{\}/.test(web) && /persisted\.deeds/.test(web) && /deedsToday\(/.test(web) && /deedsCarrySource\(/.test(web)) ok('дела хранятся по дням и переносятся со вчера');
+    else bad('заметка «Дела» потеряла хранение по дням или перенос', 'state.deeds[todayKey()] — как дневник и практики; вчера не должно исчезать');
+    if (/\.deeds-list\{/.test(css) && /\.deed-check\{/.test(css) && /\.steps\{/.test(css) && /\.step-n\{/.test(css)) ok('стили заметки «Дела» и нумерованных шагов гайда на месте');
+    else bad('нет стилей заметки дел и шагов гайда', 'карточка дел и шаги гайда поедут без своих классов');
+  }
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');
