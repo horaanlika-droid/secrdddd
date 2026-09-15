@@ -22,6 +22,9 @@ import { acquirePort } from './port.js';
 import * as tribute from './tribute.js';
 import * as ai from './ai.js';
 import * as agents from './agents.js';
+import { createWebAuth, loginCode, readJson } from './web-auth.js';
+import { createBoardApi } from './boards.js';
+import { createGifApi } from './gif.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.TG_TOKEN || '';
@@ -48,6 +51,7 @@ if (!TOKEN) {
 const bot = new Bot(TOKEN);
 const db = getDB();
 db.stats = db.stats || { sent: 0 };
+const webAuth = createWebAuth({ token: TOKEN, db, save });
 
 /* ============================================================
    Самодиагностика: почему бот молчит — видно снаружи, без терминала
@@ -244,7 +248,7 @@ bot.command('today', async (ctx) => {
 bot.command('code', (ctx) => {
   const u = getUser(ctx);
   save();
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = loginCode();
   db.codes[code] = { user_id: u.id, exp: Date.now() + 10 * 60000 };
   save();
   ctx.reply(`Твой код для веб-версии: ${code}\nДействует 10 минут. Введи его на сайте — и веб привяжется к этому аккаунту.`);
@@ -726,7 +730,8 @@ const json = (res, code, obj) => {
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Cache-Control': 'no-store',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
   });
   res.end(JSON.stringify(obj));
@@ -752,7 +757,7 @@ const sendConfigJs = (res) => {
   try {
     const filePath = path.join(APP_DIR, 'config.js');
     let content = fs.readFileSync(filePath, 'utf8');
-    content += '\nif (window.DIBI_CONFIG && !window.DIBI_CONFIG.bot_public_url) window.DIBI_CONFIG.bot_public_url = window.location.origin;\n';
+    content += '\nif (window.DIBI_CONFIG) window.DIBI_CONFIG.bot_public_url = window.location.origin;\n';
     res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
     res.end(content);
     return true;
@@ -859,9 +864,15 @@ setInterval(() => {
   }
 }, 60000).unref?.();
 
+const boardApi = createBoardApi({ root: process.env.BOARDS_DATA_DIR || path.join(path.dirname(dbFile), 'board-data'), auth: webAuth, json });
+const gifApi = createGifApi({ json });
+const codeAttempts = new Map();
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
   const u = new URL(req.url, 'http://x');
+  if (await boardApi(req, res, u)) return;
+  if (await gifApi(req, res, u)) return;
 
   if (req.method === 'GET' && u.pathname === '/health') {
     return json(res, 200, statusReport());
@@ -936,22 +947,23 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, C());
   }
   if (req.method === 'POST' && u.pathname === '/auth/verify') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
-      try {
-        const { code } = JSON.parse(body || '{}');
-        const rec = db.codes[String(code || '').trim()];
-        if (!rec || rec.exp < Date.now()) return json(res, 404, { ok: false });
-        delete db.codes[String(code).trim()];
-        save();
-        const user = db.users[rec.user_id];
-        return json(res, 200, { ok: true, user: { id: rec.user_id, name: user?.name || 'друг' } });
-      } catch (e) {
-        return json(res, 400, { ok: false });
-      }
-    });
-    return;
+    const now = Date.now(), ip = req.socket.remoteAddress || '?';
+    for (const [key, rec] of codeAttempts) if (now - rec.time > 600000) codeAttempts.delete(key);
+    const attempt = codeAttempts.get(ip) || { time: now, count: 0 };
+    attempt.count++; codeAttempts.set(ip, attempt);
+    if (attempt.count > 10) return json(res, 429, { ok: false, error: 'rate_limit' });
+    try {
+      const { code } = await readJson(req, 1024);
+      if (typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) return json(res, 400, { ok: false });
+      const rec = db.codes[code.trim()];
+      if (!rec || rec.exp < now) return json(res, 401, { ok: false });
+      const user = db.users[rec.user_id];
+      if (!user) return json(res, 401, { ok: false });
+      delete db.codes[code.trim()];
+      const session = webAuth.issue(rec.user_id);
+      save();
+      return json(res, 200, { ok: true, user: { id: rec.user_id, name: user.name || 'друг' }, ...session });
+    } catch (e) { return json(res, e.status || 400, { ok: false }); }
   }
   if (req.method === 'GET' && u.pathname === '/me') {
     const uid = Number(u.searchParams.get('user_id'));

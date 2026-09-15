@@ -1,4 +1,7 @@
 /* Дибитишка · веб-приложение (TG Mini App + GitHub Pages + bot host) */
+import { compressImage } from './image-tools.js';
+import { BoardSync } from './board-sync.js';
+import { renderBoardPages, boardPdf, boardPageBlob, downloadBlob, printBoardPages } from './board-export.js';
 
 const CFG = window.DIBI_CONFIG || {};
 const $ = (s, r = document) => r.querySelector(s);
@@ -44,6 +47,9 @@ const ICONS = {
   play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
   chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H6l-3 3v-3a8.5 8.5 0 1 1 18-8.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/>'),
   chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
+  image: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.5-4.5 3.5 3.5 3-3 4 4"/>'),
+  gif: svg('<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M7 10v4M7 12h2.5M12 10v4M15.5 14v-4h3M15.5 12h2.5"/>'),
+  note: svg('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 11h6M9 15h4"/>'),
   heart: svg('<path d="M12 20s-7.2-4.6-9.2-9.1C1.2 7.5 3.6 4.5 6.7 4.5c1.9 0 3.7 1 4.7 2.6.5.8.6.9.6.9s.1-.1.6-.9c1-1.6 2.8-2.6 4.7-2.6 3.1 0 5.5 3 3.9 6.4C19.2 15.4 12 20 12 20z"/>')
 };
 const icon = (name, cls = '') => { const s = el('span'); s.className = cls; s.innerHTML = ICONS[name] || ICONS.drop; return s.firstChild; };
@@ -69,6 +75,7 @@ const defaultState = {
   premium_until: 0,
   theme: 'light',
   palette: 'blue',          // «голубая» / «розовая» — см. applyPalette()
+  mood_schema: 2,           // v25: эмоций стало девять (см. миграцию ниже)
   mastered: {},
   done: {},
   mood: {},
@@ -108,6 +115,17 @@ if (!state.mood_entries.length && Object.keys(state.mood).length) {
     const [y, m, d] = k.split('-').map(Number);
     return { ts: new Date(y, m - 1, d, 12).getTime(), value: v };
   });
+  save();
+}
+
+// миграция v25: эмоции были 0..4 («Тяжело…Радостно»), стали 0..8
+// (добавились Грустно, Весело, Смешанно, Непонятно). Старые отметки
+// раскладываем по новой шкале, чтобы график в профиле не поехал.
+if ((persisted.mood_schema || 1) < 2) {
+  const OLD = [0, 2, 3, 4, 6];
+  state.mood_entries = state.mood_entries.map(e => Object.assign({}, e, { value: OLD[e.value] ?? 4 }));
+  state.mood = Object.fromEntries(Object.entries(state.mood).map(([k, v]) => [k, OLD[v] ?? 4]));
+  state.mood_schema = 2;
   save();
 }
 
@@ -208,8 +226,23 @@ const SCALE_DEFS = [
   { key: 'resilience', title: 'Устойчивость', hint: 'Держусь в волне и возвращаюсь', max: 100, tint: 'resilience', emoji: '🌿' },
   { key: 'sensory', title: 'Сенсорный баланс', hint: 'Слышу тело и среду', max: 60, tint: 'sensory', emoji: '🫧' }
 ];
-const MOODS = ['Тяжело', 'Тревожно', 'Ровно', 'Тепло', 'Радостно'];
-const MOOD_EMOJI = ['😞', '😰', '😐', '🙂', '😊'];
+/* Эмоции: только головы из ОДНОГО листа 4×4. Первые девять ячеек
+   соответствуют прежним состояниям; остальные семь подготовлены в запас.
+   Главная, дневник и график используют один общий спрайт, не отдельные PNG. */
+const MOODS = ['Тяжело', 'Грустно', 'Тревожно', 'Ровно', 'Тепло', 'Весело', 'Радостно', 'Смешанно', 'Непонятно'];
+const MOOD_FACES = ['hard', 'sad', 'anxious', 'even', 'warm', 'fun', 'joy', 'mixed', 'unclear'];
+// подсказка под чипом: чем этот оттенок отличается от соседних
+const MOOD_HINTS = ['сил мало, всё тянет вниз', 'печально и хочется тишины', 'внутри шатко и неспокойно', 'ни туда, ни сюда — ровно', 'мягко и по-доброму', 'легко, хочется смеяться', 'звонко и радостно', 'и хорошо, и тяжело сразу', 'сама не понимаю, что это'];
+const MOOD_LEVEL = [0, 1, 2, 4, 5, 6, 8, 4, 4];   // где точка стоит на графике (0..8)
+const MOOD_EMOJI = MOOD_FACES;                     // обратная совместимость старых записей
+const moodFace = (v, cls = 'mood-face') => {
+  const index = Number.isInteger(v) && MOOD_FACES[v] ? v : 3;
+  return el('span', {
+    class: `mood-sprite ${cls}`, role: 'img', 'aria-label': MOODS[index],
+    'data-face': MOOD_FACES[index],
+    style: `--face-x:${(index % 4) * 100 / 3}%; --face-y:${Math.floor(index / 4) * 100 / 3}%`
+  });
+};
 const DAILY_PHRASES = [
   "Ты справляешься. Даже если сейчас так не кажется.",
   "Сегодня можно просто быть.",
@@ -298,16 +331,47 @@ function gain(text) {
   setTimeout(() => g.remove(), 1250);
 }
 
+let activeSheetClose = null;
 function sheet(build) {
+  if (activeSheetClose) activeSheetClose();
   const root = $('#sheet-root');
-  root.innerHTML = '';
+  const previousFocus = document.activeElement;
   const veil = el('div', { class: 'sheet-veil' });
-  const sh = el('div', { class: 'sheet' }, el('div', { class: 'grab' }));
+  const sh = el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', tabindex: '-1' }, el('div', { class: 'grab' }));
+  const controller = new AbortController();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    controller.abort();
+    veil.classList.remove('on'); sh.classList.remove('on');
+    sh.inert = true; sh.setAttribute('aria-hidden', 'true');
+    // Убираем только СВОЙ лист: таймер старого листа не должен стереть новый.
+    setTimeout(() => { veil.remove(); sh.remove(); }, 320);
+    if (activeSheetClose === close) activeSheetClose = null;
+    setTimeout(() => { if (boardSync?.state.enabled && boardSync.status.phase === 'waiting') boardSync.sync(); }, 350);
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+  };
+  activeSheetClose = close;
   root.append(veil, sh);
-  const close = () => { veil.classList.remove('on'); sh.classList.remove('on'); setTimeout(() => root.innerHTML = '', 320); };
   veil.addEventListener('click', close);
-  build(sh, close);
-  requestAnimationFrame(() => { veil.classList.add('on'); sh.classList.add('on'); });
+  sh.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const focusable = [...sh.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]')];
+      const first = focusable[0], last = focusable.at(-1);
+      if (!first) { e.preventDefault(); sh.focus(); }
+      else if (e.shiftKey && (document.activeElement === first || document.activeElement === sh)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+  build(sh, close, controller.signal);
+  const title = sh.querySelector('h3');
+  if (title) sh.setAttribute('aria-label', title.textContent);
+  requestAnimationFrame(() => {
+    if (closed) return;
+    veil.classList.add('on'); sh.classList.add('on'); sh.focus({ preventScroll: true });
+  });
   return close;
 }
 
@@ -316,6 +380,47 @@ function mascot(pose, line, sub) {
     el('img', { class: 'mascot', src: `assets/mascot/${pose}.png`, alt: 'Дибитишка' }),
     el('div', { class: 'bubble' }, line, sub ? el('small', {}, sub) : null)
   );
+}
+
+/* v27: лицо Дибитишки на главной — текущее настроение.
+   Одна неподвижная поза: тело, руки и капюшон берутся из hello.png, поверх
+   ложится только лицо выбранной эмоции (сетка hero-moods.webp). Движения
+   тела и прыжка при нажатии нет — меняется ровно выражение лица.
+   Последняя подтверждённая отметка — это и есть текущее настроение, поэтому
+   лицо не «обнуляется» утром: оно ждёт новой отметки. Без отметок вовсе —
+   спокойное лицо из hello.png, как раньше. */
+const heroMood = () => {
+  const last = moodEntries()[0];   // свежие записи сверху
+  return Number.isInteger(last?.value) && MOOD_FACES[last.value] ? last.value + 1 : 0;
+};
+function liveMascot() {
+  const mood = heroMood();         // 0 — спокойное лицо, i + 1 — эмоция i
+  return el('div', {
+    class: 'live-mascot' + (mood ? ' has-mood' : ''), role: 'img',
+    'aria-label': mood ? `Дибитишка рядом · настроение: ${MOODS[mood - 1]}` : 'Дибитишка рядом'
+  },
+    el('img', { class: 'live-mascot-base', src: 'assets/mascot/hello.png', alt: '', width: 1024, height: 1024 }),
+    el('span', {
+      class: 'live-mascot-face' + (mood ? ' mood-in' : ''), 'aria-hidden': 'true',
+      style: `--face-x:${(mood % 4) * 100 / 3}%; --face-y:${Math.floor(mood / 4) * 50}%`
+    })
+  );
+}
+/* Человек только что отметил эмоцию, а главная уже нарисована: обновляем лицо
+   на месте. Полная перерисовка тут вредна — она сбрасывает черновик заметки и
+   прокрутку, а выражение лица должно меняться сразу. */
+function refreshHeroMood(root) {
+  const wrap = root?.querySelector('.live-mascot');
+  const face = wrap?.querySelector('.live-mascot-face');
+  if (!wrap || !face) return;
+  const mood = heroMood();
+  wrap.classList.toggle('has-mood', !!mood);
+  wrap.setAttribute('aria-label', mood ? `Дибитишка рядом · настроение: ${MOODS[mood - 1]}` : 'Дибитишка рядом');
+  face.style.setProperty('--face-x', `${(mood % 4) * 100 / 3}%`);
+  face.style.setProperty('--face-y', `${Math.floor(mood / 4) * 50}%`);
+  face.classList.remove('mood-in');
+  void face.offsetWidth;                       // перезапуск проявления лица
+  if (mood) face.classList.add('mood-in');
 }
 
 const mline = (key) => pick(CONTENT.meta.mascot_lines[key] || ['…'], daySeed() + key.length);
@@ -338,6 +443,7 @@ const totalDoneCount = () => Object.values(state.done).reduce((n, arr) => n + (A
 const masteredCount = () => Object.values(state.mastered).filter(Boolean).length;
 
 /* ---------- дневник эмоций ---------- */
+let moodDraft = { value: null, note: '' }; // Не пишем черновик в дневник или localStorage.
 const moodEntries = () => [...state.mood_entries].sort((a, b) => (b.ts || 0) - (a.ts || 0));
 const moodEntriesCount = () => state.mood_entries.length;
 // последняя отметка за сегодняшний день (для подсветки чипа)
@@ -349,14 +455,18 @@ function addMood(value, note) {
   const k = todayKey();
   const hadToday = state.mood_entries.some(e => todayKey(new Date(e.ts)) === k);
   const cleanNote = (note || '').trim().slice(0, 200);
-  state.mood_entries.push({ ts: Date.now(), value, note: cleanNote || undefined });
-  // лёгкий, один раз в день: честность с собой тоже растёт в шкалы
-  if (!hadToday) gainScale(value >= 2 ? 'awareness' : 'care', 1);
-  // храним ~2 года записей
+  if (!Number.isInteger(value) || !MOODS[value]) throw new Error('Выбери эмоцию');
+  const previousEntries = state.mood_entries;
+  const previousScales = { ...state.game.scales };
   const cutoff = Date.now() - 730 * 86400000;
-  state.mood_entries = state.mood_entries.filter(e => (e.ts || 0) >= cutoff);
-  save();
-  reviewBadges(true);
+  state.mood_entries = [...previousEntries.filter(e => (e.ts || 0) >= cutoff),
+    { ts: Date.now(), value, note: cleanNote || undefined }];
+  if (!hadToday) gainScale(value >= 3 ? 'awareness' : 'care', 1);
+  try { save(); }
+  catch (e) { state.mood_entries = previousEntries; state.game.scales = previousScales; throw e; }
+  // Значки не должны превращать успешно сохранённую запись в «ошибку» и дубль.
+  try { reviewBadges(true); } catch { /* Сама запись уже сохранена. */ }
+
 }
 // ряд для графика: последние `days` дней, для каждого — последняя отметка дня (или null)
 function moodSeries(days = 14) {
@@ -387,14 +497,15 @@ const taskFilled = (id) => !!(state.tasks[id] && (state.tasks[id].text || '').tr
 function moodGraph(days = 14) {
   const series = moodSeries(days);
   const W = 300, H = 118, pad = 8;
+  const top = MOODS.length - 1;                                   // 8 — верх шкалы
   const x = (i) => pad + (W - pad * 2) * (i / (days - 1));
-  const y = (v) => pad + (H - pad * 2) * (1 - v / 4);
+  const y = (v) => pad + (H - pad * 2) * (1 - (MOOD_LEVEL[v] ?? 4) / top);
   const pts = series.map((p, i) => ({ x: x(i), y: p.value === null ? null : y(p.value), v: p.value }));
   const solid = pts.filter(p => p.y !== null);
   const svg = el('div');
   let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="mood-svg">`;
   // сетка и ось «ровно»
-  s += `<line x1="${pad}" y1="${y(2)}" x2="${W - pad}" y2="${y(2)}" class="mood-mid"/>`;
+  s += `<line x1="${pad}" y1="${y(3)}" x2="${W - pad}" y2="${y(3)}" class="mood-mid"/>`;
   if (solid.length > 1) {
     const path = solid.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
     const area = `${path} L${solid[solid.length - 1].x.toFixed(1)},${H - pad} L${solid[0].x.toFixed(1)},${H - pad} Z`;
@@ -402,13 +513,14 @@ function moodGraph(days = 14) {
     s += `<path d="${path}" class="mood-line"/>`;
   }
   for (const p of solid) {
-    const c = p.v >= 3 ? 'hi' : p.v >= 2 ? 'mid' : 'lo';
+    const lvl = MOOD_LEVEL[p.v] ?? 4;
+    const c = lvl >= 6 ? 'hi' : lvl >= 4 ? 'mid' : 'lo';
     s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" class="mood-dot ${c}"/>`;
   }
   s += `</svg>`;
   svg.innerHTML = s;
   const labels = el('div', { class: 'mood-axis' },
-    el('span', {}, '😊'), el('span', { class: 'grow' }), el('span', {}, '😞'));
+    moodFace(6, 'mood-axis-face'), el('span', { class: 'grow' }), moodFace(0, 'mood-axis-face'));
   const caption = el('p', { class: 'mood-caption' }, solid.length
     ? `${moodDaysCount(days)} ${plural(moodDaysCount(days), 'день', 'дня', 'дней')} с отметками за ${days} дн. Тяжёлый день — это точка на пути, а не весь путь.`
     : 'Пока нет записей — отметь эмоцию на главной, и здесь появится твой путь.');
@@ -523,9 +635,7 @@ function heroPoster({ dateStr }) {
     el('img', { class: 'hero-brand', src: brandLogo(), alt: 'Дибитишка', 'data-brand-logo': '' }),
     el('div', { class: 'hero-phrase' + (isLong ? ' long' : '') }, phrase),
     el('p', { class: 'hero-date' }, dateStr),
-    el('div', { class: 'hero-mascot-wrap' },
-      el('img', { class: 'hero-mascot', src: 'assets/mascot/hello.png', alt: 'Дибитишка' })
-    ),
+    el('div', { class: 'hero-mascot-wrap' }, liveMascot()),
     el('div', { class: 'xp' },
       el('div', { class: 'xp-head' },
         el('span', { class: 'level-pill' }, `Уровень ${lvl.level}`),
@@ -753,26 +863,63 @@ function screenToday() {
 
   if (!isPremium()) { paywallCard(scr); return scr; }
 
-  // отметь эмоцию — подняли выше дашборда
-  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
-  const mrow = el('div', { class: 'chips' });
-  const curEntry = moodTodayValue();
-  const moodNoteWrap = el('div', { class: 'mood-note-wrap' },
-    el('textarea', { class: 'mood-note-input', id: 'mood-note', placeholder: 'Короткая заметка — что сейчас на душе? (необязательно)', maxlength: 200, rows: 2 }),
-    el('p', { class: 'mins', style: 'margin:6px 4px 0' }, 'Можно отмечать каждый раз, когда заходишь. Заметка попадёт в дневник.')
-  );
+  // Выбор — только черновик. Ни дневник, ни шкалы не меняются до подтверждения.
+  scr.append(el('div', { class: 'sect', id: 'mood-title' }, 'Отметь эмоцию'));
+  const form = el('form', { class: 'mood-form', 'aria-labelledby': 'mood-title' });
+  const noteInput = el('textarea', {
+    class: 'mood-note-input', id: 'mood-note', rows: 2, maxlength: 200,
+    'aria-label': 'Короткая заметка к эмоции — необязательно',
+    placeholder: 'Что сейчас на душе? Можно добавить пару слов…'
+  });
+  noteInput.value = moodDraft.note;
+  noteInput.addEventListener('input', () => { moodDraft.note = noteInput.value; });
+  form.append(el('div', { class: 'mood-note-wrap' }, noteInput));
+  const mrow = el('div', { class: 'chips mood-chips', role: 'group', 'aria-label': 'Выбери эмоцию' });
+  const hint = el('p', { class: 'mins mood-hint', id: 'mood-hint', role: 'status' });
+  const confirmBtn = el('button', { class: 'btn mood-confirm', type: 'submit', 'aria-describedby': 'mood-hint' },
+    icon('check'), 'Оставить запись');
+  const refreshDraft = (saved = false) => {
+    const selected = Number.isInteger(moodDraft.value);
+    confirmBtn.disabled = !selected;
+    mrow.querySelectorAll('.mood').forEach((btn, i) => {
+      const on = i === moodDraft.value;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    const last = moodTodayValue();
+    hint.textContent = saved ? 'Запись в дневнике. Можно выбрать следующую эмоцию, когда захочется.'
+      : selected ? `Выбрано: «${MOODS[moodDraft.value]}». Сохранится только после «Оставить запись».`
+      : last ? `Последняя запись: «${MOODS[last.value]}». Для новой выбери эмоцию и подтверди.`
+      : 'Выбери эмоцию и нажми «Оставить запись». Заметка — по желанию.';
+  };
   MOODS.forEach((m, k) => mrow.append(el('button', {
-    class: 'chip' + (curEntry && curEntry.value === k ? ' on' : ''), onclick: () => {
-      const noteEl = document.getElementById('mood-note');
-      const noteVal = noteEl ? noteEl.value : '';
-      addMood(k, noteVal);
-      if (noteEl) noteEl.value = '';
-      haptic('light');
-      toast(k === 0 ? 'Я рядом. Будь к себе понежнее.' : k === 1 ? 'Спасибо за честность. Отмечено.' : 'Спасибо за честность. Отмечено.');
-      render();
-    }
-  }, `${MOOD_EMOJI[k]} ${m}`)));
-  scr.append(mrow, moodNoteWrap);
+    class: 'chip mood', type: 'button',
+    'aria-label': `${m} — ${MOOD_HINTS[k]}`, 'aria-pressed': 'false',
+    onclick: () => { moodDraft.value = k; haptic('light'); refreshDraft(); }
+  }, moodFace(k, 'chip-face'), el('span', { class: 'chip-label' }, m))));
+  let submitting = false;
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (submitting || !Number.isInteger(moodDraft.value)) return;
+    submitting = true; confirmBtn.disabled = true;
+    try {
+      addMood(moodDraft.value, noteInput.value);
+      moodDraft = { value: null, note: '' };
+      noteInput.value = '';
+      haptic('success');
+      toast('Запись сохранена. Спасибо, что замечаешь себя.');
+      refreshDraft(true);
+      refreshHeroMood(scr);          // лицо Дибитишки меняется сразу после отметки
+      const goal = scr.querySelector('.daily-mood-status');
+      if (goal) goal.textContent = doneCount >= 1 ? 'Настроение отмечено · цель собрана' : 'Настроение отмечено · ещё один бережный шаг';
+    } catch (err) {
+      toast('Не получилось сохранить запись. Освободи немного памяти и попробуй ещё раз.');
+      refreshDraft();
+    } finally { submitting = false; }
+  });
+  refreshDraft();
+  form.append(mrow, confirmBtn, hint);
+  scr.append(form);
 
   // ежедневная цель
   const doneCount = (state.done[todayKey()] || []).length;
@@ -782,7 +929,7 @@ function screenToday() {
     ring(doneCount >= 1 ? 1 : doneCount),
     el('div', { class: 'dm' },
       el('b', {}, doneCount >= 1 ? 'Практика дня сделана' : '1 практика сегодня'),
-      el('span', {}, moodDone ? 'Настроение отмечено · цель собрана' : 'Отметь ещё настроение — это тоже шаг')
+      el('span', { class: 'daily-mood-status' }, moodDone ? (doneCount >= 1 ? 'Настроение отмечено · цель собрана' : 'Настроение отмечено · ещё один бережный шаг') : 'Отметь ещё настроение — это тоже шаг')
     )
   ));
 
@@ -807,15 +954,22 @@ function screenToday() {
     el('span', { class: 'chev' }, '›')
   )));
 
-  // mood moved higher and with note
-    // (mood moved above — duplicate removed)
+  scr.append(el('div', { class: 'sect' }, 'Доска впечатлений'));
+  scr.append(el('button', { class: 'board-teaser', onclick: () => go('boards') },
+    el('img', { class: 'board-teaser-art', src: 'assets/boards/seaside-keepsakes-thumb.webp', alt: '', loading: 'lazy', width: 448, height: 301 }),
+    el('span', { class: 'board-teaser-copy' },
+      el('b', {}, boardsTeaserTitle()),
+      el('span', {}, 'Фото, гифки, стихи и мысли — на фоне, который нравится. То, что напоминает, кто ты.')
+    ),
+    el('span', { class: 'chev' }, '›')
+  ));
 
   scr.append(el('div', { class: 'sect' }, 'Чат поддержки'));
   scr.append(el('div', { class: 'card poster-mini soft' },
     el('div', { class: 'poster-copy wide' },
       el('h3', {}, 'Поговорить с Дибитишкой'),
       el('p', {}, 'Совет в трудный момент и напоминание, кто ты — из твоих же записей.'),
-      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('chat') }, 'Открыть чат', el('span', { class: 'arr' }, '→'))
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('chat') }, 'Пережить вместе', el('span', { class: 'arr' }, '→'))
     ),
     el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
   ));
@@ -823,6 +977,10 @@ function screenToday() {
   scr.append(el('p', { class: 'foot' }, CONTENT.meta.credits));
   return scr;
 }
+
+/* Папки навыков: у каждого блока своя иконка-папка в стиле маскота
+   (одна генерация → нарезка на пять файлов, см. scripts/slice-folders.py). */
+const FOLDER_ART = { base: 'opora', mind: 'osoznannost', stress: 'stress', emo: 'emotions', sense: 'sensorika' };
 
 function screenSkills() {
   renderTabbar('skills');
@@ -832,18 +990,35 @@ function screenSkills() {
     el('img', { class: 'mascot', src: 'assets/mascot/book.png', alt: 'Дибитишка' }),
     el('div', { class: 'bubble' }, 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.')
   ));
+  /* v25: разделы навыков — милые папки, как иконка папки на компьютере,
+     только в нашем стиле: у каждого блока свой цвет и своё лицо на обложке. */
+  const folders = el('div', { class: 'folders' });
   for (const b of CONTENT.blocks) {
     const total = b.practices.length;
     const master = b.practices.filter(p => state.mastered[p.id]).length;
-    const card = el('div', { class: `card tinted soft t-${b.tint} block-card`, onclick: () => go('skills/' + b.id), style: 'cursor:pointer' });
-    const top = el('div', { style: 'display:flex;align-items:center;gap:14px' });
-    top.append(el('div', { style: 'flex:1' }, el('h3', { style: 'margin:0' }, b.title), el('p', { style: 'margin:4px 0 0' }, b.subtitle)), ring(total ? master / total : 0));
-    card.append(top, el('p', { style: 'margin:12px 0 0' },
-      master ? `Освоено ${master} из ${total}` : `${total} практик · начни с любой`));
-    scr.append(card);
+    const pct = total ? master / total : 0;
+    folders.append(el('button', {
+      class: `folder f-${b.tint}`, onclick: () => go('skills/' + b.id),
+      'aria-label': `${b.title}: ${master ? 'освоено ' + master + ' из ' + total : total + ' практик'}`
+    },
+      el('span', { class: 'folder-art' },
+        el('img', { src: `assets/folders/${FOLDER_ART[b.id] || 'opora'}.png`, alt: '', loading: 'lazy' }),
+        master ? el('span', { class: 'folder-badge' }, String(master)) : null
+      ),
+      el('span', { class: 'folder-copy' },
+        el('b', {}, b.title),
+        el('span', { class: 'folder-sub' }, b.subtitle),
+        el('span', { class: 'folder-track' }, el('i', { style: `width:${Math.round(pct * 100)}%` })),
+        el('span', { class: 'folder-meta' },
+          master ? `Освоено ${master} из ${total}` : `${total} практик · начни с любой`,
+          el('span', { class: 'chev' }, '›'))
+      )
+    ));
   }
+  scr.append(folders);
   return scr;
 }
+
 
 function screenBlock(id) {
   renderTabbar('skills');
@@ -1264,7 +1439,7 @@ function screenDiary() {
   if (!entries.length) {
     scr.append(el('div', { class: 'card soft' },
       el('h3', {}, 'Пока пусто'),
-      el('p', {}, 'Отмечай эмоцию на главной каждый раз, когда заходишь. Со временем соберётся твоя история — и станет видно: тяжёлый день это точка на пути, а не весь путь.')));
+      el('p', {}, 'Выбери эмоцию на главной, при желании добавь заметку и нажми «Оставить запись». Только подтверждённые записи попадают сюда. Тяжёлый день — это точка на пути, а не весь путь.')));
     return scr;
   }
   const map = new Map(), days = [];
@@ -1282,7 +1457,7 @@ function screenDiary() {
       const note = (e.note || '').trim();
       return el('div', { class: 'row', style: note ? 'flex-direction:column; align-items:flex-start; gap:6px; padding-top:14px; padding-bottom:14px' : '' },
         el('div', { style: 'display:flex; align-items:center; gap:14px; width:100%' },
-          el('span', { class: 'ric c-lavender' }, MOOD_EMOJI[e.value] || '😐'),
+          el('span', { class: 'ric c-lavender' }, moodFace(e.value, 'ric-face')),
           el('span', { class: 'rmain' }, el('b', {}, MOODS[e.value] || ''), el('span', {}, time)),
           el('span', { class: 'chev' }, '•')
         ),
@@ -1424,6 +1599,8 @@ function screenProfile() {
   const name = TG_MODE ? (tg.initDataUnsafe.user.first_name + (tg.initDataUnsafe.user.last_name ? ' ' + tg.initDataUnsafe.user.last_name : '')) : state.web_user ? state.web_user.name : null;
   scr.append(mascot('cozy', name ? `Привет, ${name}! Всё важное собрано здесь.` : 'Привет! Здесь живут твоя подписка, настройки и шкалы роста.', TG_MODE ? 'Вход через Telegram' : state.web_user ? 'Вход по коду из бота' : 'Гостевой режим'));
   scr.append(levelCard());
+  // v25: «Подписка» и «Донат» подняты наверх и собраны в одну композицию
+  scr.append(subscriptionCard());
 
   // график настроения поднят в верх профиля — сразу под шкалой уровня
   scr.append(el('div', { class: 'sect tight' }, 'График настроения'));
@@ -1454,20 +1631,13 @@ function screenProfile() {
     ),
     el('button', { class: 'btn ghost', style: 'width:auto;min-height:0;padding:8px 12px;font-size:14px', onclick: () => go('tasks') }, 'Открыть ›')
   ));
-
-  scr.append(el('div', { class: 'sect' }, 'Подписка'));
-  const dl = trialDaysLeft();
-  const subRows = [];
-  subRows.push(el('div', { class: 'row' },
-    el('span', { class: 'ric c-grass' }, icon('card')),
-    el('span', { class: 'rmain' }, el('b', {}, (state.premium_until || 0) > Date.now() ? 'Подписка активна' : state.trial_started_at && dl > 0 ? `Бесплатная неделя: ещё ${dl} дн.` : 'Подписка не активна'), el('span', {}, `${plansLine()} · Tribute`))
+  scr.append(el('div', { class: 'group', style: 'margin-top:14px' },
+    el('button', { class: 'row', onclick: () => go('boards') },
+      el('span', { class: 'ric c-sky' }, icon('image')),
+      el('span', { class: 'rmain' }, el('b', {}, 'Доски впечатлений'), el('span', {}, `${boardsTeaserTitle()} · фото, гифки, стихи и мысли`)),
+      el('span', { class: 'chev' }, '›')
+    )
   ));
-  if (!isPremium() || dl !== Infinity) subRows.push(el('button', { class: 'row', onclick: openPay },
-    el('span', { class: 'ric c-rose' }, icon('lock')),
-    el('span', { class: 'rmain' }, el('b', {}, isPremium() ? 'Продлить подписку' : 'Оформить подписку'), el('span', {}, 'Оплата в Telegram через Tribute')),
-    el('span', { class: 'chev' }, '›')
-  ));
-  scr.append(el('div', { class: 'group' }, subRows));
 
   scr.append(el('div', { class: 'sect' }, 'Напоминания'));
   const remRow = el('button', { class: 'row', onclick: () => {
@@ -1506,7 +1676,7 @@ function screenProfile() {
   const rows = [];
   if (!TG_MODE) rows.push(el('button', { class: 'row', onclick: authSheet },
     el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('lock')),
-    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Синхронизация включена' : 'Код придёт в Telegram')),
+    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Аккаунт Telegram подключён' : 'Код придёт в Telegram')),
     el('span', { class: 'chev' }, '›')
   ));
   rows.push(el('button', { class: 'row', onclick: () => openLink(CFG.social?.telegram) },
@@ -1526,14 +1696,6 @@ function screenProfile() {
   ));
   scr.append(el('div', { class: 'group' }, rows));
 
-  scr.append(el('div', { class: 'sect' }, 'Поддержать'));
-  scr.append(el('div', { class: 'group' },
-    el('button', { class: 'row', onclick: () => openLink(CFG.donate_url) },
-      el('span', { class: 'ric c-rose' }, icon('heart')),
-      el('span', { class: 'rmain' }, el('b', {}, 'Донат разработчикам'), el('span', {}, 'Разовое спасибо через Tribute')),
-      el('span', { class: 'chev' }, '›')
-    )
-  ));
   scr.append(el('p', { class: 'foot' }, 'Версия 1.3 · Air · Glow', el('br'), CONTENT.meta.credits));
   return scr;
 }
@@ -1579,7 +1741,7 @@ function authSheet() {
       el('input', { class: 'code-input', id: 'code-in', placeholder: '······', maxlength: 6, inputmode: 'numeric' }),
       el('button', { class: 'btn', style: 'margin-top:12px', onclick: async () => {
         const code = ($('#code-in').value || '').trim();
-        if (code.length < 4) return toast('Введи код целиком.');
+        if (!/^\d{6}$/.test(code)) return toast('Введи все шесть цифр кода.');
         haptic('light');
         if (!API_BASE) { close(); return toast('Бот не подключён к веб-версии: нужен bot_public_url или открытие через bot host.'); }
         try {
@@ -1588,14 +1750,15 @@ function authSheet() {
           });
           const j = await r.json();
           if (j.ok) {
-            state.web_user = { id: j.user.id, name: j.user.name || 'друг' };
+            state.web_user = { id: j.user.id, name: j.user.name || 'друг', session: j.session, session_expires: j.expires };
+            activateBoardAccount();
             save();
             haptic('success');
             close();
-            toast('Вход выполнен. Синхронизация готова.');
+            toast('Вход выполнен. Синхронизацию досок можно включить на странице досок.');
             syncPremium();
             render();
-          } else toast('Код не подошёл или устарел.');
+          } else toast(j.error === 'rate_limit' ? 'Слишком много попыток. Подожди 10 минут и запроси новый код.' : 'Код не подошёл или устарел.');
         } catch (e) { toast('Не удалось связаться с ботом.'); }
       } }, 'Войти'),
       el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { openLink(`https://t.me/${CFG.bot_username || ''}`); } }, 'Открыть бота за кодом')
@@ -1603,9 +1766,752 @@ function authSheet() {
   });
 }
 
+/* ============================================================
+   v25 · Доска впечатлений
+   ------------------------------------------------------------
+   Отдельная страница: доски, которые человек собирает сам, чтобы
+   вспомнить, кто он, что любит и чем вдохновляется.
+   - фон доски: готовые темы или своё фото;
+   - плитки: фото из галереи, GIF по ссылке, заметки, стихи и мысли;
+   - досок может быть много (по темам), внутри — поиск по тегам и подписям.
+   Картинки лежат в IndexedDB (в localStorage ~5 МБ, для фото мало),
+   метаданные — в localStorage под своим ключом.
+   ============================================================ */
+const BOARDS_KEY = 'dibitishka.boards.v1';
+const boardIdentity = () => TG_MODE ? String(tg.initDataUnsafe.user.id) : state.web_user?.id ? String(state.web_user.id) : null;
+let boardAccount = boardIdentity() || 'guest';
+const boardsStorageKey = () => `${BOARDS_KEY}.${boardAccount}`;
+// Разовая миграция локальных досок v25; аккаунты после неё хранятся раздельно.
+try {
+  const legacy = localStorage.getItem(BOARDS_KEY);
+  if (legacy && !localStorage.getItem(BOARDS_KEY + '.migrated')) {
+    if (!localStorage.getItem(boardsStorageKey())) localStorage.setItem(boardsStorageKey(), legacy);
+    localStorage.setItem(BOARDS_KEY + '.migrated', '1');
+  }
+} catch { /* Приватный режим: остаёмся на устройстве, без автоматической отправки. */ }
+let boardSync = null;
+const MEDIA_URLS = new Map();     // key → objectURL (чтобы не читать IndexedDB на каждый рендер)
+let MEDIA_DB = null, MEDIA_OPEN = null;
+const MEDIA_ERROR = 'Фото не сохранилось. Возможно, память заполнена или браузер в приватном режиме. Попробуй обычный режим — заметки доступны и без фото.';
+
+function mediaDB() {
+  if (MEDIA_DB) return Promise.resolve(MEDIA_DB);
+  if (MEDIA_OPEN) return MEDIA_OPEN;
+  MEDIA_OPEN = new Promise(resolve => {
+    let settled = false;
+    const finish = db => { if (settled) { db?.close(); return; } settled = true; clearTimeout(timer); resolve(db); };
+    const timer = setTimeout(() => finish(null), 4000);
+    try {
+      const r = indexedDB.open('dibitishka.media', 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('media')) r.result.createObjectStore('media'); };
+      r.onsuccess = () => {
+        const db = r.result;
+        db.onversionchange = () => { db.close(); MEDIA_DB = null; MEDIA_OPEN = null; };
+        if (!settled) MEDIA_DB = db;
+        finish(db);
+      };
+      r.onerror = r.onblocked = () => finish(null);
+    } catch { finish(null); }
+  }).finally(() => { MEDIA_OPEN = null; });
+  return MEDIA_OPEN;
+}
+async function mediaTransaction(mode, operation, fallback) {
+  const db = await mediaDB();
+  if (!db) return fallback;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction('media', mode);
+      const request = operation(tx.objectStore('media'));
+      tx.oncomplete = () => resolve(mode === 'readonly' ? (request.result || null) : true);
+      tx.onerror = tx.onabort = () => resolve(fallback);
+    } catch { resolve(fallback); }
+  });
+}
+const mediaPut = (key, blob) => mediaTransaction('readwrite', store => store.put(blob, key), false);
+const mediaGet = key => mediaTransaction('readonly', store => store.get(key), null);
+async function mediaDel(key) {
+  if (!key || /^(https?:|data:|blob:)/i.test(key)) return;
+  // Одно фото может быть и плиткой, и фоном, в том числе в другой доске.
+  if (BOARDS.some(b => b.bgKey === key || (b.tiles || []).some(t => t.src === key))) return;
+  for (let i = 0; i < localStorage.length; i++) {
+    const name = localStorage.key(i);
+    if (!name?.startsWith(BOARDS_KEY + '.') || name === boardsStorageKey()) continue;
+    try { const other = JSON.parse(localStorage.getItem(name));
+      if (Array.isArray(other) && other.some(b => b.bgKey === key || b.tiles?.some(t => t.src === key))) return;
+    } catch { /* Это может быть служебная запись миграции. */ }
+  }
+  const url = MEDIA_URLS.get(key);
+  if (url) URL.revokeObjectURL(url);
+  MEDIA_URLS.delete(key);
+  await mediaTransaction('readwrite', store => store.delete(key), false);
+}
+function mediaUrl(src) {
+  if (!src) return Promise.resolve('');
+  if (/^(https?:|data:image\/|blob:)/i.test(src)) return Promise.resolve(src);
+  if (MEDIA_URLS.has(src)) return Promise.resolve(MEDIA_URLS.get(src));
+  return mediaGet(src).then(async blob => {
+    if (!blob && boardSync) blob = await boardSync.downloadMedia(src).catch(() => null);
+    if (!blob) return '';
+    if (MEDIA_URLS.has(src)) return MEDIA_URLS.get(src);
+    const url = URL.createObjectURL(blob);
+    MEDIA_URLS.set(src, url);
+    return url;
+  });
+}
+function missingMedia(node) {
+  node.hidden = true;
+  const parent = node.closest('.tile') || node.parentElement;
+  if (!parent || parent.querySelector('.media-error')) return;
+  parent.append(el('span', { class: 'media-error', role: 'status' }, 'Картинка недоступна. Проверь связь или добавь её снова.'));
+}
+function hydrateMedia(root) {
+  root.querySelectorAll('img[data-media]').forEach(async node => {
+    node.onerror = () => missingMedia(node);
+    const key = node.dataset.media;
+    const url = await mediaUrl(key);
+    if (node.dataset.media !== key) return;
+    if (url) node.src = url; else missingMedia(node);
+  });
+  root.querySelectorAll('img.tile-media:not([data-media]), .cover-thumbs img:not([data-media])').forEach(node => {
+    node.onerror = () => missingMedia(node);
+  });
+  root.querySelectorAll('[data-bg-media]').forEach(async node => {
+    const key = node.dataset.bgMedia, url = await mediaUrl(key);
+    if (url && node.dataset.bgMedia === key) { node.style.backgroundImage = `url("${url}")`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
+  });
+}
+
+function pickFiles(accept, multiple, cb) {
+  const inp = el('input', { type: 'file', accept, style: 'display:none', ...(multiple ? { multiple: '' } : {}) });
+  document.body.append(inp);
+  inp.addEventListener('cancel', () => inp.remove(), { once: true });
+  inp.addEventListener('change', async () => {
+    const files = [...(inp.files || [])]; inp.remove();
+    for (const f of files) { try { await cb(f); } catch (err) { toast(err.message || 'Не удалось добавить файл.'); } }
+  }, { once: true });
+  inp.click();
+}
+
+/* --- фоны досок: спокойные, в стиле приложения --- */
+const BOARD_BGS = [
+  { id: 'sky',      title: 'Небо',    css: 'linear-gradient(180deg,#EAF1FE,#D7E5FB)' },
+  { id: 'peony',    title: 'Пион',    css: 'linear-gradient(180deg,#FBEFF3,#F5DBE5)' },
+  { id: 'grass',    title: 'Луг',     css: 'linear-gradient(180deg,#F3F4E5,#E3E7CB)' },
+  { id: 'sand',     title: 'Тёплый',  css: 'linear-gradient(180deg,#FCF5EB,#F1E1CB)' },
+  { id: 'lavender', title: 'Лаванда', css: 'linear-gradient(180deg,#F1EFFA,#E1DCF4)' },
+  { id: 'paper',    title: 'Бумага',  css: 'repeating-linear-gradient(180deg,#FDFBF6 0 26px,#F4EFE4 26px 27px)' },
+  { id: 'dots',     title: 'Горошек', css: 'radial-gradient(#DCE6FA 1.6px, transparent 1.7px) 0 0/22px 22px, #F7FAFF' },
+  { id: 'grid',     title: 'Клетка',  css: 'linear-gradient(#EEF3FD 1px, transparent 1px) 0 0/24px 24px, linear-gradient(90deg,#EEF3FD 1px, transparent 1px) 0 0/24px 24px, #FBFDFF' },
+  { id: 'stars',    title: 'Звёзды',  css: 'radial-gradient(circle at 20% 30%, #FFF 2px, transparent 3px), radial-gradient(circle at 70% 70%, #FFF 2px, transparent 3px), linear-gradient(180deg,#E7EEFC,#D5E0F8)' }
+];
+const bgDef = (id) => BOARD_BGS.find(b => b.id === id) || BOARD_BGS[0];
+
+const loadBoards = () => {
+  try {
+    const j = JSON.parse(localStorage.getItem(boardsStorageKey()) || (!localStorage.getItem(BOARDS_KEY + '.migrated') ? localStorage.getItem(BOARDS_KEY) : 'null'));
+    return Array.isArray(j) ? j : null;
+  } catch (e) { return null; }
+};
+const boardUid = () => 'b' + (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
+const parseBoardTags = text => [...new Set(text.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim().slice(0, 40)).filter(Boolean))].slice(0, 8);
+const tileUid = () => 't' + (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
+function seedBoards() {
+  return [{
+    id: boardUid(), title: 'Моё вдохновение', bg: 'sky', created: Date.now(),
+    tiles: [
+      { id: tileUid(), kind: 'note', text: 'Это доска про тебя. Что ты любишь? Чем вдохновляешься? Что напоминает, кто ты?', tags: ['начало'], rot: -1.5, size: 'm', created: Date.now() },
+      { id: tileUid(), kind: 'note', text: 'Сюда можно положить фото из галереи, гифку по ссылке, стихотворение или мысль, которая заставляет дышать по-новому.', tags: [], rot: 1.2, size: 'm', created: Date.now() }
+    ]
+  }];
+}
+let BOARDS = loadBoards();
+if (!BOARDS) { BOARDS = boardAccount === 'guest' ? seedBoards() : []; }
+try { localStorage.setItem(boardsStorageKey(), JSON.stringify(BOARDS)); } catch { /* Чтение доступно и без записи. */ }
+const saveBoards = () => {
+  try { localStorage.setItem(boardsStorageKey(), JSON.stringify(BOARDS)); }
+  catch {
+    BOARDS = loadBoards() || [];
+    toast('Память заполнена. Изменения не сохранились — освободи немного места и попробуй ещё раз.');
+    return false;
+  }
+  boardSync?.changed();
+  return true;
+};
+
+const boardById = (id) => BOARDS.find(b => b.id === id);
+const boardTiles = (b) => [...(b.tiles || [])].sort((x, y) => (x.created || 0) - (y.created || 0));
+const boardTileCount = (b) => (b.tiles || []).length;
+const allBoardTiles = () => BOARDS.flatMap(b => boardTiles(b).map(t => ({ board: b, tile: t })));
+
+function boardsTeaserTitle() {
+  const n = BOARDS.length;
+  if (!n) return 'Собрать первую доску';
+  const tiles = BOARDS.reduce((s, b) => s + boardTileCount(b), 0);
+  return `${n} ${plural(n, 'доска', 'доски', 'досок')} · ${tiles} ${plural(tiles, 'впечатление', 'впечатления', 'впечатлений')}`;
+}
+
+function boardBgStyle(b) {
+  if (b.bg === 'photo' && b.bgKey) {
+    const url = MEDIA_URLS.get(b.bgKey);
+    return url ? `background-image:url('${url}'); background-size:cover; background-position:center` : 'background:#F3F6FD';
+  }
+  return `background:${bgDef(b.bg).css}`;
+}
+
+/* --- плитка на доске: фото, гифка или заметка --- */
+function tileEl(b, t) {
+  const box = el('div', { class: `tile tile-${t.kind} size-${t.size || 'm'}`, role: 'button', tabindex: '0', 'aria-label': t.kind === 'note' ? 'Открыть заметку' : 'Открыть картинку' });
+  box.style.setProperty('--rot', (t.rot || 0) + 'deg');
+  if (t.kind === 'photo') {
+    box.append(el('img', { class: 'tile-media', 'data-media': t.src, alt: t.caption || 'фото на доске', loading: 'lazy' }));
+  } else if (t.kind === 'gif') {
+    box.append(el('img', { class: 'tile-media', 'data-media': t.src, alt: t.caption || 'gif', loading: 'lazy', referrerpolicy: 'no-referrer' }));
+    box.append(el('span', { class: 'tile-gif-mark' }, 'GIF'));
+  } else {
+    box.append(el('p', { class: 'tile-note-copy' }, t.text || ''));
+  }
+  if (t.caption && t.kind !== 'note') box.append(el('span', { class: 'tile-cap' }, t.caption));
+  if ((t.tags || []).length) box.append(el('span', { class: 'tile-tags' }, t.tags.map(x => '#' + x).join(' ')));
+  box.addEventListener('click', () => tileSheet(b, t));
+  box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileSheet(b, t); } });
+  return box;
+}
+
+function saveTiles(b) {
+  BOARDS = BOARDS.some(x => x.id === b.id) ? BOARDS.map(x => x.id === b.id ? b : x) : [...BOARDS, b];
+  return saveBoards();
+}
+
+/* --- лист действий по плитке --- */
+function tileSheet(b, t) {
+  sheet((sh, close) => {
+    const capInput = el(t.kind === 'note' ? 'textarea' : 'input', { class: 'board-input', maxlength: t.kind === 'note' ? 4000 : 200, rows: t.kind === 'note' ? 7 : null, 'aria-label': t.kind === 'note' ? 'Текст заметки' : 'Подпись к картинке', placeholder: t.kind === 'note' ? 'Текст заметки' : 'Подпись к картинке' });
+    capInput.value = t.kind === 'note' ? t.text || '' : t.caption || '';
+    const tagInput = el('input', { class: 'board-input', value: (t.tags || []).join(', '), placeholder: 'теги: вдохновение, лето, море' });
+    sh.append(
+      el('h3', {}, t.kind === 'note' ? 'Заметка' : t.kind === 'gif' ? 'Гифка' : 'Фото'),
+      el('p', { class: 'mins' }, 'Подпись и теги помогают потом искать: по тегам работает поиск на доске и в списке досок.'),
+      capInput, tagInput,
+      el('div', { class: 'sect tight' }, 'Размер')
+    );
+    const sizeRow = el('div', { class: 'chips' });
+    [['s', 'маленькая'], ['m', 'средняя'], ['l', 'большая']].forEach(([id, label]) => sizeRow.append(el('button', {
+      class: 'chip' + ((t.size || 'm') === id ? ' on' : ''),
+      onclick: () => { t.size = id; if (!saveTiles(b)) return; close(); render(); }
+    }, label)));
+    sh.append(sizeRow,
+      el('div', { class: 'chips' },
+        el('button', { class: 'chip', onclick: () => { t.rot = Math.max(-8, (t.rot || 0) - 2); if (!saveTiles(b)) return; close(); render(); } }, '⟲ наклонить'),
+        el('button', { class: 'chip', onclick: () => { t.rot = Math.min(8, (t.rot || 0) + 2); if (!saveTiles(b)) return; close(); render(); } }, '⟳ выпрямить')
+      ),
+      el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => {
+        const text = capInput.value.trim();
+        if (t.kind === 'note') t.text = text || t.text;
+        else t.caption = text || undefined;
+        t.tags = parseBoardTags(tagInput.value);
+        if (!saveTiles(b)) return; close(); haptic('light'); toast('Сохранено.'); render();
+      } }, 'Сохранить'),
+      t.kind === 'photo' ? el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => {
+        b.bg = 'photo'; b.bgKey = t.src; if (!saveBoards()) return; close(); toast('Это фото стало фоном доски.'); render();
+      } }, 'Поставить фоном доски') : null,
+      el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: async () => {
+        b.tiles = (b.tiles || []).filter(x => x.id !== t.id);
+        if (!saveTiles(b)) return;
+        if (t.src) await mediaDel(t.src); close(); haptic('success'); toast('Убрано с доски.'); render();
+      } }, 'Убрать с доски')
+    );
+  });
+}
+
+/* --- добавление плиток --- */
+function addTileSheet(b) {
+  sheet((sh, close) => {
+    sh.append(
+      el('h3', {}, 'Что добавим?'),
+      el('p', { class: 'mins' }, 'Фото можно выбрать из галереи, гифку — найти или вставить ссылкой, а мысли и стихи просто написать.'),
+      el('div', { class: 'add-grid' },
+        el('button', { class: 'add-opt', onclick: () => { close(); addPhotosToBoard(b); } },
+          el('span', { class: 'ric c-sky' }, icon('image')), el('b', {}, 'Фото из галереи'), el('span', {}, 'можно несколько сразу')),
+        el('button', { class: 'add-opt', onclick: () => { close(); addGifSheet(b); } },
+          el('span', { class: 'ric c-lavender' }, icon('gif')), el('b', {}, 'Гифка'), el('span', {}, 'поиск в Tenor или прямая ссылка')),
+        el('button', { class: 'add-opt', onclick: () => { close(); addNoteSheet(b); } },
+          el('span', { class: 'ric c-grass' }, icon('note')), el('b', {}, 'Заметка, стихи, мысль'), el('span', {}, 'то, что заставляет дышать по-новому'))
+      )
+    );
+  });
+}
+function addPhotosToBoard(b) {
+  pickFiles('image/*', true, async file => {
+    toast('Добавляю фото…');
+    const account = boardAccount;
+    const blob = await compressImage(file);
+    if (account !== boardAccount) return toast('Аккаунт сменился. Выбери фото в нужной доске ещё раз.');
+    const key = 'm' + tileUid();
+    if (!await mediaPut(key, blob)) return toast(MEDIA_ERROR);
+    if (account !== boardAccount) { await mediaDel(key); return; }
+    b.tiles = [...(b.tiles || []), { id: tileUid(), kind: 'photo', src: key, caption: '', tags: [],
+      rot: (Math.random() * 4 - 2), size: (b.tiles || []).length % 3 === 0 ? 'l' : 'm', created: Date.now() }];
+    if (!saveTiles(b)) { await mediaDel(key); return; }
+    haptic('success'); toast('Фото на доске.'); render();
+  });
+}
+
+function addGifSheet(b) {
+  const urlInput = el('input', { class: 'board-input', type: 'url', maxlength: 2048, 'aria-label': 'Прямая ссылка на GIF', placeholder: 'Или прямая ссылка https://… .gif' });
+  const tagInput = el('input', { class: 'board-input', maxlength: 328, 'aria-label': 'Теги GIF', placeholder: 'теги: кот, дождь, поддержка' });
+  sheet((sh, close, signal) => {
+    const query = el('input', { class: 'board-search', type: 'search', maxlength: 120, 'aria-label': 'Поиск GIF', placeholder: 'Найти гифку: море, объятия, кот…' });
+    const searchBtn = el('button', { class: 'chip', type: 'submit' }, 'Найти');
+    const searchForm = el('form', { class: 'gif-search-form' }, query, searchBtn);
+    const status = el('p', { class: 'mins', role: 'status' }, 'Поиск внутри приложения работает через Tenor. Можно также вставить прямую ссылку на гифку.');
+    const results = el('div', { class: 'gif-results', 'aria-label': 'Результаты поиска GIF' });
+    let request = null, selectedCaption = '';
+    signal.addEventListener('abort', () => request?.abort(), { once: true });
+    urlInput.addEventListener('input', () => { selectedCaption = ''; results.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', 'false')); });
+    searchForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const q = query.value.trim();
+      if (!q) return;
+      request?.abort(); request = new AbortController();
+      const current = request, timer = setTimeout(() => current.abort(), 10000);
+      searchBtn.disabled = true; status.textContent = 'Ищу гифки…'; results.replaceChildren();
+      try {
+        const response = await fetch(apiUrl('/gif') + '?q=' + encodeURIComponent(q), { signal: current.signal });
+        if (!response.ok) throw new Error('search');
+        const data = await response.json();
+        if (signal.aborted || current !== request) return;
+        if (!data.enabled) { status.textContent = 'Поиск в приложении пока не подключён на боте. Найди GIF в Tenor и вставь прямую ссылку ниже.'; return; }
+        const items = Array.isArray(data.items) ? data.items : [];
+        status.textContent = items.length ? 'Выбери гифку, затем нажми «Добавить на доску».' : 'По этому запросу ничего не нашлось. Попробуй другое слово.';
+        for (const item of items) results.append(el('button', {
+          class: 'gif-result', type: 'button', 'aria-label': item.title || 'Выбрать GIF', 'aria-pressed': 'false',
+          onclick: e => {
+            results.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', 'false'));
+            e.currentTarget.setAttribute('aria-pressed', 'true');
+            urlInput.value = item.url; selectedCaption = item.title || '';
+            status.textContent = 'Гифка выбрана. Можно добавить теги и подтвердить.';
+          }
+        }, el('img', { src: item.preview, alt: item.title || 'GIF', loading: 'lazy', referrerpolicy: 'no-referrer' })));
+      } catch {
+        if (!signal.aborted && current === request) status.textContent = 'Поиск сейчас недоступен. Попробуй ещё раз или вставь ссылку из Tenor.';
+      } finally {
+        clearTimeout(timer); if (current === request) searchBtn.disabled = false;
+      }
+    });
+    sh.append(el('h3', {}, 'Гифка на доску'), searchForm, status, results,
+      el('p', { class: 'gif-credit' }, 'Поиск: Tenor'),
+      urlInput, tagInput,
+      el('button', { class: 'btn secondary', style: 'margin-top:10px', onclick: () => {
+        const q = query.value.trim() || tagInput.value.trim() || 'вдохновение';
+        openLink('https://tenor.com/search/' + encodeURIComponent(q.replace(/\s+/g, '-')));
+      } }, 'Открыть поиск в Tenor', el('span', { class: 'arr' }, '→')),
+      el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => {
+        const src = urlInput.value.trim();
+        try { const url = new URL(src); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
+        catch { return toast('Нужна прямая HTTPS-ссылка на гифку или картинку.'); }
+        b.tiles = [...(b.tiles || []), { id: tileUid(), kind: 'gif', src, caption: selectedCaption,
+          tags: parseBoardTags(tagInput.value), rot: Math.random() * 4 - 2, size: 'm', created: Date.now() }];
+        if (!saveTiles(b)) return; close(); haptic('success'); toast('Гифка на доске.'); render();
+      } }, 'Добавить на доску')
+    );
+  });
+}
+
+function addNoteSheet(b) {
+  const ta = el('textarea', { class: 'mood-note-input', rows: 5, maxlength: 4000, 'aria-label': 'Текст заметки', placeholder: 'Мысль, строки, цитата — то, что держит…' });
+  const tagInput = el('input', { class: 'board-input', placeholder: 'теги: опора, тёплое, вечер' });
+  sheet((sh, close) => {
+    sh.append(
+      el('h3', {}, 'Заметка на доску'),
+      ta, tagInput,
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
+        const text = ta.value.trim();
+        if (!text) return toast('Напиши хотя бы строку.');
+        b.tiles = [...(b.tiles || []), {
+          id: tileUid(), kind: 'note', text,
+          tags: parseBoardTags(tagInput.value),
+          rot: (Math.random() * 4 - 2), size: 'm', created: Date.now()
+        }];
+        if (!saveTiles(b)) return; close(); haptic('success'); toast('На доске.'); render();
+      } }, 'Добавить на доску')
+    );
+  });
+}
+
+/* --- фон доски --- */
+function boardBgSheet(b) {
+  sheet((sh, close) => {
+    const grid = el('div', { class: 'bg-grid' });
+    for (const bg of BOARD_BGS) {
+      grid.append(el('button', {
+        class: 'bg-opt' + (b.bg === bg.id ? ' on' : ''), style: `background:${bg.css}`,
+        onclick: () => { b.bg = bg.id; b.bgKey = null; if (!saveBoards()) return; close(); haptic('light'); render(); }
+      }, el('span', {}, bg.title)));
+    }
+    sh.append(
+      el('h3', {}, 'Фон доски'),
+      el('p', { class: 'mins' }, 'Можно взять готовую тему или поставить своё фото.'),
+      grid,
+      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => {
+        pickFiles('image/*', false, async (file) => {
+          const blob = await compressImage(file, 1600, .8);
+          const key = 'bg' + tileUid();
+          const stored = await mediaPut(key, blob);
+          if (!stored) return toast(MEDIA_ERROR);
+          b.bg = 'photo'; b.bgKey = key;
+          if (!saveBoards()) return; close(); toast('Фон обновлён.'); render();
+        });
+      } }, icon('image'), 'Своё фото фоном')
+    );
+  });
+}
+
+/* --- экран со списком досок --- */
+function screenBoards() {
+  renderTabbar(null);
+  const scr = el('div', { class: 'screen sub' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Доски впечатлений')
+  ));
+  scr.append(el('h1', { class: 'ltitle' }, 'Доски впечатлений',
+    el('small', {}, 'То, что заставляет понять, кто ты, что любишь и чем вдохновляешься. Иногда это очень важно вспомнить.')));
+  scr.append(el('figure', { class: 'boards-hero' },
+    el('img', { src: 'assets/boards/seaside-keepsakes.webp', width: 1264, height: 848,
+      alt: 'Морские воспоминания: ракушка, камушек, стеклышки и украшения, фантики, билеты и полароид с Дибитишкой у моря.' }),
+    el('figcaption', {}, el('b', {}, 'Маленькие вещи. Большие чувства.'),
+      el('span', {}, 'Собирай то, что хочется сберечь: любимые места, случайные строки и кусочки счастливых дней.'))
+  ));
+
+  // поиск по тегам и подписям — сразу по всем доскам
+  const q = el('input', { class: 'board-search', type: 'search', placeholder: 'Поиск по тегам и подписям (#море, стихи…)' });
+  const found = el('div', { class: 'found-list hidden' });
+  const redraw = (term) => {
+    const s = (term || '').trim().toLowerCase().replace(/^#/, '');
+    found.innerHTML = '';
+    if (!s) { found.classList.add('hidden'); return; }
+    const hits = allBoardTiles().filter(({ tile }) =>
+      (tile.tags || []).some(x => x.toLowerCase().includes(s)) ||
+      (tile.caption || '').toLowerCase().includes(s) ||
+      (tile.text || '').toLowerCase().includes(s));
+    found.classList.remove('hidden');
+    if (!hits.length) { found.append(el('p', { class: 'mins' }, 'Ничего не нашлось. Теги ставятся в карточке плитки.')); return; }
+    for (const { board, tile } of hits.slice(0, 40)) {
+      found.append(el('button', { class: 'row', onclick: () => go('board/' + board.id) },
+        el('span', { class: 'ric c-sky' }, tile.kind === 'photo' ? icon('image') : tile.kind === 'gif' ? icon('gif') : icon('note')),
+        el('span', { class: 'rmain' }, el('b', {}, tile.caption || tile.text || 'Плитка'),
+          el('span', {}, board.title + ((tile.tags || []).length ? ' · ' + tile.tags.map(x => '#' + x).join(' ') : ''))),
+        el('span', { class: 'chev' }, '›')
+      ));
+    }
+  };
+  q.addEventListener('input', () => redraw(q.value));
+  scr.append(q, found);
+
+  scr.append(el('div', { class: 'sect tight' }, 'Мои доски'));
+  const grid = el('div', { class: 'boards-grid' });
+  for (const b of BOARDS) {
+    const cover = el('button', { class: 'board-cover', onclick: () => go('board/' + b.id) });
+    cover.style.cssText = boardBgStyle(b);
+    if (b.bg === 'photo' && b.bgKey) cover.dataset.bgMedia = b.bgKey;
+    const preview = el('span', { class: 'cover-thumbs' });
+    const media = boardTiles(b).filter(t => t.kind !== 'note').slice(0, 3);
+    if (media.length) {
+      for (const t of media) preview.append(el('img', {
+        'data-media': t.src, alt: '', loading: 'lazy'
+      }));
+    } else {
+      const notes = boardTiles(b).filter(t => t.kind === 'note').slice(0, 1);
+      preview.append(el('span', { class: 'cover-quote' }, (notes[0]?.text || 'пусто — добавь первое впечатление').slice(0, 90)));
+    }
+    cover.append(preview,
+      el('span', { class: 'cover-foot' },
+        el('b', {}, b.title),
+        el('span', {}, `плиток: ${boardTileCount(b)}`)));
+    grid.append(cover);
+  }
+  if (!BOARDS.length) grid.append(el('div', { class: 'boards-empty card soft' },
+    el('h3', {}, 'Здесь будет то, что дорого тебе'),
+    el('p', {}, 'Начни с одной фотографии, строчки или воспоминания. Доску можно назвать «Маленькие радости» — и собирать без спешки.')));
+  scr.append(grid);
+  scr.append(el('button', { class: 'btn', style: 'margin-top:16px', onclick: () => newBoardSheet() }, '+ Новая доска'));
+  scr.append(boardSyncPanel());
+  return scr;
+}
+
+function newBoardSheet() {
+  const title = el('input', { class: 'board-input', maxlength: 80, 'aria-label': 'Название доски', placeholder: 'Название: «Любимое», «Вдохновение», «Лето»…' });
+  let bg = 'sky';
+  sheet((sh, close) => {
+    const grid = el('div', { class: 'bg-grid' });
+    for (const b of BOARD_BGS) {
+      grid.append(el('button', {
+        class: 'bg-opt' + (bg === b.id ? ' on' : ''), style: `background:${b.css}`,
+        onclick: (e) => {
+          bg = b.id;
+          grid.querySelectorAll('.bg-opt').forEach(x => x.classList.remove('on'));
+          e.currentTarget.classList.add('on');
+        }
+      }, el('span', {}, b.title)));
+    }
+    sh.append(
+      el('h3', {}, 'Новая доска'),
+      el('p', { class: 'mins' }, 'Досок может быть много — например, по темам: «что меня радует», «места», «люди», «стихи».'),
+      title,
+      el('div', { class: 'sect tight' }, 'Фон'),
+      grid,
+      el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => {
+        const name = title.value.trim();
+        if (!name) return toast('Дай доске имя — хотя бы одно слово.');
+        const b = { id: boardUid(), title: name, bg, tiles: [], created: Date.now() };
+        BOARDS = [...BOARDS, b];
+        if (!saveBoards()) return; close(); haptic('success');
+        go('board/' + b.id);
+      } }, 'Создать')
+    );
+  });
+}
+
+/* --- сама доска --- */
+function screenBoard(id) {
+  renderTabbar(null);
+  const scr = el('div', { class: 'screen sub' });
+  const b = boardById(id);
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('boards') }, icon('back'), 'Доски'),
+    el('h2', {}, b ? b.title : 'Доска')
+  ));
+  if (!b) {
+    scr.append(el('div', { class: 'card soft' }, el('h3', {}, 'Доска не найдена'), el('p', {}, 'Возможно, она была удалена.')));
+    return scr;
+  }
+  scr.append(el('div', { class: 'board-head' },
+    el('div', { class: 'board-head-copy' },
+      el('b', {}, b.title),
+      el('span', {}, `${boardTileCount(b)} ${plural(boardTileCount(b), 'впечатление', 'впечатления', 'впечатлений')} на доске`)),
+    el('button', { class: 'icon-btn', 'aria-label': 'Настройки доски', onclick: () => boardMenuSheet(b) }, '⋯')
+  ));
+
+  // фильтр по тегам внутри доски
+  const q = el('input', { class: 'board-search', type: 'search', placeholder: 'Поиск по тегам: #море, #тёплое' });
+  const canvas = el('div', { class: 'board-canvas' });
+  canvas.style.cssText = boardBgStyle(b);
+  if (b.bg === 'photo' && b.bgKey) canvas.dataset.bgMedia = b.bgKey;
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const w = target.offsetWidth, h = target.offsetHeight;
+      const a = Math.abs(parseFloat(target.style.getPropertyValue('--rot')) || 0) * Math.PI / 180;
+      const fit = w && h ? Math.min(w / (w * Math.cos(a) + h * Math.sin(a)), h / (h * Math.cos(a) + w * Math.sin(a))) : 1;
+      target.style.setProperty('--tile-fit', fit);
+    }
+  }) : null;
+  screenCleanup = () => resize?.disconnect();
+  const drawTiles = (term = '') => {
+    resize?.disconnect();
+    canvas.innerHTML = '';
+    const s = term.trim().toLowerCase().replace(/^#/, '');
+    const list = boardTiles(b).filter(t => !s ||
+      (t.tags || []).some(x => x.toLowerCase().includes(s)) ||
+      (t.caption || '').toLowerCase().includes(s) ||
+      (t.text || '').toLowerCase().includes(s));
+    if (!list.length) {
+      canvas.append(el('div', { class: 'board-empty' },
+        el('b', {}, b.tiles.length ? 'По этому тегу ничего нет' : 'Пока пусто'),
+        el('span', {}, b.tiles.length ? 'Попробуй другой тег или очисти поиск.' : 'Добавь первое фото, гифку или мысль — доска начнёт собираться.')));
+      return;
+    }
+    for (const t of list) { const tile = tileEl(b, t); canvas.append(tile); resize?.observe(tile); }
+    hydrateMedia(canvas);
+  };
+  q.addEventListener('input', () => drawTiles(q.value));
+  drawTiles();
+  scr.append(q, canvas);
+  scr.append(el('div', { class: 'board-actions' },
+    el('button', { class: 'btn', onclick: () => addTileSheet(b) }, '+ Добавить'),
+    el('button', { class: 'btn secondary', 'aria-label': 'Фон доски', onclick: () => boardBgSheet(b) }, icon('image'), 'Фон')
+  ));
+  scr.append(el('button', { class: 'btn secondary board-export', onclick: () => exportBoardSheet(b) }, icon('print'), 'Сохранить и распечатать'));
+  scr.append(boardSyncPanel());
+  // фон-картинку подтягиваем после отрисовки (объект-ссылки из IndexedDB)
+  if (b.bg === 'photo' && b.bgKey && !MEDIA_URLS.has(b.bgKey)) {
+    mediaUrl(b.bgKey).then(() => { canvas.style.cssText = boardBgStyle(b); });
+  }
+  return scr;
+}
+
+function boardMenuSheet(b) {
+  const title = el('input', { class: 'board-input', maxlength: 80, value: b.title, 'aria-label': 'Название доски', placeholder: 'Название доски' });
+  sheet((sh, close) => {
+    sh.append(
+      el('h3', {}, 'Настройки доски'),
+      title,
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
+        const name = title.value.trim();
+        if (!name) return toast('Название пустое.');
+        b.title = name; if (!saveBoards()) return; close(); toast('Название обновлено.'); render();
+      } }, 'Сохранить название'),
+      el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); boardBgSheet(b); } }, icon('image'), 'Сменить фон'),
+      el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: async () => {
+        BOARDS = BOARDS.filter(x => x.id !== b.id);
+        if (!saveBoards()) return;
+        for (const t of b.tiles || []) if (t.src) await mediaDel(t.src);
+        if (b.bgKey) await mediaDel(b.bgKey); close(); haptic('success'); toast('Доска удалена.'); go('boards');
+      } }, 'Удалить доску')
+    );
+  });
+}
+
+/* Приватная синхронизация: отдельная очередь и доски для каждого аккаунта. */
+const boardAuthHeaders = () => {
+  if (TG_MODE && tg.initData) return { Authorization: 'tma ' + tg.initData };
+  const u = state.web_user;
+  return u?.session && u.session_expires > Date.now() ? { Authorization: 'Bearer ' + u.session } : {};
+};
+function syncStatusText() {
+  const status = boardSync?.status;
+  if (!boardSync?.state.enabled) return 'Доски пока только на этом устройстве. Синхронизацию с Telegram можно включить по желанию.';
+  if (status?.phase === 'syncing') return 'Синхронизирую доски и фото…';
+  if (status?.phase === 'error') return status.error;
+  if (status?.phase === 'waiting') return 'Изменения сохранены здесь и ждут синхронизации.';
+  return 'Доски синхронизированы с твоим аккаунтом Telegram.';
+}
+function updateSyncStatus(status) {
+  document.querySelectorAll('[data-board-sync-status]').forEach(node => { node.textContent = syncStatusText(); });
+  if (status?.conflicts) toast('Были изменения на двух устройствах. Обе версии сохранены — проверь доску.');
+}
+function initBoardSync() {
+  boardSync?.dispose(); boardSync = null;
+  if (!boardIdentity()) return;
+  const account = boardAccount;
+  boardSync = new BoardSync({
+    storage: localStorage, key: 'dibitishka.board-sync.v1.' + account,
+    apiUrl, authHeaders: boardAuthHeaders,
+    getBoards: () => BOARDS, getMedia: mediaGet, putMedia: mediaPut,
+    canApply: () => !activeSheetClose && account === boardAccount,
+    setBoards: boards => {
+      if (account !== boardAccount) return;
+      const changed = JSON.stringify(BOARDS) !== JSON.stringify(boards);
+      localStorage.setItem(boardsStorageKey(), JSON.stringify(boards));
+      BOARDS = boards;
+      if (changed && ['boards', 'board'].includes(route().a) && !activeSheetClose) {
+        const y = window.scrollY; render(); window.scrollTo({ top: y });
+      }
+    },
+    onStatus: updateSyncStatus
+  });
+}
+function activateBoardAccount() {
+  const account = boardIdentity() || 'guest';
+  if (account !== boardAccount) { boardAccount = account; BOARDS = loadBoards() || []; }
+  initBoardSync();
+  if (boardSync?.state.enabled) boardSync.sync();
+}
+function boardSyncPanel() {
+  return el('section', { class: 'board-sync-panel' },
+    el('p', { class: 'mins', 'data-board-sync-status': '', role: 'status' }, syncStatusText()),
+    el('button', { class: 'btn ghost', onclick: boardCloudSheet }, 'Синхронизация с Telegram')
+  );
+}
+function boardCloudSheet() {
+  if (!boardAuthHeaders().Authorization) {
+    if (TG_MODE) return toast('Открой приложение из Telegram заново, чтобы подтвердить вход. Доски остаются на устройстве.');
+    return authSheet();
+  }
+  sheet((sh, close) => {
+    sh.append(el('h3', {}, 'Твои доски на других устройствах'),
+      el('p', { class: 'mins', 'data-board-sync-status': '', role: 'status' }, syncStatusText()));
+    if (boardSync?.state.enabled) {
+      sh.append(
+        el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => { close(); boardSync.sync(); } }, 'Синхронизировать сейчас'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => {
+          boardSync.disable(); initBoardSync(); close(); render(); toast('Автосинхронизация выключена. Доски на устройстве и на боте не удалены.');
+        } }, 'Выключить автосинхронизацию')
+      );
+      return;
+    }
+    sh.append(el('p', {}, 'Доски, заметки и фото будут сохранены на сервере бота и станут доступны после входа в этот же аккаунт Telegram. Без связи можно продолжать собирать доски — изменения отправятся позже.'));
+    let guest = [];
+    try { guest = JSON.parse(localStorage.getItem(BOARDS_KEY + '.guest')) || []; } catch { /* Нет гостевых досок. */ }
+    const includeGuest = el('input', { type: 'checkbox' });
+    if (guest.length) sh.append(el('label', { class: 'cloud-import' }, includeGuest, el('span', {}, 'Также перенести мои локальные гостевые доски в этот аккаунт')));
+    sh.append(el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => {
+      if (includeGuest.checked) {
+        const existing = new Set(BOARDS.map(b => b.id));
+        BOARDS = [...BOARDS, ...guest.filter(b => !existing.has(b.id))];
+        if (!saveBoards()) return;
+      }
+      close();
+      try { boardSync.enable(); } catch { toast('Не удалось сохранить настройки. Проверь свободную память.'); }
+      updateSyncStatus();
+    } }, 'Включить синхронизацию'));
+  });
+}
+window.addEventListener('online', () => boardSync?.sync());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) boardSync?.sync(); });
+
+/* Экспорт не меняет доску и не включает активный фильтр: всегда все плитки. */
+function exportBoardSheet(b) {
+  sheet((sh, close, signal) => {
+    sh.append(el('h3', {}, 'Сохранить и распечатать'));
+    const status = el('p', { class: 'mins', role: 'status' }, 'Собираю твою доску…');
+    sh.append(status);
+    const snapshot = JSON.parse(JSON.stringify(b));
+    renderBoardPages(snapshot, { mediaUrl, signal }).then(async ({ pages, warnings }) => {
+      if (signal.aborted) return;
+      const pdf = await boardPdf(pages);
+      if (signal.aborted) return;
+      status.textContent = `${pages.length === 1 ? 'Вся доска на одной странице.' : `Страниц: ${pages.length}. PDF сохранит их все.`} GIF сохраняются неподвижным кадром.`;
+      if (warnings.length) sh.append(el('p', { class: 'export-warning', role: 'status' }, warnings.join(' ')));
+      let index = 0;
+      const preview = el('img', { class: 'board-export-preview', alt: 'Предпросмотр доски для печати' });
+      const label = el('span', { class: 'mins' });
+      const show = () => { preview.src = pages[index].toDataURL('image/png'); label.textContent = `Страница ${index + 1} из ${pages.length}`; };
+      show(); sh.append(preview);
+      if (pages.length > 1) sh.append(el('div', { class: 'export-pager' },
+        el('button', { class: 'chip', 'aria-label': 'Предыдущая страница', onclick: () => { index = (index + pages.length - 1) % pages.length; show(); } }, '←'), label,
+        el('button', { class: 'chip', 'aria-label': 'Следующая страница', onclick: () => { index = (index + 1) % pages.length; show(); } }, '→')));
+      sh.append(
+        el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => downloadBlob(pdf, 'dibitishka-board.pdf') }, 'Скачать PDF'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: async () => {
+          try { downloadBlob(await boardPageBlob(pages[index]), `dibitishka-board-${index + 1}.png`); }
+          catch { toast('Не получилось сохранить картинку. Попробуй PDF.'); }
+        } }, pages.length > 1 ? 'Скачать PNG этой страницы' : 'Скачать PNG'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => printBoardPages(pages, b.title) }, icon('print'), 'Распечатать')
+      );
+    }).catch(err => { if (!signal.aborted) status.textContent = err.name === 'BoardExportLimit' ? err.message : 'Не получилось собрать доску. Проверь доступ к фото и попробуй ещё раз.'; });
+  });
+}
+
+/* ---------- профиль: подписка и поддержка одним блоком (v25) ----------
+   Раньше «Подписка» жила в середине профиля, а «Донат» — в самом низу.
+   Теперь это одна композиция сразу под шкалой уровня: статус, продление и
+   донат рядом, чтобы важное не приходилось искать. */
+function subscriptionCard() {
+  const dl = trialDaysLeft();
+  const active = (state.premium_until || 0) > Date.now();
+  const status = active ? 'Подписка активна'
+    : (state.trial_started_at && dl > 0) ? `Бесплатная неделя: ещё ${dl} ${plural(dl, 'день', 'дня', 'дней')}`
+    : 'Подписка не активна';
+  const note = active ? `Продлить можно в любой момент · ${plansLine()}`
+    : isPremium() ? `${plansLine()} · продление в Telegram через Tribute`
+    : `${plansLine()} · первая неделя бесплатно`;
+  return el('section', { class: 'support-card' },
+    el('div', { class: 'support-head' },
+      el('span', { class: 'ric c-grass' }, icon('card')),
+      el('div', { class: 'support-copy' }, el('b', {}, status), el('span', {}, note))
+    ),
+    el('div', { class: 'support-actions' },
+      el('button', { class: 'btn', onclick: openPay }, isPremium() ? 'Продлить подписку' : 'Оформить подписку'),
+      el('button', { class: 'btn secondary', onclick: () => openLink(CFG.donate_url) }, icon('heart'), 'Донат')
+    ),
+    el('p', { class: 'mins support-note' }, 'Подписка открывает практики, дневник, задания и тетрадь. Донат — разовое спасибо разработчикам, он ничего не меняет в доступе.')
+  );
+}
+
 /* ---------- render ---------- */
 function render() {
   const r = route();
+  document.documentElement.dataset.screen = r.a || 'today';
   const app = $('#app');
   if (typeof screenCleanup === 'function') { try { screenCleanup(); } catch (e) {} }
   screenCleanup = null;
@@ -1617,6 +2523,8 @@ function render() {
     case 'skills': scr = r.b ? screenBlock(r.b) : screenSkills(); break;
     case 'p': scr = screenPractice(r.b); break;
     case 'chat': scr = screenChat(); break;
+    case 'boards': scr = screenBoards(); break;
+    case 'board': scr = screenBoard(r.b); break;
     case 'diary': scr = screenDiary(); break;
     case 'tasks': scr = screenTasks(); break;
     case 'task': scr = screenTask(r.b); break;
@@ -1627,6 +2535,7 @@ function render() {
   }
   app.append(scr);
   bindMascotFriends(app);
+  hydrateMedia(app);          // картинки досок живут в IndexedDB — подставляем ссылки
   window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);
@@ -1647,6 +2556,8 @@ window.addEventListener('hashchange', render);
     save();
   }
   syncPremium();
+  initBoardSync();
   render();
+  if (boardSync?.state.enabled) boardSync.sync();
   setTimeout(() => $('#splash').classList.add('gone'), 1500);
 })();

@@ -16,3 +16,8 @@ IMG_*
 .env
 .env.*
 !.env.example
+
+.venv
+test-results
+playwright-report
+bot/board-data

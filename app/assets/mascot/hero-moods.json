@@ -1,0 +1,27 @@
+{
+  "frames": 10,
+  "columns": 4,
+  "rows": 3,
+  "cell": [
+    372,
+    281
+  ],
+  "neutral": 0,
+  "box": [
+    362,
+    317,
+    733,
+    597
+  ],
+  "keys": [
+    "hard",
+    "sad",
+    "anxious",
+    "even",
+    "warm",
+    "fun",
+    "joy",
+    "mixed",
+    "unclear"
+  ]
+}

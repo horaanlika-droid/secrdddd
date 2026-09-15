@@ -13,7 +13,7 @@
     "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
     "smoke": "node scripts/smoke.mjs",
     "port": "node scripts/port-clash.mjs",
-    "verify": "npm run check && npm run ai-test && npm run agents-test && npm run smoke && npm run port",
+    "verify": "npm run check && npm run dom-test && npm run boards-test && npm run ai-test && npm run agents-test && npm run smoke && npm run port",
     "ai-check": "node scripts/ai-check.mjs",
     "ai-test": "node scripts/ai-params-check.mjs",
     "agents-test": "node scripts/agents-mock-check.mjs",
@@ -23,5 +23,10 @@
     "grammy": "^1.30.0",
     "jpeg-js": "^0.4.4",
     "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^26.1.0"
   }
 }

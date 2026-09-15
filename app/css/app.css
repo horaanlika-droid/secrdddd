@@ -229,7 +229,7 @@ a{color:inherit}
 .hero-mascot-wrap{position:relative; width:fit-content; margin:20px auto 8px}
 .hero-mascot-wrap::before{content:""; position:absolute; inset:-18% -26%;
   background:var(--halo); filter:blur(14px)}
-.hero-mascot{position:relative; width:min(74vw, 310px); height:auto; max-height:38dvh; object-fit:contain; animation:float 5.5s ease-in-out infinite;
+.hero-mascot{position:relative; width:min(74vw, 310px); height:auto; max-height:38dvh; object-fit:contain; animation:none;
   filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(var(--accent-rgb),.32))}
 [data-theme="dark"] .hero-mascot{filter:drop-shadow(0 0 40px rgba(122,165,248,.35)) drop-shadow(0 26px 34px rgba(0,0,0,.55)) brightness(1.06)}
 
@@ -854,3 +854,264 @@ html{color-scheme: light}
 .chat-note{margin:-4px 4px 0; text-align:center; color:var(--ink-3); font-size:11.5px;
   line-height:1.6; opacity:.85}
 .chat-screen .foot[title]{cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px}
+
+/* ============================================================
+   v25 · эмоции с лицом Дибитишки, живой маскот, папки навыков,
+   доски впечатлений, подтверждение записей и подписка одним блоком
+   ============================================================ */
+
+/* ---------- компактные эмоции: только головы из единого листа 4×4 ---------- */
+.mood-sprite{display:inline-block; width:34px; height:34px; flex:none;
+  background-image:url('../assets/mascot/faces/sprite.webp'); background-repeat:no-repeat;
+  background-size:400% 400%; background-position:var(--face-x,100%) var(--face-y,0%)}
+.chips.mood-chips{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px}
+.chip.mood{display:flex; flex-direction:column; justify-content:center; align-items:center; gap:3px;
+  min-height:70px; min-width:0; padding:7px 4px; border-radius:17px; text-align:center; background:var(--card)}
+.chip.mood .chip-face{width:34px; height:34px; flex:none}
+.chip.mood .chip-label{font-size:12.5px; font-weight:700; letter-spacing:-.015em; color:var(--ink-2)}
+.chip.mood.on{background:var(--card); border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft)}
+.chip.mood.on .chip-label{color:var(--accent-deep)}
+.mood-confirm{margin-top:14px; gap:8px}
+.mood-confirm:disabled{opacity:.5; cursor:default; transform:none; box-shadow:none}
+.mood-hint{margin:10px 4px 0; line-height:1.5; min-height:3em}
+.mood-axis-face{width:30px; height:30px}
+.ric .ric-face{width:34px; height:34px}
+
+/* ---------- лицо = настроение: неизменные положение, размер и силуэт ---------- */
+.hero-mascot-wrap .live-mascot{position:relative; width:min(68vw,310px,38dvh); aspect-ratio:1;
+  filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(var(--accent-rgb),.32));
+  animation:none; transform:none}
+.live-mascot-base{display:block; width:100%; height:100%; object-fit:contain}
+/* Слой лица: ячейка сетки hero-moods.webp ровно по контуру лица в позе
+   (геометрия — app/css/hero-moods.css). В ячейке только лицо, всё остальное
+   прозрачно, поэтому ни маска, ни clip-path не нужны: капюшон и плечи берутся
+   из hello.png и не могут сдвинуться или «поехать» вместе с выражением. */
+.live-mascot-face{position:absolute; display:none; pointer-events:none;
+  background-image:url('../assets/mascot/hero-moods.webp?v=28'); background-repeat:no-repeat;
+  background-size:400% 300%; background-position:var(--face-x,0%) var(--face-y,0%)}
+.live-mascot.has-mood .live-mascot-face{display:block}
+.hero-mascot-wrap::before{animation:none; transform:none}
+/* Единственная анимация — проявление лица: выражение меняется мягко, без
+   движения тела. При reduced-motion лицо просто появляется сразу. */
+@media (prefers-reduced-motion:no-preference){
+  .live-mascot-face.mood-in{animation:moodFaceIn .8s ease-out both}
+}
+@keyframes moodFaceIn{from{opacity:0}to{opacity:1}}
+
+/* ---------- навыки: милые папки ---------- */
+/* Раздел = папка: свой цвет, своё лицо на обложке, прогресс внутри. */
+.folders{display:flex; flex-direction:column; gap:16px; margin-top:6px}
+.folder{display:flex; align-items:center; gap:16px; width:100%; text-align:left;
+  padding:16px 18px 16px 12px; border-radius:28px; background:var(--card);
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm);
+  transition:transform .14s ease, box-shadow .22s}
+.folder:active{transform:scale(.985)}
+.folder-art{position:relative; flex:none; width:104px; height:104px; display:grid; place-items:center}
+.folder-art img{width:100%; height:100%; object-fit:contain;
+  filter:drop-shadow(0 12px 18px rgba(var(--ink-rgb),.16)); transition:transform .28s cubic-bezier(.22,.9,.3,1)}
+.folder:active .folder-art img{transform:translateY(-3px) rotate(-2.5deg)}
+.folder-badge{position:absolute; right:2px; top:2px; min-width:26px; height:26px; padding:0 7px;
+  border-radius:999px; background:var(--ink); color:#fff; font-size:12.5px; font-weight:800;
+  display:grid; place-items:center; box-shadow:var(--shadow-sm)}
+.folder-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.folder-copy b{font-size:18.5px; font-weight:800; letter-spacing:-.022em; line-height:1.15}
+.folder-sub{font-size:13.5px; color:var(--ink-2); line-height:1.4}
+.folder-track{position:relative; height:8px; border-radius:999px; background:var(--line-2); overflow:hidden; margin-top:9px}
+.folder-track i{display:block; height:100%; border-radius:inherit; width:0;
+  background:linear-gradient(90deg, var(--f-lite, var(--accent-glow)), var(--f, var(--accent)));
+  transition:width .6s cubic-bezier(.22,.9,.3,1)}
+.folder-meta{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-size:12.5px; color:var(--ink-3); margin-top:7px}
+.folder-meta .chev{font-size:16px; color:var(--ink-3)}
+/* цвета папок повторяют палитру приложения (Saphinka: peony/lavender/sky/leaf/grass) */
+.folder.f-peony{--f:#E0A88F; --f-lite:#F3CDBB}
+.folder.f-lavender{--f:#A89CC8; --f-lite:#C9BFE0}
+.folder.f-sky{--f:#7E93C2; --f-lite:#A9BCE0}
+.folder.f-leaf{--f:#B7B279; --f-lite:#D6D2A0}
+.folder.f-grass{--f:#8D8B4C; --f-lite:#B6B478}
+@media (max-width:420px){
+  .folder-art{width:86px; height:86px}
+  .folder-copy b{font-size:17px}
+}
+
+/* ---------- доска впечатлений: тизер на главной ---------- */
+.board-teaser{display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+  padding:16px 18px; border-radius:26px; background:var(--glass-card);
+  border:1px solid rgba(255,255,255,.7); box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%);
+  transition:transform .14s ease}
+.board-teaser:active{transform:scale(.99)}
+.board-teaser-art{flex:none; width:94px; height:80px; object-fit:cover; border-radius:16px; border:3px solid #fff;
+  box-shadow:0 5px 14px rgba(var(--ink-rgb),.1)}
+.board-teaser-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px}
+.board-teaser-copy b{font-size:16px; font-weight:800; letter-spacing:-.015em}
+.board-teaser-copy span{font-size:13px; color:var(--ink-2); line-height:1.45}
+.board-teaser .chev{color:var(--ink-3); font-size:18px; flex:none}
+
+/* ---------- доски: список ---------- */
+.board-search,.board-input{width:100%; font:inherit; font-size:15.5px; color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:16px;
+  padding:13px 15px; outline:none; box-shadow:var(--shadow-sm); margin-top:14px}
+.board-search:focus,.board-input:focus{border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft)}
+.board-search::placeholder,.board-input::placeholder{color:var(--ink-3)}
+.found-list{margin-top:12px; border-radius:22px; overflow:hidden; background:var(--card);
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm)}
+.found-list .row{display:flex; align-items:center; gap:14px; width:100%; text-align:left; padding:14px 18px; background:none}
+.found-list .row + .row{border-top:1px solid var(--line-2)}
+.found-list .row .ric{width:40px; height:40px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.found-list .row .ric svg{width:20px; height:20px}
+.found-list .row .rmain{flex:1; min-width:0}
+.found-list .row .rmain b{display:block; font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.found-list .row .rmain span{display:block; font-size:12.5px; color:var(--ink-2); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.found-list .mins{padding:14px 18px; margin:0}
+
+.boards-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:420px){ .boards-grid{grid-template-columns:1fr} }
+.board-cover{position:relative; height:206px; padding:13px; border-radius:28px; text-align:left;
+  border:1px solid var(--line-2); box-shadow:var(--shadow-sm); overflow:hidden;
+  display:flex; flex-direction:column; justify-content:space-between; transition:transform .15s ease}
+.board-cover:active{transform:scale(.985)}
+.cover-thumbs{display:flex; gap:8px; align-items:flex-start; min-height:118px}
+.cover-thumbs img{width:62px; height:80px; object-fit:cover; border-radius:12px;
+  border:3px solid #fff; background:#fff; box-shadow:0 8px 18px rgba(var(--ink-rgb),.2)}
+.cover-thumbs img:nth-child(1){transform:rotate(-3.5deg)}
+.cover-thumbs img:nth-child(2){transform:rotate(2.5deg) translateY(7px)}
+.cover-thumbs img:nth-child(3){transform:rotate(5deg) translateY(-2px)}
+.cover-quote{display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;
+  font-size:13px; line-height:1.5; color:var(--ink-2);
+  background:rgba(255,255,255,.82); border-radius:16px; padding:11px 13px}
+.cover-foot{display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+  background:rgba(255,255,255,.88); border-radius:16px; padding:10px 13px;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px)}
+.cover-foot b{font-size:15px; font-weight:800; letter-spacing:-.015em}
+.cover-foot span{font-size:12px; color:var(--ink-3); flex:none}
+
+/* ---------- доски: сама доска и плитки ---------- */
+.board-head{display:flex; align-items:center; gap:14px; margin:6px 0 0}
+.board-head-copy{flex:1; min-width:0}
+.board-head-copy b{display:block; font-size:26px; font-weight:800; letter-spacing:-.028em; line-height:1.15}
+.board-head-copy span{display:block; font-size:13.5px; color:var(--ink-2); margin-top:4px}
+.icon-btn{flex:none; width:44px; height:44px; border-radius:16px; background:var(--card);
+  border:1px solid var(--line-2); color:var(--ink-2); font-size:22px; line-height:1;
+  display:grid; place-items:center; box-shadow:var(--shadow-sm)}
+.icon-btn:active{transform:scale(.95)}
+.board-canvas{position:relative; margin-top:14px; padding:16px 14px 18px; border-radius:28px;
+  border:1px solid rgba(255,255,255,.75); box-shadow:var(--shadow-sm);
+  column-count:2; column-gap:12px; min-height:300px; overflow:hidden}
+@media (min-width:520px){ .board-canvas{column-count:3} }
+.board-empty{column-span:all; display:flex; flex-direction:column; gap:6px; align-items:center;
+  text-align:center; padding:44px 18px; color:var(--ink-2)}
+.board-empty b{font-size:16px; color:var(--ink)}
+.board-empty span{font-size:13.5px; line-height:1.5; max-width:34ch}
+.tile{position:relative; break-inside:avoid; -webkit-column-break-inside:avoid; margin:0 0 12px; border-radius:18px;
+  background:#fff; border:1px solid rgba(255,255,255,.9); overflow:hidden; cursor:pointer;
+  box-shadow:0 10px 22px rgba(var(--ink-rgb),.14);
+  transform:rotate(var(--rot,0deg)); transition:transform .2s ease, box-shadow .2s}
+.tile:active{box-shadow:0 6px 14px rgba(var(--ink-rgb),.16)}
+.tile-media{display:block; width:100%; height:auto; object-fit:cover; background:var(--line-2)}
+.tile.size-s .tile-media{aspect-ratio:1/1}
+.tile.size-m .tile-media{aspect-ratio:4/5}
+.tile.size-l .tile-media{aspect-ratio:3/4}
+.tile-note-copy{margin:0; padding:15px 14px 13px; font-size:14.5px; line-height:1.55; color:var(--ink);
+  white-space:pre-wrap; word-break:break-word; background:var(--tint-peony)}
+.tile.size-s .tile-note-copy{font-size:13.5px; padding:12px}
+.tile.size-l .tile-note-copy{font-size:15.5px; padding:18px 16px}
+.tile-gif-mark{position:absolute; left:9px; top:9px; padding:3px 9px; border-radius:999px;
+  background:rgba(11,20,45,.58); color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.08em}
+.tile-cap{display:block; padding:9px 13px 4px; font-size:12.5px; color:var(--ink-2); line-height:1.45}
+.tile-tags{display:block; padding:0 13px 11px; font-size:11.5px; font-weight:700; color:var(--accent-deep)}
+.tile-cap + .tile-tags{padding-top:3px}
+.tile-broken{opacity:.6}
+.media-missing{min-height:120px}
+.board-actions{display:flex; gap:10px; margin-top:16px}
+.board-actions .btn{flex:1}
+.board-actions .btn.secondary{flex:0 0 auto; padding:0 18px}
+
+/* ---------- доски: листы (добавление, фон, новая доска) ---------- */
+.add-grid{display:flex; flex-direction:column; gap:10px; margin-top:14px}
+.add-opt{display:flex; align-items:center; gap:14px; width:100%; text-align:left; padding:14px 16px;
+  border-radius:20px; background:var(--card-2); border:1px solid var(--line-2)}
+.add-opt:active{background:var(--accent-soft)}
+.add-opt .ric{width:42px; height:42px; border-radius:15px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.add-opt .ric svg{width:21px; height:21px}
+.add-opt b{font-size:15.5px; font-weight:700}
+.add-opt span:not(.ric){display:block; font-size:12.5px; color:var(--ink-2); margin-top:2px}
+.add-opt > span:not(.ric){flex:1}
+.bg-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:10px; margin-top:6px}
+.bg-opt{position:relative; height:74px; border-radius:18px; border:1.5px solid var(--line-2);
+  display:flex; align-items:flex-end; justify-content:center; padding:8px; overflow:hidden}
+.bg-opt span{font-size:11.5px; font-weight:700; color:var(--ink); background:rgba(255,255,255,.86);
+  border-radius:999px; padding:3px 9px}
+.bg-opt.on{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+.sheet .mood-note-input{width:100%; margin-top:14px}
+.sheet .board-input + .board-input{margin-top:10px}
+
+/* ---------- подписка и поддержка одним блоком (профиль) ---------- */
+.support-card{margin:0 0 28px; padding:22px; border-radius:28px;
+  background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.8));
+  border:1px solid var(--line-2); box-shadow:var(--shadow)}
+.support-head{display:flex; align-items:center; gap:14px}
+.support-head .ric{width:46px; height:46px; border-radius:16px; display:flex; align-items:center; justify-content:center; flex:none; color:#fff}
+.support-head .ric svg{width:22px; height:22px}
+.support-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.support-copy b{font-size:16.5px; font-weight:800; letter-spacing:-.015em}
+.support-copy span{font-size:13px; color:var(--ink-2); line-height:1.45}
+.support-actions{display:flex; gap:10px; margin-top:18px}
+.support-actions .btn{flex:1; min-height:54px; font-size:15.5px}
+.support-actions .btn.secondary{flex:0 0 auto; padding:0 20px}
+.support-note{margin:13px 0 0; line-height:1.5}
+@media (max-width:420px){
+  .support-actions{flex-direction:column}
+  .support-actions .btn.secondary{width:100%}
+}
+
+/* v26 · Воспоминания, компактные листы и экспорт */
+.boards-hero{margin:22px 0 24px; overflow:hidden; border:1px solid var(--line-2); border-radius:26px; background:var(--card); box-shadow:var(--shadow-sm)}
+.boards-hero img{display:block; width:100%; height:auto; aspect-ratio:1264/848; object-fit:contain}
+.boards-hero figcaption{display:flex; flex-direction:column; gap:7px; padding:19px 22px 22px}
+.boards-hero figcaption b{font-size:19px; font-weight:800; letter-spacing:-.02em}
+.boards-hero figcaption span{font-size:14px; line-height:1.55; color:var(--ink-2)}
+.boards-empty{grid-column:1/-1; margin:0}
+.board-canvas{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:18px; padding:22px; column-count:unset; overflow:hidden}
+.board-empty{grid-column:1/-1}
+.tile{min-width:0; margin:0; transform:rotate(var(--rot,0deg)) scale(var(--tile-fit,.85))}
+.tile-note-copy{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:8; overflow:hidden; overflow-wrap:anywhere}
+.tile-cap,.tile-tags{overflow-wrap:anywhere}
+.tile:focus-visible,.chip:focus-visible,.icon-btn:focus-visible{outline:3px solid var(--accent); outline-offset:4px}
+.media-error{display:block; min-height:90px; padding:20px 12px; font-size:12px; line-height:1.5; color:var(--ink-2); background:var(--card-2); text-align:center}
+.board-export{margin-top:10px; gap:8px}
+.board-export-preview{display:block; max-height:40dvh; max-width:100%; width:auto; margin:16px auto; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-sm)}
+.export-pager{display:flex; justify-content:center; align-items:center; gap:14px}
+.export-warning{padding:12px; border-radius:12px; background:var(--tint-peony); color:var(--ink-2); font-size:13px; line-height:1.5}
+.add-opt{flex-wrap:wrap; gap:8px 12px}
+.add-opt b{flex:1; min-width:120px}
+.add-opt > span:not(.ric){flex-basis:100%; margin-left:54px}
+@media(max-width:359px){.board-teaser{padding:14px 12px; gap:10px}.board-teaser-art{width:74px; height:74px}.board-teaser-copy b{font-size:14px}.board-teaser-copy span{font-size:12px}}
+@media(max-width:399px){.board-canvas{grid-template-columns:1fr; padding:22px 26px}}
+@media(min-width:600px){.board-canvas{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.board-sync-panel{padding:18px 16px; margin-top:22px; border:1px solid var(--line-2); border-radius:20px; background:var(--card-2)}
+.board-sync-panel p{margin:0; line-height:1.5}
+.board-sync-panel .btn{margin-top:10px; min-height:44px; font-size:14px}
+.cloud-import{display:flex; gap:10px; align-items:flex-start; padding:14px 0; font-size:14px; line-height:1.5}
+.cloud-import input{margin-top:4px; flex:none; width:18px; height:18px; accent-color:var(--accent)}
+.gif-search-form{display:flex; gap:8px; align-items:center; margin:14px 0 10px}
+.gif-search-form .board-search{margin:0; flex:1; min-width:0}
+.gif-search-form .chip{min-height:46px; flex:none}
+.gif-results{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px}
+.gif-result{display:block; overflow:hidden; border-radius:13px; border:2px solid transparent; padding:2px; background:var(--card-2)}
+.gif-result img{display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:9px}
+.gif-result[aria-pressed="true"]{border-color:var(--accent)}
+.gif-credit{font-size:11px; color:var(--ink-3); text-align:right; margin:6px 2px}
+/* На главной ничто за маскотом не «плавает» вместе с ним. */
+[data-screen="today"] #bg-blobs::after,[data-screen="today"] #bg-blobs i{animation:none}
+/* hidden must beat component display:flex/block (e.g. no empty tabbar on boards). */
+[hidden]{display:none!important}
+.navbar{gap:12px}
+.navbar .back{flex:none; min-height:44px}
+.navbar h2{position:static; inset:auto; display:block; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; margin:0; padding:0}
+.cover-thumbs{min-width:0}
+.cover-foot b{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.folder-copy b{overflow-wrap:anywhere; hyphens:auto}
+.board-actions .btn{min-width:0}
+.board-actions .btn.secondary,.support-actions .btn.secondary{width:auto}
+.support-actions .btn{min-width:0}
