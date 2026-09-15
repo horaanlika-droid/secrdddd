@@ -637,7 +637,9 @@ function heroPoster({ dateStr }) {
   const phrase = dailyPhrase();
   const isLong = phrase.length > 48;
   return el('section', { class: 'hero' },
-    el('img', { class: 'hero-brand', src: brandLogo(), alt: 'Дибитишка', width: 1200, height: 514, 'data-brand-logo': '' }),
+    /* v32: на странице «Сегодня» логотип — из IMG_1024 (маскот над надписью,
+       без «app by»). Фон вырезан в альфа-канал, палитра его не меняет. */
+    el('img', { class: 'hero-brand', src: 'assets/brand/logo-1024.png', alt: 'Дибитишка', width: 1100, height: 493 }),
     el('div', { class: 'hero-phrase' + (isLong ? ' long' : '') }, phrase),
     el('p', { class: 'hero-date' }, dateStr),
     el('div', { class: 'hero-mascot-wrap' }, liveMascot()),
@@ -1946,6 +1948,9 @@ function authSheet() {
    метаданные — в localStorage под своим ключом.
    ============================================================ */
 const BOARDS_KEY = 'dibitishka.boards.v1';
+/* v32: режим расстановки плиток — когда включен, тап по плитке не открывает
+   карточку, а выбирает её: дальше её можно тянуть, крутить и масштабировать. */
+let boardEditOn = false;
 const boardIdentity = () => TG_MODE ? String(tg.initDataUnsafe.user.id) : state.web_user?.id ? String(state.web_user.id) : null;
 let boardAccount = boardIdentity() || 'guest';
 const boardsStorageKey = () => `${BOARDS_KEY}.${boardAccount}`;
@@ -2140,8 +2145,8 @@ function tileEl(b, t) {
   }
   if (t.caption && t.kind !== 'note') box.append(el('span', { class: 'tile-cap' }, t.caption));
   if ((t.tags || []).length) box.append(el('span', { class: 'tile-tags' }, t.tags.map(x => '#' + x).join(' ')));
-  box.addEventListener('click', () => tileSheet(b, t));
-  box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileSheet(b, t); } });
+  box.addEventListener('click', () => { if (boardEditOn) return; tileSheet(b, t); });
+  box.addEventListener('keydown', e => { if (boardEditOn) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileSheet(b, t); } });
   return box;
 }
 
@@ -2468,38 +2473,174 @@ function screenBoard(id) {
 
   // фильтр по тегам внутри доски
   const q = el('input', { class: 'board-search', type: 'search', placeholder: 'Поиск по тегам: #море, #тёплое' });
-  const canvas = el('div', { class: 'board-canvas' });
-  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
-    for (const { target } of entries) {
-      const w = target.offsetWidth, h = target.offsetHeight;
-      const a = Math.abs(parseFloat(target.style.getPropertyValue('--rot')) || 0) * Math.PI / 180;
-      const fit = w && h ? Math.min(w / (w * Math.cos(a) + h * Math.sin(a)), h / (h * Math.cos(a) + w * Math.sin(a))) : 1;
-      target.style.setProperty('--tile-fit', fit);
+  const canvas = el('div', { class: 'board-canvas free' });
+  boardEditOn = false;
+
+  /* v32: свободная компоновка доски. Позиция плитки (t.x, t.y, t.w) хранится в
+     процентах от ширины холста — раскладка одинаково выглядит на любом экране.
+     В режиме «Оформить» плитки тянутся пальцем, а за угловую ручку крутятся
+     и масштабируются. */
+  const ensureFreeform = () => {
+    let touched = false;
+    const cols = [8, 8];   // нижняя граница двух условных колонок при рассадке старых плиток
+    for (const t of b.tiles || []) {
+      if (t.x != null && t.y != null && t.w != null) continue;
+      const w = { s: 36, m: 45, l: 56 }[t.size || 'm'];
+      const h = t.kind === 'note'
+        ? w * 0.66 + 16
+        : w * ({ s: 1.05, m: 1.3, l: 1.4 }[t.size || 'm']) + (t.caption ? 15 : 0) + ((t.tags || []).length ? 6 : 0);
+      const c = cols[0] <= cols[1] ? 0 : 1;
+      t.w = w;
+      t.x = (c ? 49 : 3) + (((t.created || 0) % 5) - 2);
+      t.y = cols[c];
+      cols[c] += h + 8;
+      touched = true;
     }
-  }) : null;
-  screenCleanup = () => resize?.disconnect();
+    if (touched) saveTiles(b);
+  };
+
+  let zTop = 10;
+  const tilesInDom = new Map();
+  function relayout() {
+    const cw = canvas.clientWidth || 1;
+    let bottom = 300;
+    for (const [t, box] of tilesInDom) {
+      box.style.left = t.x + '%';
+      box.style.width = t.w + '%';
+      box.style.top = (t.y / 100 * cw) + 'px';
+      box.style.setProperty('--rot', (t.rot || 0) + 'deg');
+      bottom = Math.max(bottom, t.y / 100 * cw + box.offsetHeight);
+    }
+    canvas.style.height = Math.ceil(bottom + 28) + 'px';
+  }
+  const onResize = () => relayout();
+  window.addEventListener('resize', onResize);
+  screenCleanup = () => window.removeEventListener('resize', onResize);
+
+  const deselect = () => canvas.querySelectorAll('.tile.sel').forEach(x => {
+    x.classList.remove('sel');
+    x.querySelector('.tile-handle')?.remove();
+  });
+
+  function select(tile) {
+    if (!tile.classList.contains('sel')) haptic('light');
+    deselect();
+    tile.classList.add('sel');
+    tile.append(el('span', { class: 'tile-handle', 'aria-hidden': 'true' }, '⤡'));
+  }
+
+  function attachFree(tile, t) {
+    /* перемещение: тянем за саму плитку; короткий тап без движения — выбор */
+    tile.addEventListener('pointerdown', (e) => {
+      if (!boardEditOn || (e.button ?? 0) > 0 || e.target.closest('.tile-handle')) return;
+      e.preventDefault();
+      try { tile.setPointerCapture(e.pointerId); } catch { /* pointer уже снят */ }
+      const cw = canvas.clientWidth || 1;
+      const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
+      let moved = false;
+      const mm = (ev) => {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 9) return;
+        if (!moved) {
+          moved = true;
+          deselect();
+          tile.classList.add('drag');
+          tile.style.zIndex = ++zTop;
+        }
+        t.x = Math.round((ox + dx / cw * 100) * 10) / 10;
+        t.y = Math.max(-30, Math.round((oy + dy / cw * 100) * 10) / 10);
+        relayout();
+      };
+      const up = () => {
+        tile.removeEventListener('pointermove', mm);
+        tile.removeEventListener('pointerup', up);
+        tile.removeEventListener('pointercancel', up);
+        tile.classList.remove('drag');
+        t.z = Number(tile.style.zIndex) || 0;
+        if (moved) { saveTiles(b); haptic('light'); }
+        else tile.classList.contains('sel') ? deselect() : select(tile);
+      };
+      tile.addEventListener('pointermove', mm);
+      tile.addEventListener('pointerup', up);
+      tile.addEventListener('pointercancel', up);
+    });
+    /* ручка в углу: угол от центра плитки крутит, расстояние — масштабирует */
+    tile.addEventListener('pointerdown', (e) => {
+      const hd = e.target.closest('.tile-handle');
+      if (!hd || !boardEditOn) return;
+      e.preventDefault(); e.stopPropagation();
+      try { hd.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      const r = tile.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const a0 = Math.atan2(e.clientY - cy, e.clientX - cx);
+      const d0 = Math.max(24, Math.hypot(e.clientX - cx, e.clientY - cy));
+      const rot0 = t.rot || 0, w0 = t.w;
+      const mm = (ev) => {
+        const a = Math.atan2(ev.clientY - cy, ev.clientX - cx);
+        const d = Math.hypot(ev.clientX - cx, ev.clientY - cy);
+        t.rot = Math.round((((rot0 + (a - a0) * 180 / Math.PI) + 180) % 360 + 360) % 360 - 180);
+        t.w = Math.min(96, Math.max(16, Math.round(w0 * d / d0 * 10) / 10));
+        relayout();
+      };
+      const up = () => {
+        hd.removeEventListener('pointermove', mm);
+        hd.removeEventListener('pointerup', up);
+        hd.removeEventListener('pointercancel', up);
+        t.z = Number(tile.style.zIndex) || 0;
+        saveTiles(b);
+      };
+      hd.addEventListener('pointermove', mm);
+      hd.addEventListener('pointerup', up);
+      hd.addEventListener('pointercancel', up);
+    });
+  }
+
   const drawTiles = (term = '') => {
-    resize?.disconnect();
+    tilesInDom.clear();
     canvas.innerHTML = '';
+    ensureFreeform();
     const s = term.trim().toLowerCase().replace(/^#/, '');
     const list = boardTiles(b).filter(t => !s ||
       (t.tags || []).some(x => x.toLowerCase().includes(s)) ||
       (t.caption || '').toLowerCase().includes(s) ||
       (t.text || '').toLowerCase().includes(s));
     if (!list.length) {
+      canvas.style.height = '';
       canvas.append(el('div', { class: 'board-empty' },
         el('b', {}, b.tiles.length ? 'По этому тегу ничего нет' : 'Пока пусто'),
         el('span', {}, b.tiles.length ? 'Попробуй другой тег или очисти поиск.' : 'Добавь первое фото, гифку или мысль — доска начнёт собираться.')));
       return;
     }
-    for (const t of list) { const tile = tileEl(b, t); canvas.append(tile); resize?.observe(tile); }
+    zTop = 10;
+    for (const t of list) {
+      const tile = tileEl(b, t);
+      tile.style.zIndex = t.z || '';
+      zTop = Math.max(zTop, Number(t.z) || 10);
+      attachFree(tile, t);
+      tilesInDom.set(t, tile);
+      canvas.append(tile);
+    }
     hydrateMedia(canvas);
+    relayout();
+    canvas.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', relayout, { once: true }); });
   };
   q.addEventListener('input', () => drawTiles(q.value));
   drawTiles();
   scr.append(q, canvas);
+  /* «Оформить» включает режим расстановки: плитки можно двигать, крутить и
+     масштабировать; «Готово» — обратно к обычному просмотру. */
+  const editBtn = el('button', { class: 'btn secondary board-edit-toggle', 'aria-pressed': 'false', onclick: () => {
+    boardEditOn = !boardEditOn;
+    canvas.classList.toggle('edit', boardEditOn);
+    editBtn.classList.toggle('on', boardEditOn);
+    editBtn.setAttribute('aria-pressed', boardEditOn ? 'true' : 'false');
+    editBtn.textContent = boardEditOn ? 'Готово' : 'Оформить';
+    if (!boardEditOn) { deselect(); saveTiles(b); }
+    haptic('light');
+  } }, 'Оформить');
   scr.append(el('div', { class: 'board-actions' },
     el('button', { class: 'btn', onclick: () => addTileSheet(b) }, '+ Добавить'),
+    editBtn,
     el('button', { class: 'btn secondary', 'aria-label': 'Фон доски', onclick: () => boardBgSheet(b) }, icon('image'), 'Фон')
   ));
   scr.append(el('button', { class: 'btn secondary board-export', onclick: () => exportBoardSheet(b) }, icon('print'), 'Сохранить и распечатать'));
