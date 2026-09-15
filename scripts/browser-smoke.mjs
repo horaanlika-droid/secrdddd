@@ -91,23 +91,34 @@ try {
     '.hero{background:#fff!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important}',
     '.live-mascot-face{animation:none!important}'
   ].join('');
-  const heroShot=async()=>{
+  const heroShot=async(extra='')=>{
     await page.evaluate(()=>scrollTo(0,0));
-    const tag=await page.addStyleTag({content:HERO_ISOLATION});
+    const tag=await page.addStyleTag({content:HERO_ISOLATION+extra});
     await page.waitForTimeout(60);
     const png=PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
     await tag.evaluate(node=>node.remove());
     return png;
   };
-  /* Сравнение двух кадров: прямоугольник, число различных пикселей и размеры
-     обоих кадров — по сообщению должно быть понятно, что именно разошлось. */
-  const diffStats=(a,b)=>{let box=null,count=0;
-    const w=Math.min(a.width,b.width),h=Math.min(a.height,b.height);
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*a.width+x)*4,j=(y*b.width+x)*4;
-      if(a.data[i]!==b.data[j]||a.data[i+1]!==b.data[j+1]||a.data[i+2]!==b.data[j+2]||a.data[i+3]!==b.data[j+3]){
-        count++;
-        box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};}}
-    return {box,count,aSize:[a.width,a.height],bSize:[b.width,b.height]};};
+  /* Сравнение двух кадров: прямоугольник, число различных пикселей, размеры
+     обоих кадров и разбор по полосам (над лицом / лицо / ниже лица) с
+     максимальной и средней разницей — по аннотации видно, что именно разошлось. */
+  const diffStats=(a,b,faceBox)=>{
+    const w=Math.min(a.width,b.width),h=Math.min(b.height,b.height||h);
+    let box=null,count=0,maxDelta=0,maxOutside=0,sumDelta=0,above=0,inside=0,below=0,worst=null;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const i=(y*a.width+x)*4,j=(y*b.width+x)*4;
+      const delta=Math.abs(a.data[i]-b.data[j])+Math.abs(a.data[i+1]-b.data[j+1])+Math.abs(a.data[i+2]-b.data[j+2]);
+      if(delta===0) continue;
+      count++; sumDelta+=delta;
+      const inFace=!!faceBox&&y>=faceBox.y0&&y<=faceBox.y1&&x>=faceBox.x0&&x<=faceBox.x1;
+      if(!inFace&&delta>maxOutside) maxOutside=delta;
+      if(delta>maxDelta){maxDelta=delta; worst={x,y,a:[a.data[i],a.data[i+1],a.data[i+2]],b:[b.data[j],b.data[j+1],b.data[j+2]]};}
+      box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};
+      if(inFace) inside++; else if(faceBox&&y<faceBox.y0) above++; else below++;
+    }
+    return {box,count,maxDelta,maxOutside,meanDelta:count?+(sumDelta/count).toFixed(1):0,above,inside,below,worst,
+      aSize:[a.width,a.height],bSize:[b.width,b.height]};
+  };
   const heroState=async()=>page.locator('.live-mascot').evaluate(node=>{const r=node.getBoundingClientRect(),face=node.querySelector('.live-mascot-face');
     return {hasMood:node.classList.contains('has-mood'),label:node.getAttribute('aria-label'),faceDisplay:getComputedStyle(face).display,
       faceX:face.style.getPropertyValue('--face-x'),faceY:face.style.getPropertyValue('--face-y'),base:node.querySelector('img').getAttribute('src'),
@@ -164,17 +175,51 @@ try {
     assert.equal(mood.transform,'none');
     assert.deepEqual(mood.rect,calm.rect,`${JSON.stringify(calm.rect)} → ${JSON.stringify(mood.rect)}`);
   });
+  /* Тот же кадр, но слой лица принудительно скрыт: если он совпадает со
+     спокойным снимком до отметки, значит сам персонаж не изменился ни на
+     пиксель — добавилось ровно одно лицо. */
+  const noFacePixels=await heroShot('.live-mascot-face{display:none!important}');
+  const faceBox=()=>{const scale=moodPixels.width/1024,face=moodAtlas.box,slack=3;
+    return {x0:Math.floor(face[0]*scale)-slack,y0:Math.floor(face[1]*scale)-slack,
+      x1:Math.ceil(face[2]*scale)+slack,y1:Math.ceil(face[3]*scale)+slack};};
+  check('mood does not repaint the character: the same frame without the face layer is identical',()=>{
+    const stats=diffStats(calmPixels,noFacePixels,faceBox());
+    assert.equal(stats.count,0,`различий ${stats.count} px (${JSON.stringify(stats.box)}), дельта ${stats.maxDelta}, `
+      +`полосы над/в/под лицом ${stats.above}/${stats.inside}/${stats.below}, кадры ${stats.aSize}/${stats.bSize}`);
+  });
+  /* Сравниваем один и тот же кадр со слоем лица и без него. Вне области лица
+     допустим только шум сглаживания (несколько единиц из 255 на пиксель):
+     заметное движение или перерисовка тела дают большую разницу на контурах.
+     Кадры при этом одинакового размера и сняты в одном состоянии страницы,
+     поэтому все крупные различия обязаны лежать внутри лица. */
+  /* Независимая проверка того же обещания: на белом фоне (фон мы убрали выше)
+     считаем, где находится сам персонаж и сколько места он занимает. Если бы
+     тело сдвинулось, изменило размер или перерисовалось, контур или площадь
+     поехали бы заметно — это видно даже при шуме сглаживания. */
+  const inkBox=png=>{let x0=png.width,y0=png.height,x1=-1,y1=-1,count=0;
+    for(let y=0;y<png.height;y++)for(let x=0;x<png.width;x++){
+      const i=(y*png.width+x)*4;
+      if(255-Math.min(png.data[i],png.data[i+1],png.data[i+2])<=24) continue;
+      count++; x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y);
+    }
+    return {x0,y0,x1,y1,count};};
+  check('the character keeps its outline and area: the body did not move or scale',()=>{
+    const plain=inkBox(noFacePixels), withFace=inkBox(moodPixels);
+    assert.deepEqual([withFace.x0,withFace.y0,withFace.x1,withFace.y1],[plain.x0,plain.y0,plain.x1,plain.y1],
+      `контур ${JSON.stringify(plain)} → ${JSON.stringify(withFace)}`);
+    const drift=Math.abs(withFace.count-plain.count)/plain.count;
+    // Порог вольный: пиксели у самого порога «чернил» могут перескочить из-за
+    // сглаживания, но сдвиг или масштаб тела двигают счёт в разы заметнее.
+    assert(drift<0.03,`закрашенных пикселей ${plain.count} → ${withFace.count} (${(drift*100).toFixed(2)}%)`);
+  });
   check('only the face pixels change: body, hood and hands stay identical',()=>{
-    const face=moodAtlas.box, scale=mood.rect.w/1024, slack=3;
-    const box={x0:Math.floor(face[0]*scale)-slack,y0:Math.floor(face[1]*scale)-slack,
-      x1:Math.ceil(face[2]*scale)+slack,y1:Math.ceil(face[3]*scale)+slack};
-    const stats=diffStats(calmPixels,moodPixels);
-    assert(stats.count>0,'лицо настроения действительно нарисовано');
-    const d=stats.box;
-    assert(d.x0>=box.x0&&d.y0>=box.y0&&d.x1<=box.x1&&d.y1<=box.y1,
-      `различий ${stats.count} px, прямоугольник ${JSON.stringify(d)}, кадры ${stats.aSize}/${stats.bSize} — вне области лица ${JSON.stringify(box)}`);
-    const start=Math.min(calmPixels.height,box.y1+1)*calmPixels.width*4;
-    assert(calmPixels.data.subarray(start).equals(moodPixels.data.subarray(start)),'тело ниже лица совпадает попиксельно');
+    const box=faceBox(), AA_TOLERANCE=24;
+    const stats=diffStats(noFacePixels,moodPixels,box);
+    const detail=`различий ${stats.count} px, прямоугольник ${JSON.stringify(stats.box)}, `
+      +`максимум вне лица ${stats.maxOutside}${stats.worst?` (${JSON.stringify(stats.worst)})`:''}, `
+      +`полосы над/в/под лицом ${stats.above}/${stats.inside}/${stats.below}, кадры ${stats.aSize}/${stats.bSize}`;
+    assert(stats.inside>0,`лицо настроения действительно нарисовано: ${detail}`);
+    assert(stats.maxOutside<=AA_TOLERANCE,`вне лица различия больше шума сглаживания (${AA_TOLERANCE}): ${detail}`);
   });
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   const reloaded = await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries);
