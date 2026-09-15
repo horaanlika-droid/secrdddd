@@ -431,6 +431,14 @@ for (const [label, lock, pkg, dir] of [
   const rootIndex = read(path.join(ROOT, 'index.html'));
   const docs = read(path.join(ROOT, 'docs', 'SETUP.md'));
   const pkg = readJson(path.join(ROOT, 'package.json'));
+  const tribute = read(path.join(BOT, 'src', 'tribute.js'));
+  const store = read(path.join(BOT, 'src', 'store.js'));
+  const appIndex = read(path.join(ROOT, 'app', 'index.html'));
+  const config = read(path.join(ROOT, 'app', 'config.js'));
+  const contentCopy = read(path.join(ROOT, 'app', 'content', 'content.json'));
+  const seedCopy = read(path.join(BOT, 'seed', 'content.json'));
+  const readme = read(path.join(ROOT, 'README.md'));
+  const ci = read(path.join(ROOT, '.github', 'workflows', 'ci.yml'));
 
   /* OpenAI: совместимость параметров и разбор кодов ошибок */
   if (!ai) bad('нет bot/src/ai.js');
@@ -465,6 +473,34 @@ for (const [label, lock, pkg, dir] of [
   else bad('app/js/app.js: фолбэк чата снова без объяснения причины', 'тихий локальный ответ выглядит как «ии не реагирует»');
   if (/\.chat-note/.test(css)) ok('app/css/app.css: стиль .chat-note на месте');
   else bad('app/css/app.css: нет стиля .chat-note');
+  const tips = (web.match(/const CHAT_TIPS = \[[\s\S]*?\n\];/) || [''])[0];
+  const hints = (web.match(/const CHAT_HINTS = \[[^\]]*\]/) || [''])[0];
+  if ((tips.match(/\{ text:/g) || []).length >= 16 && (hints.match(/'[^']+'/g) || []).length >= 8 && /CHAT_LAST_VARIANT/.test(web)) {
+    ok('app/js/app.js: локальный чат расширен и защищён от немедленного повтора');
+  } else bad('app/js/app.js: мало вариантов локального чата', 'нужно минимум 16 советов, 8 подсказок и защита от повтора');
+
+  /* фирменный логотип из IMG_1024 */
+  const brandAsset = path.join(ROOT, 'app', 'assets', 'brand', 'logo-2026.png');
+  if (exists(path.join(ROOT, 'IMG_1024.png')) && exists(brandAsset) &&
+      /logo-2026\.png/.test(appIndex) && /hero-brand[^\n]*brandLogo/.test(web)) {
+    ok('бренд: обработанный IMG_1024 используется на прелоадинге и главной');
+  } else bad('бренд: новый логотип не подключён одновременно к splash и главной');
+
+  /* один recurring-донат, runtime-ссылка в постоянной базе */
+  if (/tribute_monthly_url/.test(store) && /tribute_monthly_url/.test(app) &&
+      /command\('tribute'/.test(app) && /setDynamicPayUrl/.test(app + tribute) && /\/tribute set/.test(app)) {
+    ok('Tribute: monthly-ссылка хранится в базе и меняется админом без рестарта');
+  } else bad('Tribute: ссылка не управляется из постоянной админ-настройки');
+  if (/matchesConfiguredDonation/.test(tribute) && /period.*monthly/.test(tribute) &&
+      /isPaidEvent\(name, p\)/.test(app) && /cancelled_donation/.test(app) && /reason: 'no_key'/.test(tribute)) {
+    ok('Tribute: webhook принимает только подписанный current monthly Donation Request');
+  } else bad('Tribute: webhook не привязан к текущей ежемесячной Donation Request');
+  if (pkg?.scripts?.['tribute-test'] && /npm run tribute-test/.test(ci)) ok('Tribute: интеграционный тест включён в CI');
+  else bad('Tribute: интеграционный тест не запускается в CI');
+  const publicCopy = [web, config, contentCopy, seedCopy, readme, docs].join('\n');
+  if (!/(?:200|500|900)\s*₽/.test(publicCopy) && /минимальн(?:ый|ого|ому) донат/i.test(publicCopy)) {
+    ok('подписка: в пользовательских текстах нет конкретной цены');
+  } else bad('подписка: в пользовательских текстах осталась конкретная цена');
 
   /* корень Pages: редирект не должен съедать #hash (в нём tgWebAppData) */
   if (rootIndex && /http-equiv="refresh"/.test(rootIndex)) {
@@ -641,8 +677,11 @@ for (const [label, lock, pkg, dir] of [
     /* Кнопка чата на главной: в прошлой итерации её звали «Открыть чат». */
     if (/Пережить вместе/.test(web) && !/Открыть чат/.test(web)) ok('главная: кнопка «Пережить вместе» вместо «Открыть чат»');
     else bad('главная: кнопка чата называется иначе', 'в этой итерации её переименовали в «Пережить вместе»');
-    if (/seaside-keepsakes/.test(web) && exists(path.join(ROOT, 'app', 'assets', 'boards', 'seaside-keepsakes.webp'))) ok('доски: морской коллаж на странице');
-    else bad('доски: нет новой иллюстрации');
+    if (/creative-mess\.webp/.test(web) && /creative-mess-thumb\.webp/.test(web) &&
+        exists(path.join(ROOT, 'app', 'assets', 'boards', 'creative-mess.webp')) &&
+        exists(path.join(ROOT, 'app', 'assets', 'boards', 'creative-mess-thumb.webp')) &&
+        /board-space-bg/.test(web + css)) ok('доски: фирменный творческий беспорядок без внешней рамки');
+    else bad('доски: нет новой безрамочной композиции');
     const images = read(path.join(ROOT, 'app', 'js', 'image-tools.js'));
     if (/imageOrientation: 'from-image'/.test(images) && /jpegOrientation/.test(images) && /orientationTransform/.test(images)) ok('фото: EXIF 1..8 + fallback без двойного поворота');
     else bad('фото: не обработана EXIF-ориентация');

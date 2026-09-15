@@ -11,6 +11,7 @@ const seed = () => ({
   codes: {},        // code -> { user_id, exp }
   content: null,    // рабочая копия контента (редактируется админами)
   broadcast: null,  // черновик рассылки админа
+  settings: { tribute_monthly_url: '' }, // меняется админом через /tribute set, живёт между деплоями
   tribute_seen: {}, // обработанные вебхуки Tribute (защита от ретраев): "имя:id" -> ts
   stats: { sent: 0 }
 });

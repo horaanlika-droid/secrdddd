@@ -2,10 +2,11 @@
    Дибитишка · телеграм-бот — ПРИЛОЖЕНИЕ
    (грузится из src/index.js: та точка входа сначала проверяет и при
     нужде доустанавливает зависимости, поэтому здесь grammy уже есть)
-   Три переменные на бот-хосте:
-     TG_TOKEN    — токен бота
-     ADMIN_IDS   — id админов через запятую
-     TRIBUTE_API — ключ Tribute API (можно вписать после запуска)
+   Переменные на бот-хосте:
+     TG_TOKEN             — токен бота
+     ADMIN_IDS            — id админов через запятую
+     TRIBUTE_API          — ключ Tribute API для подписи вебхуков
+   Ссылка оплаты меняется админом через /tribute set <ссылка> и хранится в базе.
    Необязательно: PORT (по умолчанию 8080) — HTTP API + статика веб-версии
                   OPENAI_API_KEY — «живой» чат Дибитишки (см. src/ai.js);
                                    пока не задан — чат в локальном режиме
@@ -30,17 +31,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.TG_TOKEN || '';
 const ADMINS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean).map(Number));
 const PORT = Number(process.env.PORT || 8080);
-const PRICE = 200;
 const TRIAL_DAYS = 7;
-/* Тарифы подписки: 1 месяц 200 ₽, 3 месяца 500 ₽, 6 месяцев 900 ₽.
-   id совпадают с app/config.js (subscription.plans) и deep-link ?start=pay_<id>. */
-const PLANS = [
-  { id: 'm1', label: '1 месяц', price: 200, days: 30 },
-  { id: 'm3', label: '3 месяца', price: 500, days: 90 },
-  { id: 'm6', label: '6 месяцев', price: 900, days: 180 },
-];
-const planById = (id) => PLANS.find(p => p.id === id) || PLANS[0];
-const plansLine = () => PLANS.map(p => `${p.label} — ${p.price} ₽`).join(', ');
+/* Один способ доступа: минимальный monthly-донат в Tribute.
+   id m1 сохранён для уже выпущенных deep-link ?start=pay_m1. */
+const PLANS = [{ id: 'm1', label: 'месяц доступа', days: 30 }];
+const planById = () => PLANS[0];
+const plansLine = () => 'минимальный донат раз в месяц';
 const APP_DIR = path.join(__dirname, '..', '..', 'app');
 
 if (!TOKEN) {
@@ -51,6 +47,9 @@ if (!TOKEN) {
 const bot = new Bot(TOKEN);
 const db = getDB();
 db.stats = db.stats || { sent: 0 };
+db.settings = Object.assign({ tribute_monthly_url: '' }, db.settings || {});
+const savedTributeUrl = tribute.setDynamicPayUrl(db.settings.tribute_monthly_url);
+if (!savedTributeUrl.ok) console.error('[tribute] сохранённая ссылка не прошла проверку — обнови её через /tribute set <ссылка>');
 const webAuth = createWebAuth({ token: TOKEN, db, save });
 
 /* ============================================================
@@ -117,7 +116,23 @@ bot.use(async (ctx, next) => {
 
 /* ---------- контент: рабочая копия ---------- */
 function seedContent() {
-  if (db.content) return db.content;
+  if (db.content) {
+    // v8 убирает конкретные цены из старой постоянной копии, не трогая
+    // отредактированные админом практики и остальные поля.
+    if (Number(db.content.version || 0) < 8) {
+      db.content.version = 8;
+      db.content.updated = '2026-09-15';
+      if (db.content.meta) {
+        db.content.meta.price_note = 'Минимальный донат раз в месяц · первая неделя бесплатно';
+        const paywall = db.content.meta.mascot_lines?.paywall;
+        if (Array.isArray(paywall) && paywall.length) {
+          paywall[0] = 'Неделя бесплатно, дальше — минимальный донат раз в месяц. Без давления: я никуда не денусь.';
+        }
+      }
+      save();
+    }
+    return db.content;
+  }
   const candidates = [
     path.join(__dirname, '..', '..', 'app', 'content', 'content.json'),
     path.join(__dirname, '..', 'seed', 'content.json')
@@ -190,9 +205,10 @@ bot.command('start', async (ctx) => {
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
   save();
-  // deep-link из веб-версии: ?start=pay_m1|pay_m3|pay_m6 — сразу ведём к оплате тарифа
+  // deep-link из веб-версии: ?start=pay_m1 — сразу к monthly-донату.
+  // Старые pay_m3/pay_m6 тоже мягко приводим к единственному месячному варианту.
   const payload = String(ctx.match || '').trim();
-  if (payload.startsWith('pay_')) return payFlow(ctx, planById(payload.slice(4)));
+  if (payload.startsWith('pay_')) return payFlow(ctx, planById());
   const img = MASCOT('hello');
   const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, дневник эмоций, письменные задания, чат поддержки и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${plansLine()}. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
   if (img) await ctx.replyWithPhoto(img, { caption: text });
@@ -280,16 +296,14 @@ bot.command('status', (ctx) => {
   ctx.reply(`Профиль: ${u.name}\nПодписка: ${left}\nНапоминания: ${u.reminder.on ? u.reminder.time : 'выкл'}`);
 });
 
-/* Оплата выбранного тарифа: отдаёт ссылку Tribute (статичную из кабинета
-   или динамическую через Shops API) кнопкой. Без настроенных ссылок честно
-   говорит владельцу, что именно вписать — вместо битой ссылки. */
+/* Актуальная monthly-ссылка живёт в базе и меняется прямо в админ-панели. */
 const payHelpForOwner = () => (
-  'Владелец ещё не вставил ссылки Tribute: нужны TRIBUTE_M1_URL / TRIBUTE_M3_URL / ' +
-  'TRIBUTE_M6_URL (ссылки на товары из кабинета Tribute) или режим TRIBUTE_SHOP=1. ' +
-  'Как заполнить — раздел «Tribute после запуска» в docs/SETUP.md.'
+  'Добавь ссылку без перезапуска: /tribute set <ссылка Donation Request>. ' +
+  'В Tribute у запроса должен быть ежемесячный период и минимальный донат. ' +
+  'TRIBUTE_API на хосте нужен для проверки вебхука.'
 );
-function payKeyboard(plan, url) {
-  return new InlineKeyboard().url(`💳 Оплатить ${plan.price} ₽ · ${plan.label}`, url);
+function payKeyboard(_plan, url) {
+  return new InlineKeyboard().url('💗 Минимальный донат · раз в месяц', url);
 }
 async function payFlow(ctx, plan) {
   const u = getUser(ctx);
@@ -298,46 +312,36 @@ async function payFlow(ctx, plan) {
   if (!tribute.tributeConfigured()) {
     return ctx.reply(
       'Оплата пока подключается, первая неделя у тебя уже идёт — практикуй спокойно. ' +
-      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он вставит ссылки Tribute.')
+      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он завершит настройку ежемесячной поддержки Tribute.')
     );
   }
   const link = await tribute.createSubscriptionLink(u.id, plan);
   if (!link?.url) {
-    console.error('[pay] нет ссылки Tribute для тарифа', plan.id, JSON.stringify(tribute.tributeStatus()));
+    console.error('[pay] нет ссылки ежемесячного доната Tribute', plan.id, JSON.stringify(tribute.tributeStatus()));
     return ctx.reply(
       'Не смог создать ссылку Tribute. Попробуй позже' +
       (isAdmin(ctx) ? '. ' + payHelpForOwner() + ' Подробности — в логах бота ([tribute]).' : ' или напиши владельцу приложения.')
     );
   }
   ctx.reply(
-    `Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\n` +
-    `Жми кнопку ниже — откроется оплата Tribute. После оплаты я активирую подписку сам на ${plan.days} дн.`,
+    'Подписка Дибитишки открывается за минимальный донат раз в месяц.\n' +
+    'Tribute будет повторять выбранную поддержку ежемесячно; каждый платёж продлевает доступ на месяц. Отменить можно в Tribute в любой момент.',
     { reply_markup: payKeyboard(plan, link.url) }
   );
 }
 
-bot.command('pay', async (ctx) => {
-  const u = getUser(ctx);
-  if (!u.trial_start) u.trial_start = Date.now();
-  save();
-  if (!tribute.tributeConfigured()) {
-    return ctx.reply('Оплата подключается: владелец приложения впишет ключ Tribute API на бот-хосте, и эта кнопка оживёт. Первая неделя у тебя уже идёт — практикуй спокойно.');
-  }
-  const kb = new InlineKeyboard();
-  PLANS.forEach(p => kb.text(`${p.label} — ${p.price} ₽`, 'pay:' + p.id).row());
-  ctx.reply(`Подписка Дибитишки: ${plansLine()}.\nВыбери срок — дам ссылку Tribute. После оплаты я активирую подписку сам.`, { reply_markup: kb });
-});
+bot.command('pay', async (ctx) => payFlow(ctx, PLANS[0]));
 
-/* кнопки тарифов в /pay */
+/* кнопка ежемесячного доната в /pay */
 bot.on('callback_query:data', async (ctx) => {
   const data = ctx.callbackQuery.data || '';
   if (!data.startsWith('pay:')) return;
-  const plan = planById(data.slice(4));
+  const plan = planById();
   await ctx.answerCallbackQuery();
   if (!tribute.tributeConfigured()) {
     return ctx.editMessageText(
       'Оплата пока подключается, первая неделя у тебя уже идёт — практикуй спокойно. ' +
-      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он вставит ссылки Tribute.')
+      (isAdmin(ctx) ? payHelpForOwner() : 'Напиши владельцу приложения — он завершит настройку ежемесячной поддержки Tribute.')
     ).catch(() => {});
   }
   const u = getUser(ctx);
@@ -345,15 +349,15 @@ bot.on('callback_query:data', async (ctx) => {
   save();
   const link = await tribute.createSubscriptionLink(u.id, plan);
   if (!link?.url) {
-    console.error('[pay] нет ссылки Tribute для тарифа', plan.id, JSON.stringify(tribute.tributeStatus()));
+    console.error('[pay] нет ссылки ежемесячного доната Tribute', plan.id, JSON.stringify(tribute.tributeStatus()));
     return ctx.editMessageText(
       'Не смог создать ссылку Tribute. Попробуй позже' +
       (isAdmin(ctx) ? '. ' + payHelpForOwner() : ' или напиши владельцу приложения.')
     ).catch(() => {});
   }
   ctx.editMessageText(
-    `Подписка Дибитишки: ${plan.label} — ${plan.price} ₽.\n` +
-    `Жми кнопку ниже — откроется оплата Tribute. После оплаты я активирую подписку сам на ${plan.days} дн.`,
+    'Подписка Дибитишки открывается за минимальный донат раз в месяц.\n' +
+    'Tribute повторяет выбранную поддержку ежемесячно; каждый платёж продлевает доступ на месяц. Отменить можно в любой момент.',
     { reply_markup: payKeyboard(plan, link.url) }
   ).catch(() => {});
 });
@@ -372,32 +376,71 @@ bot.command('admin', (ctx) => {
     '/users — статистика\n' +
     '/grant <id> [дней] — выдать подписку вручную\n' +
     '/ai — статус живого чата (OpenAI)\n' +
-    '/tribute — статус оплаты (ссылки, ключ, вебхук)'
+    '/tribute — статус оплаты\n' +
+    '/tribute set <ссылка> — заменить monthly-ссылку без перезапуска\n' +
+    '/tribute clear — убрать ссылку из админ-панели'
   );
 });
 
 bot.command('tribute', async (ctx) => {
   if (!isAdmin(ctx)) return;
+  const arg = String(ctx.match || '').trim();
+  const setMatch = arg.match(/^(?:set|link)\s+(.+)$/i);
+  const rawUrl = setMatch?.[1] || (/^https:\/\//i.test(arg) ? arg : '');
+
+  if (rawUrl) {
+    const parsed = tribute.normalizePayUrl(rawUrl);
+    if (!parsed.ok) {
+      return ctx.reply('Ссылка не похожа на Donation Request Tribute. Нужна официальная https-ссылка вида https://t.me/tribute/app?startapp=d…');
+    }
+    db.settings.tribute_monthly_url = parsed.url;
+    tribute.setDynamicPayUrl(parsed.url);
+    save(); flush();
+    const ready = tribute.tributeStatus().ok;
+    return ctx.reply(
+      '✅ Ссылка ежемесячного доната сохранена сразу, без перезапуска.\n\n' +
+      (ready ? 'Проверь /pay. ' : '⚠️ /pay пока на паузе: сначала добавь TRIBUTE_API на хосте. ') +
+      'В Tribute у Donation Request должны быть включены ежемесячный период и минимальный донат.'
+    );
+  }
+
+  if (/^(?:clear|off|remove)$/i.test(arg)) {
+    db.settings.tribute_monthly_url = '';
+    tribute.setDynamicPayUrl('');
+    save(); flush();
+    const fallback = tribute.tributeStatus().source === 'env';
+    return ctx.reply(fallback
+      ? 'Ссылка из админ-панели очищена. Сейчас используется запасная ссылка из окружения хоста.'
+      : 'Ссылка очищена. /pay будет на паузе, пока не задашь новую через /tribute set <ссылка>.');
+  }
+
+  if (arg) return ctx.reply('Команды: /tribute set <ссылка>, /tribute clear или просто /tribute для статуса.');
+
   const st = tribute.tributeStatus();
   const mark = (v) => v ? '✅' : '⛔';
+  const source = st.source === 'admin' ? 'админ-панель (можно менять без перезапуска)'
+    : st.source === 'env' ? 'переменная окружения (запасной вариант)' : 'не задана';
   const lines = [
     'Оплата Tribute:',
-    `${mark(st.key)} ключ TRIBUTE_API ${st.key ? '' : '(нужен для проверки вебхуков)'}`,
-    `${mark(st.urls.m1)} ссылка на 1 месяц (TRIBUTE_M1_URL)`,
-    `${mark(st.urls.m3)} ссылка на 3 месяца (TRIBUTE_M3_URL)`,
-    `${mark(st.urls.m6)} ссылка на 6 месяцев (TRIBUTE_M6_URL)`,
-    st.shop ? '🔧 режим Shops API: включён (TRIBUTE_SHOP=1)' : null,
+    `${mark(st.link)} monthly-ссылка: ${source}`,
+    `${mark(st.key)} ключ TRIBUTE_API ${st.key ? '' : '(без него webhook и /pay безопасно выключены)'}`,
+    st.donation_token ? '✅ Donation Request распознана по токену' : st.link ? '⚠️ Токен ссылки не распознан — проверь формат' : null,
     '',
-    st.ok ? 'Пейвол работает: /pay выдаёт ссылки.' : 'Пейвол НЕ работает: вставь ссылки на бот-хосте и перезапусти бота.'
+    st.ok ? 'Пейвол работает: /pay отдаёт актуальную ссылку.'
+      : st.link ? 'Пейвол на паузе: добавь TRIBUTE_API на хосте.' : 'Пейвол на паузе: /tribute set <ссылка>',
+    'Изменить: /tribute set https://t.me/tribute/app?startapp=d…',
+    'Очистить: /tribute clear'
   ].filter(Boolean);
   if (st.key) {
     const chk = await tribute.checkApiKey();
     lines.push(chk.ok
-      ? 'Ключ живой: Tribute отвечает ✅ (вебхук проверяется по подписи)'
-      : `Ключ НЕ проходит у Tribute (${chk.reason}): подписки не активируются! Перевыпусти ключ в кабинете.`);
+      ? 'Ключ живой: Tribute отвечает ✅'
+      : `Ключ не проходит у Tribute (${chk.reason}). Перевыпусти его на хосте.`);
   }
-  lines.push('Вебхук в кабинете Tribute должен смотреть на: https://<адрес бота>/tribute/webhook');
-  ctx.reply(lines.join('\n'));
+  lines.push('Webhook URL в Tribute: https://<адрес бота>/tribute/webhook');
+  const url = tribute.getPayUrl();
+  const kb = url ? new InlineKeyboard().url('Открыть текущую ссылку', url) : undefined;
+  ctx.reply(lines.join('\n'), kb ? { reply_markup: kb } : undefined);
 });
 
 bot.command('ai', (ctx) => {
@@ -1001,14 +1044,24 @@ const server = http.createServer(async (req, res) => {
         console.error('[tribute] webhook: неверная подпись — проверь TRIBUTE_API и URL вебхука в кабинете');
         return json(res, 401, { ok: false, error: sig.reason || 'bad_signature' });
       }
-      if (sig.skipped) console.error('[tribute] webhook: принят БЕЗ проверки подписи — впиши TRIBUTE_API!');
       // 2) формат: { name, created_at, sent_at, payload }
       let j;
       try { j = JSON.parse(body || '{}'); }
       catch (e) { return json(res, 400, { ok: false, error: 'bad_json' }); }
       const name = j.name || '';
       const p = (j.payload && typeof j.payload === 'object') ? j.payload : {};
-      // 3) дедуп: Tribute шлёт ретраи до суток, если не получил 200
+      // 3) отмена recurring-доната не отнимает уже оплаченный месяц.
+      if (name === 'cancelled_donation') {
+        console.log(`[tribute] ${name}: telegram_user_id=${p.telegram_user_id || '?'}, доступ оставлен до конца срока`);
+        for (const aid of ADMINS) {
+          bot.api.sendMessage(aid, `Tribute: ежемесячная поддержка отменена — пользователь ${p.telegram_user_id || '?'}. Уже оплаченный доступ оставлен до конца срока.`).catch(() => {});
+        }
+        return json(res, 200, { ok: true, ignored: name });
+      }
+      // Разовый донат и monthly-донат от другой Donation Request не открывают доступ.
+      if (!tribute.isPaidEvent(name, p)) return json(res, 200, { ok: true, ignored: name || 'not_configured_monthly_donation' });
+
+      // 4) дедуп после проверки события: ретрай не должен прибавить второй месяц.
       const dkey = tribute.webhookDedupeKey(j);
       if (dkey) {
         db.tribute_seen = db.tribute_seen || {};
@@ -1018,16 +1071,7 @@ const server = http.createServer(async (req, res) => {
         if (keys.length > 2000) for (const k of keys.slice(0, keys.length - 2000)) delete db.tribute_seen[k];
         save();
       }
-      // 4) возвраты и отмены подписку не дают — только шумим админам в лог
-      if (name === 'digital_product_refunded' || name === 'cancelled_subscription') {
-        console.error(`[tribute] ${name}: telegram_user_id=${p.telegram_user_id || '?'} product/subscription=${p.product_id || p.subscription_id || '?'}`);
-        for (const aid of ADMINS) {
-          bot.api.sendMessage(aid, `Tribute: ${name === 'cancelled_subscription' ? 'отмена подписки' : 'возврат товара'} — пользователь ${p.telegram_user_id || '?'}, доступ оставлен до конца срока.`).catch(() => {});
-        }
-        return json(res, 200, { ok: true, ignored: name });
-      }
-      if (!tribute.isPaidEvent(name)) return json(res, 200, { ok: true, ignored: name || 'empty' });
-      // 5) покупатель: ищем по telegram_user_id; мог оплатить раньше, чем нажал /start, —
+      // 5) донатор: ищем по telegram_user_id; мог оплатить раньше, чем нажал /start, —
       // тогда заводим запись сами, иначе подписка «потеряется» (такого пользователя нет в базе)
       const uid = Number(p.telegram_user_id || p.user_id);
       if (!uid) return json(res, 200, { ok: true, ignored: 'no_user' });
@@ -1053,7 +1097,7 @@ const server = http.createServer(async (req, res) => {
         days = tribute.daysForTributePayload(p);
         user.premium_until = Math.max(Date.now(), user.premium_until || 0) + days * 86400000;
       }
-      save();
+      save(); flush(); // доступ и dedupe должны пережить рестарт сразу после ответа webhook
       const until = new Date(user.premium_until).toLocaleDateString('ru-RU');
       console.log(`[tribute] ${name}: ${uid} → подписка до ${until}${days ? ` (+${days} дн.)` : ' (по expires_at)'}`);
       bot.api.sendMessage(uid, `Оплата прошла! Подписка активна до ${until}. Спасибо, что держишь меня в форме 💧`).catch(() => {});

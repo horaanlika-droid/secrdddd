@@ -19,15 +19,12 @@ window.DIBI_CONFIG = {
   // Пример: "https://dibi-bot.example.com" (без слэша в конце)
   bot_public_url: "https://bot-1789414185-5002-dominamillaa.bothost.tech",
 
-  // Подписка: цифры для пейвола. Сам платёж создаёт бот через Tribute API.
-  // plans — три периода: 1 месяц 200 ₽, 3 месяца 500 ₽, 6 месяцев 900 ₽.
-  // id совпадают с тарифами бота (bot/src/app.js: PLANS) и deep-link ?start=pay_<id>.
+  // Доступ по минимальному ежемесячному донату в Tribute. Актуальную ссылку
+  // админ меняет в боте: /tribute set <ссылка>; веб ведёт в deep-link pay_m1.
   subscription: {
-    price_ru: "200 ₽", period: "в месяц", trial_days: 7,
+    price_ru: "Минимальный донат", period: "раз в месяц", trial_days: 7,
     plans: [
-      { id: "m1", title: "1 месяц", per: "в месяц", price_ru: "200 ₽", days: 30, note: "200 ₽ в месяц" },
-      { id: "m3", title: "3 месяца", per: "за 3 месяца", price_ru: "500 ₽", days: 90, note: "≈167 ₽ в месяц · выгода 100 ₽", badge: "выгоднее" },
-      { id: "m6", title: "6 месяцев", per: "за 6 месяцев", price_ru: "900 ₽", days: 180, note: "150 ₽ в месяц · выгода 300 ₽", badge: "максимум" }
+      { id: "m1", title: "Месяц доступа", per: "раз в месяц", price_ru: "Минимальный донат", days: 30, note: "сумма выбирается в Tribute · отмена в любой момент" }
     ]
   },
 

@@ -1,26 +1,14 @@
-/* Tribute — приём оплаты подписки.
-   Как это устроено по-настоящему (см. https://wiki.tribute.tg):
-   - ссылки на оплату НЕ создаются запросом «дай ссылку», а берутся готовыми
-     из кабинета Tribute: создаёшь цифровой товар / подписку под каждый тариф
-     (1/3/6 мес.) и копируешь его ссылку вида https://t.me/tribute/app?startapp=p123;
-   - API-ключ нужен боту в первую очередь чтобы ПРОВЕРЯТЬ вебхуки Tribute
-     (подпись HMAC-SHA256 в заголовке trbt-signature), а не чтобы создавать ссылки;
-   - после оплаты Tribute сам шлёт POST на наш /tribute/webhook с telegram_user_id
-     покупателя — бот активирует подписку по этому id.
-   Переменные на бот-хосте:
-     TRIBUTE_API           — ключ из кабинета Tribute (Настройки → API Keys)
-     TRIBUTE_M1_URL        — ссылка на товар «1 месяц» (обязательно для тарифа m1)
-     TRIBUTE_M3_URL        — ссылка на товар «3 месяца»
-     TRIBUTE_M6_URL        — ссылка на товар «6 месяцев»
-     TRIBUTE_PAY_URL       — запасная ссылка на все тарифы (если товар пока один)
-     TRIBUTE_PRODUCT_DAYS  — соответствие «id товара/подписки → дни», напр. "456=30,457=90,458=180"
-                             (id видно в кабинете и в вебхуках; без него — 30 дней по умолчанию,
-                             а для подписок с expires_at срок берётся из вебхука)
-     TRIBUTE_SHOP=1        — РЕДКИЙ режим: создавать заказ через Shops API
-                             (POST /api/v1/shop/orders) вместо статичных ссылок.
-                             Нужен настроенный магазин Tribute; обычно не нужен.
-     TRIBUTE_BASE          — переопределить хост (по умолчанию https://tribute.tg)
-     TRIBUTE_SHOP_ID       — id магазина для Shops API (если их несколько)
+/* Tribute — минимальный ежемесячный донат открывает доступ на месяц.
+   Ссылка на Donation Request хранится в постоянной базе бота и меняется
+   админом командой /tribute set <ссылка> без деплоя и перезапуска.
+
+   Tribute присылает new_donation при первом платеже и recurrent_donation при
+   следующих. Мы принимаем только period=monthly и только событие именно той
+   Donation Request, чья ссылка сейчас настроена. Разовые/чужие донаты доступ
+   не открывают. TRIBUTE_API на хосте нужен для HMAC-проверки вебхуков.
+
+   TRIBUTE_MONTHLY_URL остаётся необязательным стартовым fallback на случай
+   пустой базы; обычный способ управления — админ-панель бота.
 */
 import crypto from 'node:crypto';
 
@@ -31,38 +19,73 @@ const SHOP_ID = () => (process.env.TRIBUTE_SHOP_ID || '').trim();
 /** Режим динамических заказов через Shops API (по умолчанию выключен). */
 export const shopMode = () => process.env.TRIBUTE_SHOP === '1';
 
-/** Статичная ссылка на оплату тарифа из кабинета Tribute (или общая запасная). */
-export const getPayUrl = (planId) => (
-  (process.env[`TRIBUTE_${String(planId || '').toUpperCase()}_URL`] || '').trim()
-  || (process.env.TRIBUTE_PAY_URL || '').trim()
-  || null
-);
+let dynamicPayUrl = '';
 
-/** Оплата считается настроенной, если есть хоть одна ссылка — или включён Shops API с ключом. */
-export const tributeConfigured = () => (
-  !!getPayUrl('m1') || !!getPayUrl('m3') || !!getPayUrl('m6')
-  || (shopMode() && !!KEY())
-);
+/** Принимаем только официальный Telegram web_app_link Donation Request. */
+export function normalizePayUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { ok: false, error: 'empty' };
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const telegramHost = host === 't.me' || host === 'telegram.me';
+    if (u.protocol !== 'https:' || !telegramHost) return { ok: false, error: 'host' };
+    const token = u.searchParams.get('startapp') || '';
+    // Берём именно Telegram web_app_link: тот же URL приходит в webhook,
+    // поэтому текущую Donation Request можно сопоставить без догадок.
+    const tributeDonationLink = /^\/tribute\/app\/?$/i.test(u.pathname) && /^d[\w-]+$/i.test(token);
+    if (!tributeDonationLink) return { ok: false, error: 'format' };
+    u.hash = '';
+    return { ok: true, url: u.toString() };
+  } catch { return { ok: false, error: 'url' }; }
+}
 
-/** Короткий статус для /health и админской команды /tribute. */
+/** Обновить runtime-ссылку из постоянной базы. Невалидное значение не меняет
+    текущую настройку. Пустая строка очищает override и включает env fallback. */
+export function setDynamicPayUrl(value) {
+  if (!String(value || '').trim()) { dynamicPayUrl = ''; return { ok: true, url: '' }; }
+  const parsed = normalizePayUrl(value);
+  if (parsed.ok) dynamicPayUrl = parsed.url;
+  return parsed;
+}
+
+const envPayUrl = () => {
+  const parsed = normalizePayUrl(process.env.TRIBUTE_MONTHLY_URL || '');
+  return parsed.ok ? parsed.url : '';
+};
+export const getPayUrl = () => dynamicPayUrl || envPayUrl() || null;
+
+/** Токен ссылки вида startapp=dABC позволяет связать webhook с конкретной
+    Donation Request даже если Telegram вернул ссылку с другим доменом. */
+const donationToken = (value) => {
+  try {
+    const u = new URL(String(value || ''));
+    const token = u.searchParams.get('startapp');
+    if (token) return token.toLowerCase();
+    const last = u.pathname.split('/').filter(Boolean).at(-1) || '';
+    return /^d[\w-]+$/i.test(last) ? last.toLowerCase() : '';
+  } catch { return ''; }
+};
+
+/** Платёж готов только когда есть и ссылка, и ключ проверки webhook. Иначе
+    нельзя вести человека к оплате, после которой доступ не активируется. */
+export const tributeConfigured = () => !!getPayUrl() && !!KEY();
+
+/** Короткий безопасный статус: полную платёжную ссылку в /health не отдаём. */
 export const tributeStatus = () => ({
   ok: tributeConfigured(),
+  link: !!getPayUrl(),
   key: !!KEY(),
   shop: shopMode(),
-  urls: { m1: !!getPayUrl('m1'), m3: !!getPayUrl('m3'), m6: !!getPayUrl('m6') }
+  source: dynamicPayUrl ? 'admin' : envPayUrl() ? 'env' : null,
+  donation_token: !!donationToken(getPayUrl())
 });
 
-/** Создать ссылку на оплату подписки на выбранный тариф.
-    plan: { id: 'm1'|'m3'|'m6', label, price, days } (см. PLANS в bot/src/app.js).
-    Возвращает { url, id } или null. */
-export async function createSubscriptionLink(userId, plan = { id: 'm1', label: '1 месяц', price: 200, days: 30 }) {
-  const planId = plan.id || 'm1';
-  // 1) обычный путь: готовая ссылка из кабинета Tribute
-  const staticUrl = getPayUrl(planId);
-  if (staticUrl) return { url: staticUrl, id: null };
-  // 2) редкий путь: динамический заказ через Shops API
-  if (shopMode() && KEY()) return createShopOrder(userId, plan);
-  return null;
+/** Вернуть актуальную ссылку из админ-панели/окружения. Аргументы оставлены
+    для совместимости с прежним вызовом тарифов. */
+export async function createSubscriptionLink(_userId, _plan) {
+  const url = getPayUrl();
+  return tributeConfigured() && url ? { url, id: null } : null;
 }
 
 /** Разовая оплата (мерч, печатная тетрадь) — только через Shops API. */
@@ -82,7 +105,7 @@ async function createShopOrder(userId, plan) {
     title: `Дибитишка · ${plan.label || 'подписка'}`.slice(0, 100),
     description: `Подписка Дибитишки: ${plan.label || ''}${plan.days ? ` (${plan.days} дн.)` : ''}`.slice(0, 300),
     customerId: String(userId),
-    period: 'onetime'
+    period: plan.period || 'onetime'
   };
   if (SHOP_ID()) body.shopId = Number(SHOP_ID()) || SHOP_ID();
   try {
@@ -115,11 +138,11 @@ export async function checkApiKey() {
 /* ---------- вебхуки ---------- */
 
 /** Проверить подпись вебхука: заголовок trbt-signature = HMAC-SHA256 hex/base64
-    от сырого тела запроса на API-ключе. Без ключа проверять нечего — принимаем,
-    но помечаем skipped, чтобы в логе было видно, что так нельзя оставлять. */
+    от сырого тела запроса на API-ключе. Без ключа fail closed: иначе любой,
+    кто знает публичный webhook URL, смог бы выдать себе доступ. */
 export function verifySignature(rawBody, sigHeader) {
   const key = KEY();
-  if (!key) return { ok: true, skipped: true };
+  if (!key) return { ok: false, reason: 'no_key' };
   const sig = String(sigHeader || '').trim();
   if (!sig) return { ok: false, reason: 'no_signature' };
   const hex = crypto.createHmac('sha256', key).update(rawBody, 'utf8').digest('hex');
@@ -132,33 +155,52 @@ export function verifySignature(rawBody, sigHeader) {
   return { ok: false, reason: 'bad_signature' };
 }
 
-/** События, означающие «деньги пришли»: цифровой товар куплен, подписка
-    оформлена или продлена. Остальное (отмены, донаты, возвраты) подписку не даёт. */
-export const isPaidEvent = (name) => (
-  name === 'new_digital_product' || name === 'new_subscription' || name === 'renewed_subscription'
+/** Webhook должен относиться к той же Donation Request, которую админ
+    поставил в /tribute set. Сравниваем startapp-токен, числовой id или URL. */
+export function matchesConfiguredDonation(payload = {}) {
+  const configured = getPayUrl();
+  if (!configured) return false;
+  const expectedToken = donationToken(configured);
+  const eventToken = donationToken(payload.web_app_link);
+  if (expectedToken && eventToken) return expectedToken === eventToken;
+  const id = String(payload.donation_request_id || '');
+  if (expectedToken && id && expectedToken === ('d' + id).toLowerCase()) return true;
+  try {
+    const clean = value => { const u = new URL(value); u.hash = ''; return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/$/, '')}${u.search}`; };
+    return !!payload.web_app_link && clean(configured) === clean(payload.web_app_link);
+  } catch { return false; }
+}
+
+/** Минимум задаётся в самом Donation Request на стороне Tribute. В коде нет
+    цены: важны положительный платёж, ежемесячный период и совпавшая ссылка. */
+export const isMonthlyDonation = (payload = {}) => (
+  String(payload.period || '').toLowerCase() === 'monthly'
+  && Number(payload.amount) > 0
+  && matchesConfiguredDonation(payload)
 );
 
-/** Ключ для защиты от повторной обработки: Tribute шлёт ретраи до суток,
-    если мы не ответили 200. Без дедупа повтор вебхука накинет дни дважды. */
+export const isPaidEvent = (name, payload = {}) => (
+  (name === 'new_donation' || name === 'recurrent_donation')
+  && isMonthlyDonation(payload)
+);
+
+/** Ключ для защиты от повторной обработки. У donation-webhook нет transaction_id,
+    поэтому пара request_id + created_at отличает новый месяц от ретрая события. */
 export const webhookDedupeKey = (event = {}) => {
   const p = event.payload || {};
-  const id = p.purchase_id || p.period_id || p.transaction_id || p.order_id || p.uuid;
-  return event.name && id ? `${event.name}:${id}` : null;
+  const id = p.purchase_id || p.transaction_id || p.order_id || p.uuid;
+  if (event.name && id) return `${event.name}:${id}`;
+  if (event.name && p.subscription_id && event.created_at) {
+    return `${event.name}:${p.subscription_id}:${event.created_at}`;
+  }
+  if (event.name && p.donation_request_id && event.created_at) {
+    return `${event.name}:${p.donation_request_id}:${event.created_at}`;
+  }
+  return null;
 };
 
-/** Сколько дней дать за вебхук: сначала смотрим карту TRIBUTE_PRODUCT_DAYS
-    по product_id/subscription_id, потом период подписки, иначе 30. */
-export function daysForTributePayload(payload = {}) {
-  const map = {};
-  for (const part of String(process.env.TRIBUTE_PRODUCT_DAYS || '').split(',')) {
-    const m = part.trim().match(/^(\d+)\s*[=:]\s*(\d+)$/);
-    if (m) map[m[1]] = Number(m[2]);
-  }
-  for (const k of ['product_id', 'subscription_id']) {
-    const id = payload[k];
-    if (id !== undefined && id !== null && map[String(id)]) return map[String(id)];
-  }
-  const byPeriod = { weekly: 7, monthly: 30, quarterly: 90, halfyearly: 180, yearly: 365 };
-  if (payload.period && byPeriod[payload.period]) return byPeriod[payload.period];
+/** Donation Request одна и ежемесячная: если Tribute не прислал expires_at,
+    каждый подтверждённый платёж даёт ровно один 30-дневный цикл доступа. */
+export function daysForTributePayload(_payload = {}) {
   return 30;
 }

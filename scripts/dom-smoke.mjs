@@ -20,14 +20,19 @@ async function until(fn, description = 'condition') {
   const end = Date.now() + 5000;
   while (!fn()) { if (Date.now() > end) throw new Error('Timed out: ' + description); await sleep(15); }
 }
-async function app(seed = {}, { boardSeed, privateMode = false } = {}) {
+async function app(seed = {}, { boardSeed, privateMode = false, apiContent = null } = {}) {
   const dom = new JSDOM(html, { url: 'https://dibi.test/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   const objectUrls = new Map(); let objectId = 0;
-  w.DIBI_CONFIG = { bot_public_url: '', bot_username: 'test', subscription: { trial_days: 7 } };
+  w.DIBI_CONFIG = { bot_public_url: apiContent ? 'https://bot.dibi.test' : '', bot_username: 'test', subscription: { trial_days: 7 } };
   w.localStorage.setItem(DB, JSON.stringify({ onboarded: true, trial_started_at: Date.now(), mood_schema: 2, ...seed }));
   if (boardSeed !== undefined) w.localStorage.setItem(BOARDS, JSON.stringify(boardSeed));
-  w.fetch = async url => new Response(JSON.stringify(String(url).includes('content') ? CONTENT : { ok: true, ai: false, enabled: false, items: [] }), { headers: { 'Content-Type': 'application/json' } });
+  w.fetch = async url => {
+    const href = String(url);
+    const body = href.startsWith('https://bot.dibi.test/content') ? apiContent
+      : href.includes('content') ? CONTENT : { ok: true, ai: false, enabled: false, items: [] };
+    return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+  };
   w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder;
   w.AbortController = AbortController; w.Blob = Blob; w.File = File; w.structuredClone = structuredClone;
   w.indexedDB = privateMode ? { open() { throw new Error('SecurityError'); } } : new IDBFactory(); w.IDBKeyRange = IDBKeyRange;
@@ -132,10 +137,22 @@ try {
   check('retry after quota error saves exactly once',()=>assert.equal(state().mood_entries.length,3));
   await go('diary');
   check('confirmed note appears in diary with sprite heads',()=>{assert(q('#app').textContent.includes('Не теряй черновик'));assert(qa('.ric-face').every(n=>n.classList.contains('mood-sprite')));});
+  await go('');
+  check('new IMG_1024 logo is used on splash and home',()=>{
+    assert(q('.splash-wordmark').src.includes('assets/brand/logo-2026.png'));
+    assert(q('.hero-brand').src.includes('assets/brand/logo-2026.png'));
+  });
+  await go('chat');
+  check('local chat offers eight different starting prompts',()=>assert.equal(qa('.chat-hints .chip').length,8));
+  click('Мне тревожно'); await sleep(500); click('Мне тревожно'); await sleep(500);
+  check('local Dibitishka does not repeat the same response immediately',()=>{
+    const replies=qa('.msg.bot .bubble').map(n=>n.textContent);
+    assert(replies.length>=2); assert.notEqual(replies.at(-1),replies.at(-2));
+  });
   for (const route of ['skills', ...CONTENT.blocks.map(b=>'skills/'+b.id), 'p/'+CONTENT.blocks[0].practices[0].id, 'chat', 'profile', 'tasks', 'task/'+CONTENT.tasks[0].id, 'workbook','merch','boards']) {
     await go(route); check('route '+route+' renders',()=>assert(q('#app .screen')));
   }
-  check('boards use the generated seaside still life',()=>assert(q('.boards-hero img').src.includes('seaside-keepsakes.webp')));
+  check('boards use the generated creative-mess composition',()=>assert(q('.boards-hero img').src.includes('creative-mess.webp')));
   check('default boards are persisted once',()=>assert.equal(boards().length,1));
   click('+ Новая доска');
   input(q('.sheet.on input[aria-label="Название доски"]'),'Море'); click('Создать'); await sleep(45);
@@ -168,7 +185,7 @@ try {
   qa('.tile-photo')[0].click(); await sleep(30); click('Поставить фоном доски'); await sleep(400);
   const photoKey=boards().find(b=>b.title==='Море').bgKey;
   qa('.tile-photo')[0].click(); await sleep(30); click('Убрать с доски'); await sleep(400);
-  check('removing a tile does not remove its photo when used as background',()=>{assert.equal(boards().find(b=>b.title==='Море').bgKey,photoKey);assert(q('.board-canvas').style.backgroundImage.includes('blob:'));});
+  check('removing a tile does not remove its photo when used as background',()=>{assert.equal(boards().find(b=>b.title==='Море').bgKey,photoKey);assert(q('.board-space-bg').style.backgroundImage.includes('blob:'));});
   click('Сохранить и распечатать');
   await until(()=>current.textButton('Скачать PDF',q('.sheet.on')),'board export');
   check('export offers PDF and PNG without sharing emotions',()=>{assert(current.textButton('Скачать PNG',q('.sheet.on')));assert(q('.board-export-preview'));});
@@ -201,5 +218,14 @@ try {
   const picker2=current.q('input[type=file]');Object.defineProperty(picker2,'files',{value:[new File(['a'],'a.jpg',{type:'image/jpeg'})]});picker2.dispatchEvent(new current.w.Event('change'));
   await until(()=>current.q('.toast')?.textContent.includes('приватном режиме'),'IDB error feedback');
   check('private-mode storage failure has no fake/broken tile',()=>{assert.equal(current.boards()[0].tiles.length,before);assert.deepEqual(current.errors,[]);});
+  current.dom.window.close();
+  const oldApiContent=structuredClone(CONTENT);
+  oldApiContent.version=7;
+  oldApiContent.meta.mascot_lines.paywall[0]='СТАРАЯ ЦЕНА ИЗ API';
+  current=await app({trial_started_at:Date.now()-9*86400000},{apiContent:oldApiContent});
+  check('new local content supersedes an older persisted API copy',()=>{
+    assert(current.q('#app').textContent.includes('Минимальный донат'));
+    assert(!current.q('#app').textContent.includes('СТАРАЯ ЦЕНА ИЗ API'));
+  });
   console.log(`\ndom-smoke: ${checks} checks passed`);
 } finally { current?.dom.window.close(); }
