@@ -195,10 +195,22 @@ def main():
     # Ячейка ровно по области лица (1:1 с hello.png): в сетке нет ни тела, ни
     # лишних пикселей, а элемент на экране имеет тот же аспект, что и ячейка,
     # поэтому фон не растягивается. Единица запаса — прозрачная.
+    # ВАЖНО: лицо вырезано ОВАЛОМ, чтобы не выходить за рамки капюшона.
+    # Углы ячейки за пределами овала — прозрачны (а не цвет капюшона), поэтому
+    # прямоугольная сетка не накладывает прямоугольный шов на капюшон.
     cell_w, cell_h = fx1 - fx0 + 1, fy1 - fy0 + 1
+    rw, rh = rx1 - rx0, ry1 - ry0
+    # овальная прозрачность для ячейки: внутри овала — soft_alpha, за 1пкс запасом — 0
+    oval_cell_alpha = np.zeros((cell_h, cell_w), dtype=np.float32)
+    oval_cell_alpha[0:rh, 0:rw] = ref_alpha
+    oval_alpha_u8 = (oval_cell_alpha * 255).astype(np.uint8)
     atlas = Image.new("RGBA", (cell_w * COLS, cell_h * ROWS))   # ячейки 0, 10 и 11 пустые
     for i, frame in enumerate(frames[1:], start=1):
         cell = frame.crop((fx0, fy0, fx0 + cell_w, fy0 + cell_h))
+        arr = np.array(cell)
+        # вырезаем овал: углы ячейки прозрачны, край — мягкий (blur 1.5px из ref_alpha)
+        arr[..., 3] = oval_alpha_u8
+        cell = Image.fromarray(arr, "RGBA")
         atlas.paste(cell, ((i % COLS) * cell_w, (i // COLS) * cell_h))
     # Лоссless-сетка весит 660 КБ и утяжеляет главную; q92 втрое легче и
     # отличается только внутри мягкой тени лица (проверено сравнением кропа).
