@@ -189,12 +189,13 @@ const pick = (arr, seed) => arr[seed % arr.length];
 const daySeed = () => Math.floor(Date.now() / 86400000);
 
 /* ---------- тема и палитра (голубая / розовая) ---------- */
-/* Тема одна — светлая; «розовая» — это палитра токенов. Новый локап из
-   IMG_1024 вырезан по внешнему контуру в прозрачность, поэтому один и тот же
-   PNG чисто лежит на обеих палитрах без цветной подложки и белого прямоугольника. */
+/* Тема одна — светлая; «розовая» — это палитра токенов в css/app.css
+   (:root[data-palette="pink"]). Возврат к прежнему локапу: у обоих PNG фон
+   вокруг букв чисто вырезан в альфа-канал (scripts/cut_bg.py), поэтому
+   белая подложка под надписью не нужна ни на одной палитре. */
 const PALETTES = {
-  blue: { title: 'Голубая', note: 'Небо и мягкий синий', bg: '#EDF3FE', logo: 'assets/brand/logo-2026.png' },
-  pink: { title: 'Розовая', note: 'Пудра, пион, тёплый свет', bg: '#FCEFF5', logo: 'assets/brand/logo-2026.png' }
+  blue: { title: 'Голубая', note: 'Небо и мягкий синий', bg: '#EDF3FE', logo: 'assets/brand/logo-wordmark.png' },
+  pink: { title: 'Розовая', note: 'Пудра, пион, тёплый свет', bg: '#FCEFF5', logo: 'assets/brand/logo-wordmark-pink.png' }
 };
 const paletteId = () => (PALETTES[state.palette] ? state.palette : 'blue');
 const brandLogo = () => PALETTES[paletteId()].logo;
