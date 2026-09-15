@@ -887,7 +887,7 @@ html{color-scheme: light}
    прозрачно, поэтому ни маска, ни clip-path не нужны: капюшон и плечи берутся
    из hello.png и не могут сдвинуться или «поехать» вместе с выражением. */
 .live-mascot-face{position:absolute; display:none; pointer-events:none;
-  background-image:url('../assets/mascot/hero-moods.webp'); background-repeat:no-repeat;
+  background-image:url('../assets/mascot/hero-moods.webp?v=28'); background-repeat:no-repeat;
   background-size:400% 300%; background-position:var(--face-x,0%) var(--face-y,0%)}
 .live-mascot.has-mood .live-mascot-face{display:block}
 .hero-mascot-wrap::before{animation:none; transform:none}
