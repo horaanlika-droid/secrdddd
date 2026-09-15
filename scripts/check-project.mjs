@@ -479,12 +479,33 @@ for (const [label, lock, pkg, dir] of [
     ok('app/js/app.js: локальный чат расширен и защищён от немедленного повтора');
   } else bad('app/js/app.js: мало вариантов локального чата', 'нужно минимум 16 советов, 8 подсказок и защита от повтора');
 
-  /* фирменный логотип из IMG_1024 */
-  const brandAsset = path.join(ROOT, 'app', 'assets', 'brand', 'logo-2026.png');
-  if (exists(path.join(ROOT, 'IMG_1024.png')) && exists(brandAsset) &&
-      /logo-2026\.png/.test(appIndex) && /hero-brand[^\n]*brandLogo/.test(web)) {
-    ok('бренд: обработанный IMG_1024 используется на прелоадинге и главной');
-  } else bad('бренд: новый логотип не подключён одновременно к splash и главной');
+  /* фирменный локап на прелоаде: прошлый wordmark с чисто вырезанным фоном */
+  const pngHasAlpha = (p) => { try { const b = fs.readFileSync(p); return b.subarray(12, 16).toString('latin1') === 'IHDR' && b[24] === 8 && b[25] === 6; } catch { return false; } };
+  const wordmarkBlue = path.join(ROOT, 'app', 'assets', 'brand', 'logo-wordmark.png');
+  const wordmarkPink = path.join(ROOT, 'app', 'assets', 'brand', 'logo-wordmark-pink.png');
+  if (exists(wordmarkBlue) && exists(wordmarkPink) && pngHasAlpha(wordmarkBlue) && pngHasAlpha(wordmarkPink) &&
+      /logo-wordmark\.png/.test(appIndex) && /splash-art[\s\S]{0,200}mascot\/splash\.png/.test(appIndex) &&
+      /hero-brand[^\n]*brandLogo/.test(web)) {
+    ok('бренд: прелоад и главная на старом локапе — фон вырезан в альфа, маскот на месте');
+  } else bad('бренд: splash без logo-wordmark.png с прозрачным фоном или потерян маскот',
+             'фон вырезаем так: python3 scripts/cut_bg.py app/assets/brand/logo-wordmark.png app/assets/brand/logo-wordmark.png --white --dmax 26 --satmax 38 --adj-rounds 600');
+
+  /* доски: фон иллюстраций — прозрачный альфа-канал, а не CSS-маска поверх плотного PNG */
+  const webpHasAlpha = (p) => {
+    try {
+      const b = fs.readFileSync(p);
+      if (b.subarray(0, 4).toString('latin1') !== 'RIFF' || b.subarray(8, 12).toString('latin1') !== 'WEBP') return false;
+      const fcc = b.subarray(12, 16).toString('latin1');
+      if (fcc === 'VP8X') return (b[20] & 0x10) !== 0;
+      if (fcc === 'VP8L') return ((b.readUInt32LE(21) >>> 28) & 1) === 1;  // бит alpha_is_used
+      return false;
+    } catch { return false; }
+  };
+  const boardArt = path.join(ROOT, 'app', 'assets', 'boards', 'creative-mess.webp');
+  const boardThumb = path.join(ROOT, 'app', 'assets', 'boards', 'creative-mess-thumb.webp');
+  if (webpHasAlpha(boardArt) && webpHasAlpha(boardThumb)) ok('доски: у иллюстраций фон вырезан в альфа-канал');
+  else bad('доски: creative-mess(.thumb).webp снова с непрозрачным фоном',
+           'python3 scripts/cut_bg.py app/assets/boards/creative-mess.webp ... --model --dmax 20 --adj-rounds 300');
 
   /* один recurring-донат, runtime-ссылка в постоянной базе */
   if (/tribute_monthly_url/.test(store) && /tribute_monthly_url/.test(app) &&
