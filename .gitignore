@@ -5,3 +5,9 @@ dist/
 .DS_Store
 bot/db.json
 bot/content.export.json
+
+# Local tools, test artifacts and private board media
+.venv/
+test-results/
+playwright-report/
+bot/board-data/
