@@ -766,6 +766,10 @@ function route() {
 }
 
 /* ---------- screens ---------- */
+/* Дисклеймер о данных: человек должен сразу понимать, что его записи и фото
+   никуда не уходят. Показываем на онбординге и держим постоянным блоком
+   в профиле. */
+const PRIVACY_NOTE = 'Всё, что ты пишешь и показываешь Дибитишке — эмоции, заметки, дневник, доски и фото — остаётся только на твоём телефоне, в локальной памяти приложения. Мы ничего не собираем, не храним на серверах и не передаём третьим лицам.';
 function screenWelcome() {
   renderTabbar(null);
   const slides = [
@@ -788,6 +792,7 @@ function screenWelcome() {
   const note = el('p', { class: 'onboard-note' },
     `Первая неделя бесплатно, потом ${plansLine()}.`
   );
+  const privacy = el('p', { class: 'onboard-note privacy-note' }, '🔒 ', PRIVACY_NOTE);
   const finish = () => {
     state.onboarded = true;
     if (!state.trial_started_at) state.trial_started_at = Date.now();
@@ -808,7 +813,7 @@ function screenWelcome() {
   nextBtn.onclick = () => { haptic('medium'); if (i < slides.length - 1) { i++; draw(); } };
   cta.onclick = () => { haptic('medium'); finish(); };
   draw();
-  scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note);
+  scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note, privacy);
   return scr;
 }
 
@@ -824,8 +829,29 @@ function paywallCard(scr) {
   scr.append(c);
 }
 
-function openPay() {
+/* v34: оплата открывается внутри приложения — сразу окно Tribute, как это
+   делает кнопка «Разовый донат». Monthly-ссылку Donation Request хранит бот
+   (/tribute set <ссылка>), веб забирает её с GET /pay-url и отдаёт openLink:
+   t.me-ссылки уходят в tg.openTelegramLink, то есть Tribute открывается
+   поверх приложения, без выхода в браузер и без крюка через чат бота.
+   Кэш держит ссылку до перезагрузки, чтобы повторный клик открывал окно
+   мгновенно. Если бот недоступен или Tribute не настроен — fallback:
+   прежняя шторка с объяснением и deep-link pay_m1 в бота. */
+let payUrlCache = '';
+async function fetchPayUrl() {
+  if (payUrlCache) return payUrlCache;
+  if (!API_BASE) return '';
+  try {
+    const r = await fetch(apiUrl('/pay-url'), { cache: 'no-cache' });
+    const j = await r.json();
+    if (j && j.ok && j.url) payUrlCache = j.url;
+  } catch (e) { /* бот недоступен — покажем шторку с deep-link */ }
+  return payUrlCache;
+}
+async function openPay() {
   haptic('medium');
+  const payUrl = await fetchPayUrl();
+  if (payUrl) { openLink(payUrl); return; }
   sheet((sh, close) => {
     const p = PLANS()[0];
     const payBtn = el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
@@ -1850,6 +1876,9 @@ function screenProfile() {
     ));
   }
   scr.append(pick, el('p', { class: 'mins', style: 'margin:8px 4px' }, 'Тема всегда светлая — цвет выбирай под настроение.'));
+
+  scr.append(el('div', { class: 'sect' }, 'Приватность'));
+  scr.append(el('p', { class: 'mins privacy-note' }, '🔒 ', PRIVACY_NOTE));
 
   scr.append(el('div', { class: 'sect' }, 'Связь и вход'));
   const rows = [];

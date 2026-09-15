@@ -499,6 +499,29 @@ for (const [label, lock, pkg, dir] of [
   } else bad('бренд: розовая палитра без вырезанного логотипа 1025',
              'режем так: буквы и персонаж из IMG_1025 без розовой каймы и фона, фон в альфа-канал (scripts/cut_bg.py)');
 
+  /* оплата внутри приложения: веб забирает monthly-ссылку у бота и сразу открывает окно Tribute */
+  const botApp = read(path.join(BOT, 'src', 'app.js'));
+  if (/'\/pay-url'/.test(botApp) && /apiUrl\('\/pay-url'\)/.test(web) &&
+      /async function openPay[\s\S]{0,260}openLink\(/.test(web)) {
+    ok('оплата: ежемесячный донат открывает окно Tribute внутри приложения, как разовый');
+  } else bad('оплата: openPay не открывает Tribute напрямую внутри приложения',
+             'веб берёт ссылку с GET /pay-url бота и зовёт openLink; fallback — шторка с deep-link в бота');
+
+  /* обе ссылки доната — один Donation Request dQui (разовый и ежемесячный) */
+  const cfgText = read(path.join(ROOT, 'app', 'config.js'));
+  const tributeSrc = read(path.join(BOT, 'src', 'tribute.js'));
+  if (/donate_url:\s*"https:\/\/t\.me\/tribute\/app\?startapp=dQui"/.test(cfgText) &&
+      /REPO_PAY_URL = 'https:\/\/t\.me\/tribute\/app\?startapp=dQui'/.test(tributeSrc)) {
+    ok('оплата: разовый и ежемесячный донат ведут на один Donation Request dQui');
+  } else bad('ссылки доната разъехались с dQui',
+             'обе ссылки — https://t.me/tribute/app?startapp=dQui: donate_url в app/config.js и REPO_PAY_URL в bot/src/tribute.js');
+
+  /* дисклеймер: записи и фото остаются в локальной памяти телефона */
+  if ((web.match(/PRIVACY_NOTE/g) || []).length >= 3 && /\.privacy-note\{/.test(css)) {
+    ok('дисклеймер: данные только в локальной памяти — онбординг и раздел «Приватность»');
+  } else bad('нет дисклеймера о локальной памяти данных',
+             'PRIVACY_NOTE в app/js/app.js: плашка на онбординге и секция «Приватность» в профиле');
+
   /* доски: фон иллюстраций — прозрачный альфа-канал, а не CSS-маска поверх плотного PNG */
   const webpHasAlpha = (p) => {
     try {

@@ -292,6 +292,9 @@ a{color:inherit}
 .round-btn:active{transform:scale(.93)}
 .onboard-cta{margin-top:30px}
 .onboard-note{margin:22px 0 0; font-size:12.5px; line-height:1.7; color:var(--ink-3)}
+/* дисклеймер о локальной памяти: мягкая плашка, чтобы глаз зацепился, но без давления */
+.privacy-note{display:flex; gap:8px; align-items:flex-start; padding:12px 14px; border-radius:16px;
+  background:var(--tint-sky); color:var(--ink-2); line-height:1.6}
 
 /* ---------- poster (внутренние экраны) ---------- */
 .poster{position:relative; overflow:hidden; border-radius:36px; padding:28px;

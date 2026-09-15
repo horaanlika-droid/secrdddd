@@ -26,6 +26,8 @@ assert.equal(normalizePayUrl(url).ok, true, 'официальная Donation Req
 assert.equal(normalizePayUrl('https://evil.example/tribute/app?startapp=dMonthlyDemo').ok, false, 'чужой домен нельзя сохранить');
 assert.equal(normalizePayUrl('https://t.me/tribute/app?startapp=pOldProduct').ok, false, 'ссылка старого цифрового товара не подходит');
 assert.equal(normalizePayUrl('javascript:alert(1)').ok, false, 'нужен https URL');
+assert.equal(getPayUrl(), 'https://t.me/tribute/app?startapp=dQui', 'без админ-ссылки и env работает дефолт репозитория dQui');
+assert.equal(tributeStatus().source, 'repo', 'источник дефолта виден в статусе');
 assert.equal(setDynamicPayUrl(url).ok, true);
 assert.equal(getPayUrl(), url);
 assert.equal(tributeStatus().source, 'admin');

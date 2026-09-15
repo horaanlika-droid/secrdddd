@@ -29,7 +29,8 @@ async function app(seed = {}, { boardSeed, privateMode = false, apiContent = nul
   if (boardSeed !== undefined) w.localStorage.setItem(BOARDS, JSON.stringify(boardSeed));
   w.fetch = async url => {
     const href = String(url);
-    const body = href.startsWith('https://bot.dibi.test/content') ? apiContent
+    const body = href.includes('pay-url') ? { ok: true, url: 'https://t.me/tribute/app?startapp=dSmoke' }
+      : href.startsWith('https://bot.dibi.test/content') ? apiContent
       : href.includes('content') ? CONTENT : { ok: true, ai: false, enabled: false, items: [] };
     return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
   };
@@ -78,7 +79,7 @@ async function app(seed = {}, { boardSeed, privateMode = false, apiContent = nul
 let current;
 try {
   current = await app();
-  const { w, q, qa, input, click, go, state, boards } = current;
+  const { w, q, qa, input, click, go, state, boards, textButton } = current;
   check('home has 9 named heads from one 4×4 sprite', () => {
     assert.equal(qa('.mood').length,9);
     qa('.chip-face').forEach((head, i) => {
@@ -149,6 +150,24 @@ try {
   await go('profile'); qa('.palette-opt')[0].click(); await go('');
   check('blue palette restores the 1024 hero logo',()=>{
     assert(q('.hero-brand').src.includes('assets/brand/logo-1024.png'));
+  });
+  const opened = [];
+  const payApp = await app({}, { apiContent: structuredClone(CONTENT) });
+  payApp.w.open = (u) => opened.push(u);
+  await payApp.go('profile');
+  const payBtn = payApp.textButton('Поддержка в Tribute') || payApp.textButton('Минимальный донат');
+  assert(payBtn, 'profile has the monthly pay button');
+  payBtn.click(); await sleep(40);
+  check('monthly pay opens the Tribute payment window in-app right away, like the one-time donate',()=>{
+    assert.equal(opened.length, 1);
+    assert(opened[0].includes('t.me/tribute/app?startapp=dSmoke'));
+    assert(!payApp.q('.sheet.on'), 'no intermediate sheet between the click and the payment window');
+  });
+  payApp.dom.window.close();
+  await go('profile');
+  check('profile keeps the privacy disclaimer: everything stays in local memory',()=>{
+    assert(q('#app').textContent.includes('остаётся только на твоём телефоне'));
+    assert(q('#app').textContent.includes('Мы ничего не собираем'));
   });
   await go('chat');
   check('local chat offers eight different starting prompts',()=>assert.equal(qa('.chat-hints .chip').length,8));
@@ -234,6 +253,12 @@ try {
   check('new local content supersedes an older persisted API copy',()=>{
     assert(current.q('#app').textContent.includes('Минимальный донат'));
     assert(!current.q('#app').textContent.includes('СТАРАЯ ЦЕНА ИЗ API'));
+  });
+  current.dom.window.close();
+  current=await app({ onboarded: false });
+  check('onboarding shows the local-only privacy disclaimer',()=>{
+    assert(current.q('.privacy-note').textContent.includes('остаётся только на твоём телефоне'));
+    assert(current.q('.privacy-note').textContent.includes('Мы ничего не собираем'));
   });
   console.log(`\ndom-smoke: ${checks} checks passed`);
 } finally { current?.dom.window.close(); }

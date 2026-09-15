@@ -53,7 +53,12 @@ const envPayUrl = () => {
   const parsed = normalizePayUrl(process.env.TRIBUTE_MONTHLY_URL || '');
   return parsed.ok ? parsed.url : '';
 };
-export const getPayUrl = () => dynamicPayUrl || envPayUrl() || null;
+/* v35: владелец указал один Donation Request на ежемесячную и разовую
+   поддержку — dQui. Это дефолт репозитория: админ может заменить его
+   через /tribute set <ссылка> или TRIBUTE_MONTHLY_URL в окружении. */
+const REPO_PAY_URL = 'https://t.me/tribute/app?startapp=dQui';
+const repoPayUrl = () => (normalizePayUrl(REPO_PAY_URL).ok ? REPO_PAY_URL : '');
+export const getPayUrl = () => dynamicPayUrl || envPayUrl() || repoPayUrl() || null;
 
 /** Токен ссылки вида startapp=dABC позволяет связать webhook с конкретной
     Donation Request даже если Telegram вернул ссылку с другим доменом. */
@@ -77,7 +82,7 @@ export const tributeStatus = () => ({
   link: !!getPayUrl(),
   key: !!KEY(),
   shop: shopMode(),
-  source: dynamicPayUrl ? 'admin' : envPayUrl() ? 'env' : null,
+  source: dynamicPayUrl ? 'admin' : envPayUrl() ? 'env' : repoPayUrl() ? 'repo' : null,
   donation_token: !!donationToken(getPayUrl())
 });
 
