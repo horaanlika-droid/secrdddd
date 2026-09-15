@@ -523,6 +523,108 @@ for (const [label, lock, pkg, dir] of [
   else bad('нет agents-test в package.json/CI', 'контракт беты надо проверяять без живого ключа');
 }
 
+/* ---------- 16. v25: эмоции с лицом Дибитишки, доски, папки, живой маскот ----------
+   Правила появились после итерации 25. Смысл каждого:
+   — эмоции больше не на эмодзи: у каждого состояния своё сгенерированное лицо,
+     и набор должен совпадать с набором файлов (иначе на экране дырка);
+   — старые отметки 0..4 нельзя терять: без миграции шкалы график в профиле
+     «съезжает», а человек видит не свою историю;
+   — заметка должна стоять ВЫШЕ чипов эмоций (просьба итерации);
+   — картинки досок лежат в IndexedDB, а не в localStorage: иначе фото из
+     галереи переполняют хранилище на втором снимке;
+   — папки навыков и кадры живого маскота — реальные файлы, а не подпись. */
+{
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const css = read(path.join(ROOT, 'app', 'css', 'app.css'));
+  const faces = ['hard', 'sad', 'anxious', 'even', 'warm', 'fun', 'joy', 'mixed', 'unclear'];
+  const folders = ['opora', 'osoznannost', 'stress', 'emotions', 'sensorika'];
+
+  if (!web) bad('нет app/js/app.js');
+  else {
+    const moodLine = (web.match(/const MOODS = \[[^\]]*\]/) || [''])[0];
+    const faceLine = (web.match(/const MOOD_FACES = \[[^\]]*\]/) || [''])[0];
+    const moods = (moodLine.match(/'([^']+)'/g) || []).map((x) => x.slice(1, -1));
+    const faceKeys = (faceLine.match(/'([^']+)'/g) || []).map((x) => x.slice(1, -1));
+    for (const need of ['Грустно', 'Весело', 'Смешанно', 'Непонятно']) {
+      if (moods.includes(need)) ok(`эмоции: «${need}» на месте`);
+      else bad(`эмоции: пропало состояние «${need}»`, 'в итерации 25 добавили грустно/весело/смешанно/непонятно');
+    }
+    if (moods.length === faceKeys.length && moods.length >= 9) ok(`эмоции: ${moods.length} состояний и столько же лиц`);
+    else bad('эмоции: число состояний и лиц разошлось', 'MOODS и MOOD_FACES должны идти парами');
+    const missing = faceKeys.filter((k) => !exists(path.join(ROOT, 'app', 'assets', 'mascot', 'faces', `${k}.png`)));
+    if (faceKeys.length && !missing.length) ok('лица эмоций: файлы на месте (assets/mascot/faces/*.png)');
+    else bad(`лица эмоций: нет файлов ${missing.join(', ') || '(набор пуст)'}`, 'пересобери: python3 scripts/build-mood-faces.py');
+    if (!/MOOD_EMOJI = \[[^\]]*[\u{1F300}-\u{1FAFF}]/u.test(web)) ok('эмоции: стандартные эмодзи убраны (остались только PNG-лица)');
+    else bad('эмоции: вернулись стандартные эмодзи', 'в чипах эмоций должно быть лицо Дибитишки, а не 😊/😞');
+
+    if (/persisted\.mood_schema/.test(web)) ok('эмоции: миграция старой шкалы 0..4 смотрит на сохранённое состояние');
+    else bad('эмоции: миграция шкалы снова смотрит на state', 'defaultState подставит новую схему, и старые отметки перестанут пересчитываться');
+
+    /* заметка — выше чипов эмоций */
+    const noteAt = web.indexOf('mood-note-wrap');
+    const chipsAt = web.indexOf('mood-chips');
+    if (noteAt > 0 && chipsAt > noteAt) ok('главная: короткая заметка стоит выше эмоций');
+    else bad('главная: заметка уехала под эмоции', 'в итерации 25 просили перенести её наверх');
+
+    /* кнопка «Поделиться» */
+    if (/shareMoodCard/.test(web) && /navigator\.share/.test(web)) ok('«Поделиться»: карточка настроения собирается на canvas + нативный share');
+    else bad('«Поделиться»: нет сборки карточки или нативного share');
+    if (/support-card/.test(web) && /support-card/.test(css)) ok('профиль: подписка и донат — один блок (support-card)');
+    else bad('профиль: подписка и донат снова разъехались', 'верни subscriptionCard() и стиль .support-card');
+    const subAt = web.indexOf('subscriptionCard()');
+    const statsAt = web.indexOf("'График настроения'");
+    if (subAt > 0 && statsAt > subAt) ok('профиль: блок подписки/доната выше графика настроения');
+    else bad('профиль: подписка снова ниже графика', 'её просили поднять вверх и объединить с донатом');
+
+    /* доски впечатлений */
+    if (/indexedDB\.open\('dibitishka\.media'/.test(web)) ok('доски: картинки в IndexedDB (в localStorage они не влезут)');
+    else bad('доски: картинки снова кладут в localStorage', 'второе фото переполнит хранилище');
+    if (/case 'boards'/.test(web) && /case 'board'/.test(web)) ok('доски: маршруты #/boards и #/board/<id> на месте');
+    else bad('доски: нет маршрутов в render()');
+    if (/addGifSheet|kind: 'gif'/.test(web) && /tenor\.com\/search/.test(web)) ok('доски: GIF по ссылке + поиск по тегам в Tenor');
+    else bad('доски: пропал блок GIF по ссылке');
+    if (/boardBgSheet/.test(web) && /BOARD_BGS/.test(web)) ok('доски: свой фон — темы и фото');
+    else bad('доски: нет выбора фона');
+    if (/search/.test(web) && /board-search/.test(css)) ok('доски: поиск по тегам и подписям');
+    else bad('доски: нет поиска по тегам');
+
+    /* живой маскот */
+    if (/liveMascot\(/.test(web) && /live-mascot/.test(css)) ok('главная: живой маскот (моргает и улыбается)');
+    else bad('главная: живой маскот пропал');
+    for (const f of ['hero-blink.png', 'hero-smile.png']) {
+      if (exists(path.join(ROOT, 'app', 'assets', 'mascot', f))) ok(`маскот: кадр ${f} на месте`);
+      else bad(`маскот: нет кадра ${f}`, 'пересобери: python3 scripts/build-mascot-frames.py');
+    }
+    /* кадры должны быть тех же размеров, что и опорная поза, иначе анимация «прыгает».
+       Размер PNG читаем из заголовка — без внешних пакетов, чтобы работало и в CI. */
+    const pngSize = (file) => {
+      try {
+        const buf = fs.readFileSync(file);
+        if (buf.toString('ascii', 1, 4) !== 'PNG') return null;
+        return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+      } catch (e) { return null; }
+    };
+    const sizes = ['hello.png', 'hero-blink.png', 'hero-smile.png']
+      .map((f) => pngSize(path.join(ROOT, 'app', 'assets', 'mascot', f)));
+    if (sizes.every((x) => x && x[0] === sizes[0][0] && x[1] === sizes[0][1])) {
+      ok(`маскот: кадры анимации совпадают по размеру с hello.png (${sizes[0].join('×')})`);
+    } else {
+      bad('маскот: кадры анимации разного размера с hello.png',
+        'при переключении слоёв персонаж будет дёргаться — пересобери: python3 scripts/build-mascot-frames.py');
+    }
+
+    /* папки навыков */
+    const folderLine = (web.match(/const FOLDER_ART = \{[^}]*\}/) || [''])[0];
+    if (folderLine) ok('навыки: карта папок FOLDER_ART на месте');
+    else bad('навыки: нет FOLDER_ART — блоки не найдут свои папки');
+    const missingFolders = folders.filter((k) => !exists(path.join(ROOT, 'app', 'assets', 'folders', `${k}.png`)));
+    if (!missingFolders.length) ok('навыки: все пять папок отрисованы (assets/folders/*.png)');
+    else bad(`навыки: нет папок ${missingFolders.join(', ')}`, 'пересобери: python3 scripts/slice-folders.py');
+    if (/\.folders\b/.test(css) && /\.folder\.f-/.test(css)) ok('навыки: стили папок с цветами блоков на месте');
+    else bad('навыки: нет стилей .folders/.folder.f-*');
+  }
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');
