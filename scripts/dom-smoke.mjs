@@ -139,8 +139,10 @@ try {
   await go('diary');
   check('confirmed note appears in diary with sprite heads',()=>{assert(q('#app').textContent.includes('Не теряй черновик'));assert(qa('.ric-face').every(n=>n.classList.contains('mood-sprite')));});
   await go('');
-  check('splash shows the 1026 poster and an XP-style loading bar',()=>{
-    assert(q('.splash-poster').src.includes('assets/brand/splash-1026.webp'));
+  check('splash shows the 3D mascot with orbiting elements and an XP-style loading bar',()=>{
+    assert(q('.splash-mascot').src.includes('assets/brand/splash-mascot-3d.png'));
+    assert(q('.splash-wordmark').src.includes('assets/brand/splash-wordmark-hq.png'));
+    assert(qa('.orbit-ring').length===2 && qa('.orbit-ring .orb').length>=8);
     assert(q('.splash-bar'));
     assert(q('.hero-brand').src.includes('assets/brand/logo-1024.png'));
   });

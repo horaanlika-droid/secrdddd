@@ -10,23 +10,46 @@
 <title>Дибитишка</title>
 <link rel="icon" type="image/png" href="assets/mascot/icon.png">
 <link rel="apple-touch-icon" href="assets/mascot/icon.png">
-<link rel="stylesheet" href="css/app.css?v=37-splash-1026">
-<link rel="preload" as="image" href="assets/brand/splash-1026.webp" fetchpriority="high">
+<link rel="stylesheet" href="css/app.css?v=38-orbit-splash">
+<link rel="preload" as="image" href="assets/brand/splash-mascot-3d.png" fetchpriority="high">
+<link rel="preload" as="image" href="assets/brand/splash-wordmark-hq.png">
 <link rel="stylesheet" href="css/hero-moods.css?v=28">
 <script src="config.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 <div id="splash" aria-hidden="true">
-  <!-- Постер IMG_1026: локап, подпись by @vasmedoljno и маскот с dbt diary.
+  <!-- v38: композитный прелоад. Маскот — компьютерная 3D-графика (тот же стиль,
+       что остальные конфигурации Дибитишки), вокруг него по кольцам крутятся
+       сердечки/звёзды/пузырики; небо, облака и подпись — CSS/SVG, поэтому
+       заставка тянется без потери качества на любой экран вплоть до iPad 12.9".
        Держим ~3.2 с, чтобы успеть рассмотреть. Снизу — шкала в стиле XP. -->
-  <img class="splash-poster" src="assets/brand/splash-1026.webp" alt="Дибитишка" width="768" height="1376" fetchpriority="high">
+  <i class="splash-cloud c1"></i><i class="splash-cloud c2"></i><i class="splash-cloud c3"></i>
+  <div class="splash-stage">
+    <img class="splash-wordmark" src="assets/brand/splash-wordmark-hq.png" alt="Дибитишка" width="1600" height="694" fetchpriority="high">
+    <div class="splash-hero">
+      <div class="orbit-ring r1">
+        <span class="orb" style="--a:-12deg; --rr:.55; --s:clamp(24px,4.8vmin,44px); --c:#F2A0BE"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></span>
+        <span class="orb" style="--a:96deg; --rr:.58; --s:clamp(20px,4.2vmin,38px); --c:#9CC2F2"><svg viewBox="0 0 24 24"><path d="M12 1.8l3 6.8 7.2.7-5.4 4.9 1.6 7.1-6.4-3.8-6.4 3.8 1.6-7.1L1.8 9.3l7.2-.7z"/></svg></span>
+        <span class="orb" style="--a:188deg; --rr:.52; --s:clamp(10px,2vmin,18px); --c:#F0A6C0"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></span>
+        <span class="orb" style="--a:282deg; --rr:.57; --s:clamp(14px,2.6vmin,24px); --c:#BFDFF8"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></span>
+      </div>
+      <div class="orbit-ring r2">
+        <span class="orb hollow" style="--a:40deg; --rr:.66; --s:clamp(18px,3.6vmin,32px); --c:#ffffff"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></span>
+        <span class="orb" style="--a:150deg; --rr:.68; --s:clamp(12px,2.2vmin,20px); --c:#F2A0BE"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></span>
+        <span class="orb" style="--a:236deg; --rr:.64; --s:clamp(14px,2.8vmin,26px); --c:#9CC2F2"><svg viewBox="0 0 24 24"><path d="M12 1.8l3 6.8 7.2.7-5.4 4.9 1.6 7.1-6.4-3.8-6.4 3.8 1.6-7.1L1.8 9.3l7.2-.7z"/></svg></span>
+        <span class="orb" style="--a:322deg; --rr:.69; --s:clamp(9px,1.8vmin,16px); --c:#F0A6C0"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></span>
+      </div>
+      <img class="splash-mascot" src="assets/brand/splash-mascot-3d.png" alt="" width="2048" height="2048" fetchpriority="high">
+    </div>
+    <div class="splash-by">by @vasmedoljno</div>
+  </div>
   <div class="splash-bar" aria-hidden="true"><i></i></div>
 </div>
 <div id="bg-blobs" aria-hidden="true"><i class="b1"></i><i class="b2"></i></div>
 <main id="app" aria-live="polite"></main>
 <div id="sheet-root"></div>
 <nav id="tabbar" hidden></nav>
-<script type="module" src="js/app.js?v=37-splash-1026"></script>
+<script type="module" src="js/app.js?v=38-orbit-splash"></script>
 </body>
 </html>
