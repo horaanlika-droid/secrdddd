@@ -848,3 +848,9 @@ html{color-scheme: light}
 .row-tint.cbar-sky    {--bc:#7E93C2; --bc-ink:#2F4C7A}
 .row-tint.cbar-leaf   {--bc:#B7B279; --bc-ink:#5B5834}
 .row-tint.cbar-grass  {--bc:#8D8B4C; --bc-ink:#3E3C1F}
+
+/* --- чат: тихая строка о состоянии живого голоса + кликабельный футер ---
+   Без неё отказ API выглядел как «чат не реагирует»: ответ был, а причины — нет. */
+.chat-note{margin:-4px 4px 0; text-align:center; color:var(--ink-3); font-size:11.5px;
+  line-height:1.6; opacity:.85}
+.chat-screen .foot[title]{cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px}

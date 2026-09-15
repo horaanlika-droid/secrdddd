@@ -1,18 +1,23 @@
 name: GitHub Pages
 
 # Публикует папку app/ как сайт.
-# ВАЖНО: этот workflow срабатывает, только если в Settings → Pages →
-# Build and deployment → Source выбран «GitHub Actions». Если там стоит
-# «Deploy from a branch» (main, /), сайт собирает Jekyll из корня
-# репозитория — тогда работает корневой index.html (редирект в app/).
-# Оба режима дают один результат: открывается приложение, а не README.
+#
+# ВАЖНО: этот workflow нужен, ТОЛЬКО если в Settings → Pages → Build and
+# deployment → Source выбран «GitHub Actions». Если там стоит «Deploy from a
+# branch» (main, /), сайт собирает уже сам GitHub, а действия
+# upload-pages-artifact/deploy-pages обязанно падают — поэтому ниже режим
+# определяется автоматически и workflow просто ничего не делает (зелёный),
+# объясняя в логе, что происходит. Оба режима дают один результат: по адресу
+# открывается приложение, а не README (в корне лежит index.html с редиректом
+# в app/index.html, #hash для Telegram он сохраняет, .nojekyll выключает Jekyll).
+#
+# Триггер — только main: ветки вида arena/* временные, ловить их сюда смысла нет
+# (и проверка проекта на это смотрит).
 
 on:
   push:
-    branches: [ main ]
     branches:
       - main
-      - 'arena/**-secrdddd'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +30,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mode:
+    name: как публиковать Pages
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.pick.outputs.skip }}
+    steps:
+      - name: смотрим Source в настройках Pages
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bt=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type' 2>/dev/null || echo unknown)
+          echo "build_type=$bt"
+          if [ "$bt" != "dynamic" ]; then
+            echo "Pages публикуется из ветки (source=branch) — публикацию делает GitHub, workflow пропускаю."
+            echo "Хочешь сборку отсюда: Settings → Pages → Source → GitHub Actions."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Source = GitHub Actions — публикуем app/."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    name: pages build
+    needs: mode
+    if: needs.mode.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +70,9 @@ jobs:
           path: app
 
   deploy:
-    needs: build
+    name: pages deploy
+    needs: [mode, build]
+    if: needs.mode.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

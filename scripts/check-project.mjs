@@ -306,14 +306,22 @@ for (const [label, lock, pkg, dir] of [
   if (!files.some((f) => /check|ci|test/i.test(f))) bad('нет CI-workflow с проверками', 'добавь .github/workflows/ci.yml');
   else ok(`CI-workflow на месте: ${files.join(', ')}`);
 
-  // ветки arena/* — временные, триггер на них протухнет сразу после мерджа
+  // ветки arena/* — временные, триггер на них протухнет сразу после мерджа.
+  // Заодно следим за дублем ключа branches: с таким YAML GitHub не запускает
+  // workflow вообще (падает за 0 секунд), а на вид конфиг выглядит рабочим.
   for (const f of files) {
     const text = read(path.join(wf, f));
-    const stale = [...text.matchAll(/branches:\s*\[([^\]]*)\]/g)]
-      .flatMap((m) => m[1].split(',').map((s) => s.trim().replace(/['"]/g, '')))
-      .filter((b) => b && b !== 'main');
+    const listed = [
+      ...[...text.matchAll(/branches:\s*\[([^\]]*)\]/g)].flatMap((m) => m[1].split(',')),
+      ...[...text.matchAll(/branches:\s*\n((?:\s*-\s*\S+\n?)+)/g)].flatMap((m) => m[1].split('\n'))
+    ].map((s) => s.trim().replace(/^-\s*/, '').replace(/['"]/g, '')).filter((b) => b && b !== '[]');
+    const stale = [...new Set(listed.filter((b) => b !== 'main'))];
     if (stale.length) bad(`${f}: триггер на непостоянную ветку`, stale.join(', ') + ' — оставь только main');
     else if (/branches:/.test(text)) ok(`${f}: триггер только на постоянные ветки`);
+    const onBlock = (text.match(/^on:[\s\S]*?\n(?=\S)/m) || [''])[0];
+    const dup = (onBlock.match(/^\s+branches:/gm) || []).length;
+    if (dup > 1) bad(`${f}: в on: два одинаковых ключа branches:`, 'нужен один — иначе workflow падает, не начавшись');
+    else ok(`${f}: on: без дублей ключей`);
   }
 }
 
@@ -406,6 +414,113 @@ for (const [label, lock, pkg, dir] of [
     if (!/extrasHtml\(/.test(book)) bad('app/workbook.html не печатает примеры в карточке практики');
     else ok('печатная тетрадь показывает примеры внутри практики');
   }
+}
+
+/* ---------- 14. «чат молчит» должен быть диагностируем, а не угадываем ----------
+   Поломка, из-за которой появилась эта проверка: HTTP API жил, /health
+   показывал «ai: true», а Telegram-половина процесса не получала ничего
+   (409: polling держала старая копия). Искали полгода не там. Правила ниже
+   не дают снова оставить бота без самодиагностики, а ошибки OpenAI — без
+   разбора на «ключ / деньги / модель / параметры». */
+{
+  const ai = read(path.join(BOT, 'src', 'ai.js'));
+  const app = read(path.join(BOT, 'src', 'app.js'));
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const css = read(path.join(ROOT, 'app', 'css', 'app.css'));
+  const rootIndex = read(path.join(ROOT, 'index.html'));
+  const docs = read(path.join(ROOT, 'docs', 'SETUP.md'));
+  const pkg = readJson(path.join(ROOT, 'package.json'));
+
+  /* OpenAI: совместимость параметров и разбор кодов ошибок */
+  if (!ai) bad('нет bot/src/ai.js');
+  else {
+    if (/max_completion_tokens/.test(ai)) ok('bot/src/ai.js: есть режим max_completion_tokens (gpt-5*/o* не принимают max_tokens)');
+    else bad('bot/src/ai.js не умеет max_completion_tokens', 'свежие модели отвечают 400 Unsupported parameter, и чат молча скатывается в шаблоны');
+    if (/insufficient_quota/.test(ai)) ok('bot/src/ai.js: «кончились средства» отличается от «перегрузки»');
+    else bad('bot/src/ai.js: 429 insufficient_quota не разбирается', 'иначе «no_quota» выглядит как «меня слишком много спрашивают» и чинится не там');
+    for (const fn of ['aiDiagnostics', 'selfTest', 'errorHint']) {
+      if (new RegExp('export (async )?function ' + fn + '\\b|export const ' + fn + '\\b').test(ai)) ok(`bot/src/ai.js: отдаёт ${fn}()`);
+      else bad(`bot/src/ai.js не отдаёт ${fn}()`, 'без него /diag и /health нечем проверять связь');
+    }
+  }
+
+  /* бот: состояние polling, лимит на публичный /chat, техничка — только админу */
+  if (!app) bad('нет bot/src/app.js');
+  else {
+    if (/polling/.test(app) && /statusReport/.test(app)) ok('bot/src/app.js: /health отдаёт состояние polling');
+    else bad('bot/src/app.js: /health не показывает polling', 'именно поэтому «бот жив, но молчит» было не найти');
+    if (/'\/diag'|command\('diag'/.test(app)) ok('bot/src/app.js: /diag для диагностики на месте');
+    else bad('bot/src/app.js: нет /diag', 'должна быть одна команда, отвечающая «почему молчит»');
+    if (!/free-port/.test(app)) ok('bot/src/app.js: не зовёт free-port (он убивал чужие процессы на порту)');
+    else bad('bot/src/app.js снова зовёт ./free-port.js', 'нужен acquirePort из bot/src/port.js: он трогает только наши копии');
+    if (/CHAT_RATE/.test(app)) ok('bot/src/app.js: публичный POST /chat под лимитом');
+    else bad('bot/src/app.js: у открытого /chat нет лимита', 'один скрипт съедает бюджет ключа владельца');
+    if (/OWNER_ERRORS/.test(app)) ok('bot/src/app.js: технические причины уходят админу, а не в чат');
+    else bad('bot/src/app.js: причину ошибки API видно гостю', '«проверь OPENAI_API_KEY» в чате поддержки пугает — неси её админу');
+  }
+
+  /* веб: отказ живого чата виден человеку */
+  if (/AI_REASON/.test(web) && /chat-note/.test(web)) ok('app/js/app.js: чат объясняет, почему отвечает шаблонами');
+  else bad('app/js/app.js: фолбэк чата снова без объяснения причины', 'тихий локальный ответ выглядит как «ии не реагирует»');
+  if (/\.chat-note/.test(css)) ok('app/css/app.css: стиль .chat-note на месте');
+  else bad('app/css/app.css: нет стиля .chat-note');
+
+  /* корень Pages: редирект не должен съедать #hash (в нём tgWebAppData) */
+  if (rootIndex && /http-equiv="refresh"/.test(rootIndex)) {
+    bad('index.html в корне снова редиректит через <meta http-equiv="refresh">',
+      'meta-refresh уносит только путь: теряется #hash с tgWebAppData → Mini App не узнаёт пользователя, чат без памяти');
+  } else if (rootIndex) ok('index.html в корне: редирект скриптом, #hash сохраняется');
+
+  /* инструменты и документация */
+  if (pkg?.scripts?.['ai-check'] && exists(path.join(ROOT, 'scripts', 'ai-check.mjs'))) ok('npm run ai-check: проверка «почему молчит» на месте');
+  else bad('нет npm run ai-check (scripts/ai-check.mjs)', 'быстрая диагностика должна быть одной командой, а не расследованием');
+  if (/\/diag/.test(docs) && /ai-check/.test(docs)) ok('docs/SETUP.md: раздел про диагностику чата есть');
+  else bad('docs/SETUP.md: нет раздела «чат молчит» с /diag и npm run ai-check', 'человек не должен гадать, где смотреть причину');
+}
+
+/* ---------- 15. agents-бэкенд: контракт и тишина о секретах ----------
+   Отдельный рубеж: сессия Agents API + self-hosted окружение. Ловит то,
+   что невозможно проверить без mock-сервера: путь и заголовок беты, форма
+   input-события, признаки конца хода, и главное — что connect-токен
+   окружения не уезжает ни в логи, ни в /health, ни в окружение процесса. */
+{
+  const ag = read(path.join(BOT, 'src', 'agents.js'));
+  const app = read(path.join(BOT, 'src', 'app.js'));
+  const envEx = read(path.join(ROOT, '.env.example'));
+  const docs = read(path.join(ROOT, 'docs', 'SETUP.md'));
+  const pkg = readJson(path.join(ROOT, 'package.json'));
+  const ci = read(path.join(ROOT, '.github', 'workflows', 'ci.yml'));
+  if (!ag) bad('нет bot/src/agents.js', 'agents-бэкенд (сессия + окружение) — см. docs/SETUP.md');
+  else {
+    const contract = [
+      ['/agents/sessions', 'путь создания сессии'],
+      ["'agents=v1'", 'заголовок OpenAI-Beta: agents=v1'],
+      ['agent.session.input.message', 'форма input-события'],
+      ['agent.session.turn.output_text.delta', 'чтение дельт текста'],
+      ['agent.session.turn.completed', 'признак конца хода (idle — не он)'],
+      ['agent.session.environment.failed', 'реакция на неподключённое окружение']
+    ];
+    const missing = contract.filter(([needle]) => !ag.includes(needle));
+    if (!missing.length) ok(`bot/src/agents.js: контракт Agents API на месте (${contract.length} пунктов)`);
+    else bad('bot/src/agents.js потерял часть контракта: ' + missing.map(([, w]) => w).join(', '));
+
+    const diag = ag.slice(ag.indexOf('export function agentsDiagnostics'), ag.indexOf('/* ---------- HTTP')) || '';
+    if (ag.includes('maskSecret(') && !/remote_url:/.test(diag)) ok('bot/src/agents.js: remote_url маскируется и не светится в диагностике');
+    else bad('bot/src/agents.js: connect-токен окружения виден снаружи', 'remote_url содержит одноразовый токен подключения — только маска, и никогда в /health');
+    if (!/env:\s*\{\.\.\.process\.env/.test(ag)) ok('bot/src/agents.js: в песочницу не льётся окружение процесса');
+    else bad('bot/src/agents.js: исполнителю передаётся ...process.env', 'вместе с OPENAI_API_KEY и ADMIN_IDS попадёт в песочницу, где крутится код от модели');
+  }
+  if (/agentsEnabled\(\)/.test(app) && /фолбэк в chat\/completions/.test(app)) ok('bot/src/app.js: agents с автоматическим фолбэком на chat/completions');
+  else bad('bot/src/app.js: у agents-бэкенда нет фолбэка', 'человек не должен остаться без ответа из-за недоступного окружения');
+  if (/closeAllSessions/.test(app)) ok('bot/src/app.js: исполнители закрываются по SIGTERM');
+  else bad('bot/src/app.js: codex exec-server переживёт останов процесса', 'нужен closeAllSessions() в shutdown');
+
+  if (/AGENTS_ENABLED/.test(envEx) && /OPENAI_EXECUTOR_API_KEY/.test(envEx)) ok('.env.example: переменные agents-бэкенда описаны');
+  else bad('.env.example: нет блока AGENTS_* / OPENAI_EXECUTOR_API_KEY');
+  if (/exec-server/.test(docs) && /AGENTS_EXECUTOR_CMD/.test(docs)) ok('docs/SETUP.md: запуск окружения и исполнителя описан');
+  else bad('docs/SETUP.md: не описан codex exec-server / AGENTS_EXECUTOR_CMD');
+  if (pkg?.scripts?.['agents-test'] && ci?.includes('agents-test') && exists(path.join(ROOT, 'scripts', 'agents-mock-check.mjs'))) ok('npm run agents-test: мок Agents API в CI');
+  else bad('нет agents-test в package.json/CI', 'контракт беты надо проверяять без живого ключа');
 }
 
 /* ---------- итог ---------- */

@@ -1104,15 +1104,37 @@ function chatReply(text) {
 }
 
 /* Живой чат через бота (POST /chat → OpenAI). Пока у бота нет OPENAI_API_KEY
-   или веб не подключён к боту — работает локальный chatReply(). */
-let AI_STATUS = null; // null — не проверяли, true/false — ответ бота
+   или веб не подключён к боту — работает локальный chatReply().
+   Важно: причина «почему не живой» не прячется — её видно под ответом,
+   иначе «чат молчит» превращается в гадание (см. docs/SETUP.md). */
+let AI_STATUS = null;      // null — не проверяли, true/false — ответ бота
+let AI_NOTE = null;        // последняя причина из /chat/status или /chat
+let aiFails = 0;           // подряд неудачных попыток — после двух включаем локальный режим
+const AI_REASON = {
+  no_key: 'бот-хост без ключа OpenAI',
+  bad_key: 'ключ OpenAI не подошёл',
+  no_quota: 'на аккаунте OpenAI закончились средства',
+  rate_limit: 'слишком много запросов сразу',
+  slow_down: 'ты пишешь быстрее, чем я успеваю',
+  timeout: 'модель не успела ответить',
+  bad_model: 'модель не найдена',
+  bad_param: 'модель не приняла параметры запроса',
+  too_long: 'история диалога не влезает в модель',
+  geo_blocked: 'доступ к OpenAI ограничен в этом регионе',
+  openai_down: 'у OpenAI сбой на стороне',
+  network: 'не удалось достучаться до бота',
+  offline: 'бот-хост не отвечает'
+};
+const aiReason = (code) => AI_REASON[code] || AI_NOTE || 'бот вернул ошибку';
 async function checkAi() {
-  if (!API_BASE) { AI_STATUS = false; return false; }
+  if (!API_BASE) { AI_STATUS = false; AI_NOTE = 'веб не подключён к боту (bot_public_url пуст)'; return false; }
   try {
     const r = await fetch(apiUrl('/chat/status'), { cache: 'no-cache' });
     const j = await r.json();
     AI_STATUS = !!(j && j.ai);
-  } catch (e) { AI_STATUS = false; }
+    if (!AI_STATUS && Array.isArray(j.problems) && j.problems.length) AI_NOTE = String(j.problems[0]);
+    if (AI_STATUS) aiFails = 0;
+  } catch (e) { AI_STATUS = false; AI_NOTE = AI_REASON.network; }
   return AI_STATUS;
 }
 const chatHistoryKey = 'dibi_chat_history';
@@ -1125,14 +1147,19 @@ async function aiReply(text, history) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: uid || null, text, context: buildChatContext(), history: history.map(m => ({ role: m.role, content: m.content })) })
     });
-    const j = await r.json();
+    let j = null;
+    try { j = await r.json(); } catch (e) { return { error: true, reason: 'offline' }; }
     if (j && j.ok && j.text) return { text: j.text, live: true };
-    if (j && j.ai === false) { AI_STATUS = false; return null; }
-    // при ошибке API (rate_limit/timeout/сеть) сигналим наверх — там вызовем chatReply()
+    if (j && j.ai === false) { AI_STATUS = false; AI_NOTE = aiReason(j.error); return null; }
+    // при ошибке API (no_quota/timeout/сеть) сигналим наверх — там вызовем chatReply()
     // из локальной памяти пользователя: ответ получится живой, из его же записей
-    return { error: true };
+    const reason = (j && j.error) || (r.status >= 500 ? 'openai_down' : 'offline');
+    AI_NOTE = (j && j.hint) ? String(j.hint) : aiReason(reason);
+    if (j && j.hint) console.warn('[dibi chat] владелец: ' + j.hint);
+    return { error: true, reason };
   } catch (e) {
-    return { error: true };
+    AI_NOTE = AI_REASON.network;
+    return { error: true, reason: 'network' };
   }
 }
 
@@ -1155,9 +1182,18 @@ function screenChat() {
   scr.append(feed, hints, inputRow);
   const foot = el('p', { class: 'foot' }, 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.');
   scr.append(foot);
-  const setFoot = () => { foot.textContent = AI_STATUS
-    ? 'Живой чат: Дибитишка отвечает сама, помня твои записи. Не заменяет врача и экстренную помощь.'
-    : 'Локальный помощник: ответы собираются из твоих же записей и практик. Не заменяет врача и экстренную помощь.'; };
+  const setFoot = () => {
+    foot.textContent = AI_STATUS
+      ? 'Живой чат: Дибитишка отвечает сама, помня твои записи. Не заменяет врача и экстренную помощь.'
+      : 'Локальный помощник: ответы собираются из твоих же записей' + (AI_NOTE ? ` · живой чат на паузе: ${AI_NOTE}` : '') + '. Не заменяет врача и экстренную помощь.';
+    foot.title = 'Нажми, чтобы проверить живой чат ещё раз';
+  };
+  foot.onclick = async () => {
+    foot.textContent = 'проверяю связь с ботом…';
+    const ok = await checkAi();
+    setFoot();
+    toast(ok ? 'Живой чат на месте ✅' : 'Пока отвечаю из твоих записей' + (AI_NOTE ? `: ${AI_NOTE}` : ''));
+  };
   checkAi().then(setFoot);
   let history = loadChatHistory();
 
@@ -1169,25 +1205,41 @@ function screenChat() {
     feed.append(m);
     feed.scrollTop = feed.scrollHeight;
   };
+  // тихая строчка под пузырём: что сейчас с живым голосом, без технических подробностей
+  let lastNote = null;
+  const note = (text) => {
+    if (!text || text === lastNote) return;
+    lastNote = text;
+    const n = el('p', { class: 'chat-note' }, text);
+    feed.append(n);
+    feed.scrollTop = feed.scrollHeight;
+  };
   const submit = (raw) => {
     const v = (raw ?? input.value).trim();
     if (!v) return;
     input.value = '';
     push(v, 'me');
     haptic('light');
-    if (!AI_STATUS) { setTimeout(() => push(chatReply(v), 'bot'), 420); return; }
+    if (!AI_STATUS) {
+      setTimeout(() => { push(chatReply(v), 'bot'); if (AI_NOTE) note('Живой голос на паузе — отвечаю из твоих записей.'); }, 420);
+      return;
+    }
     const typing = el('div', { class: 'msg bot typing' }, el('div', { class: 'bubble' }, '…'));
     feed.append(typing); feed.scrollTop = feed.scrollHeight;
     input.disabled = true; sendBtn.disabled = true;
     aiReply(v, history).then((r) => {
       typing.remove();
       if (!r || r.error) {
-        // либо AI выключен совсем, либо временно перегружен — отвечаем из локальной памяти
-        const local = chatReply(v);
-        push(local, 'bot');
-        if (!r) setFoot();
+        // либо AI выключен совсем, либо временно недоступен — отвечаем из локальной памяти,
+        // и говорим об этом прямо: тихий фолбэк выглядел как «чат не реагирует»
+        aiFails++;
+        push(chatReply(v), 'bot');
+        note('Живой голос сейчас недоступен' + (r && r.reason ? ` (${aiReason(r.reason)})` : '') + ' — отвечаю из твоих записей. Я тут 💧');
+        if (aiFails >= 2) AI_STATUS = false;   // дёргать API дальше смысла нет, пока не перепроверим
+        setFoot();
         return;
       }
+      aiFails = 0; lastNote = null;
       push(r.text, 'bot');
       history.push({ role: 'user', content: v }, { role: 'assistant', content: r.text });
       history = history.slice(-20); saveChatHistory(history);

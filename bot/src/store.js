@@ -38,3 +38,6 @@ export const save = () => {
 export const flush = () => (t ? writeNow() : true);
 export const getDB = () => db;
 export const resetDB = (v) => { db = v; save(); };
+/** Файл базы — нужен для диагностики: если путь попал в /tmp, данные
+    умирают вместе с контейнером (и «пользователей: 0» при живом боте). */
+export const dbFile = FILE;
