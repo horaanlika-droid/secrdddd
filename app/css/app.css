@@ -179,10 +179,9 @@ a{color:inherit}
 /* тонкая стеклянная кромка сверху — iOS-блик */
 .hero::after{content:""; position:absolute; top:0; left:8%; right:8%; height:1px;
   background:linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent)}
-/* ---------- hero brand / daily phrase (v24: логотип без подложки) ---------- */
-/* Плашки под локапом больше нет: PNG вырезан начисто, а замкнутые просветы
-   внутри букв (д, б, к, а) залиты точно в тон фона — см. scripts/logo_holes.py.
-   Для розовой темы подставляется второй файл с розовым тоном заливки. */
+/* ---------- hero brand / daily phrase ---------- */
+/* Локап собран из IMG_1024.png: внешний фон связанно удалён в альфа-канал,
+   поэтому один прозрачный файл чисто работает на обеих палитрах. */
 .hero-brand{
   width:min(88%, 338px);
   height:auto;
@@ -388,7 +387,7 @@ a{color:inherit}
 [data-theme="dark"] .bubble{border-color:var(--glass-line)}
 .bubble small{display:block; color:var(--ink-3); font-size:11.5px; margin-top:8px; text-transform:uppercase; letter-spacing:.09em; font-weight:700}
 
-/* ---------- тарифы подписки ---------- */
+/* ---------- ежемесячный доступ ---------- */
 .plans{display:flex; flex-direction:column; gap:10px; margin-top:12px}
 .plan{display:flex; align-items:center; gap:12px; width:100%; text-align:left; font:inherit; color:var(--ink);
   background:var(--card-2); border:1.5px solid var(--line); border-radius:16px; padding:12px 14px; cursor:pointer;
@@ -642,7 +641,7 @@ a{color:inherit}
 @keyframes auroraDrift{to{transform:translate3d(8%,-5%,0) rotate(10deg) scale(1.08)}}
 @keyframes blobFloat{to{transform:translate3d(7vw,5vh,0) scale(1.1)}}
 
-.splash-inner{width:min(82vw,390px);padding:0;gap:22px}
+.splash-inner{width:min(92vw,460px);padding:0;gap:22px}
 .splash-art{position:relative;width:100%;aspect-ratio:1;border-radius:clamp(36px,12vw,72px);box-shadow:0 28px 90px rgba(62,113,200,.22),inset 0 1px rgba(255,255,255,.9);animation:breathe 3.8s ease-in-out infinite}
 .splash-dots{margin:0}
 
@@ -694,12 +693,12 @@ a{color:inherit}
 .mood-entry-note{margin-top:8px; padding:10px 12px; border-radius:12px; background:var(--card-2); color:var(--ink-2); font-size:13.8px; line-height:1.5; white-space:pre-wrap; border:1px solid var(--line-2)}
 .mood-entry-note:empty{display:none}
 
-/* ---------- splash wordmark (v24: локап лежит на фоне, без плашки) ---------- */
-/* Подложки нет: у PNG вырезан фон, а просветы внутри букв залиты в тон фона
-   (logo-wordmark.png — голубая тема, logo-wordmark-pink.png — розовая). */
-.splash-wordmark{width:min(86vw, 350px); height:auto; display:block;
+/* ---------- splash logo (v29: новый локап из IMG_1024) ---------- */
+/* Внешний белый фон удалён в альфа-канал; отдельный маскот на прелоаде больше
+   не нужен — он уже выглядывает из букв нового логотипа. */
+.splash-wordmark{position:relative; width:min(92vw, 440px); height:auto; display:block;
   padding:0; border:0; border-radius:0; background:none; box-shadow:none;
-  filter:drop-shadow(0 10px 26px rgba(var(--accent-rgb),.16));
+  filter:drop-shadow(0 14px 30px rgba(var(--accent-rgb),.18));
   animation:breathe 4.6s ease-in-out infinite}
 .splash-tagline{position:relative; color:var(--ink-2); font-size:15px; line-height:1.5; text-align:center; max-width:300px}
 .splash-inner{gap:16px}
@@ -729,8 +728,8 @@ html{color-scheme: light}
    v24 · палитры: «голубая» (по умолчанию) и «розовая»
    Переключается атрибутом <html data-palette="pink"> — см. applyPalette()
    в app/js/app.js, выбор в профиле («Оформление»), хранится в localStorage.
-   Меняются ровно токены: фон, чернила, акцент, тени, пятна, тон заливки
-   просветов в логотипе. Светлая подложка/карточки остаются белыми.
+   Меняются токены фона, чернил, акцента, теней и декоративных пятен.
+   Прозрачный фирменный локап один для обеих палитр.
    ============================================================ */
 :root[data-palette="pink"]{
   --bg:#FCEFF5;
@@ -1118,3 +1117,128 @@ html{color-scheme: light}
 .board-actions .btn{min-width:0}
 .board-actions .btn.secondary,.support-actions .btn.secondary{width:auto}
 .support-actions .btn{min-width:0}
+
+/* ============================================================
+   v29 · Новый логотип и «доска = пространство интерфейса»
+   ============================================================ */
+
+/* Иллюстрация не живёт в карточке: её края растворяются в фоне страницы. */
+.boards-hero{
+  position:relative;
+  margin:2px -30px 18px;
+  overflow:visible;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.boards-hero::before{
+  content:"";
+  position:absolute;
+  inset:8% 3% 16%;
+  z-index:-1;
+  border-radius:50%;
+  background:rgba(196,220,249,.5);
+  filter:blur(34px);
+}
+.boards-hero img{
+  display:block;
+  width:100%;
+  height:auto;
+  aspect-ratio:1264/848;
+  object-fit:cover;
+  border:0;
+  border-radius:0;
+  filter:drop-shadow(0 18px 30px rgba(var(--ink-rgb),.08));
+  -webkit-mask-image:radial-gradient(ellipse 74% 72% at 50% 48%, #000 58%, rgba(0,0,0,.92) 72%, transparent 100%);
+  mask-image:radial-gradient(ellipse 74% 72% at 50% 48%, #000 58%, rgba(0,0,0,.92) 72%, transparent 100%);
+}
+.boards-hero figcaption{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  margin-top:-24px;
+  padding:0 30px 12px;
+}
+.boards-hero figcaption b{font-size:20px}
+
+/* На главной — та же свободная композиция, без белой рамки вокруг превью. */
+.board-teaser{
+  gap:10px;
+  padding:8px 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  overflow:visible;
+}
+.board-teaser-art{
+  width:126px;
+  height:96px;
+  margin-left:-8px;
+  object-fit:cover;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  transform:rotate(-1.5deg);
+  filter:drop-shadow(0 8px 14px rgba(var(--ink-rgb),.10));
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 60%,transparent 100%);
+  mask-image:radial-gradient(ellipse at center,#000 60%,transparent 100%);
+}
+.board-teaser .chev{padding-right:4px}
+
+/* У личной доски нет внешней карточки. Выбранный фон разлит под экраном,
+   а заметки и фото лежат прямо поверх интерфейса. */
+.board-screen{position:relative; isolation:isolate}
+.board-space-bg{
+  position:absolute;
+  z-index:-1;
+  top:58px;
+  right:-18px;
+  bottom:-42px;
+  left:-18px;
+  opacity:.72;
+  pointer-events:none;
+  background-position:center;
+  background-size:cover;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 8%,#000 91%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0,#000 8%,#000 91%,transparent 100%);
+}
+.board-screen .board-head,
+.board-screen .board-actions,
+.board-screen .board-export,
+.board-screen .board-sync-panel{position:relative;z-index:1}
+.board-canvas{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:start;
+  gap:18px;
+  min-height:300px;
+  margin:18px -10px 0;
+  padding:16px 10px 22px;
+  border:0;
+  border-radius:0;
+  background:transparent!important;
+  box-shadow:none;
+  overflow:visible;
+  column-count:unset;
+}
+.board-canvas .tile:nth-child(4n+2){margin-top:12px}
+.board-canvas .tile:nth-child(5n+4){margin-top:-6px}
+.board-empty{
+  border:1px dashed rgba(var(--ink-rgb),.12);
+  border-radius:24px;
+  background:rgba(255,255,255,.46);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+@media(max-width:399px){
+  .boards-hero{margin-left:-22px;margin-right:-22px}
+  .boards-hero figcaption{padding-left:24px;padding-right:24px}
+  .board-canvas{grid-template-columns:1fr;padding:16px 24px 22px}
+  .board-teaser-art{width:106px;height:88px}
+}
+@media(min-width:600px){.board-canvas{grid-template-columns:repeat(3,minmax(0,1fr))}}

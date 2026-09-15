@@ -13,10 +13,11 @@
     "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
     "smoke": "node scripts/smoke.mjs",
     "port": "node scripts/port-clash.mjs",
-    "verify": "npm run check && npm run dom-test && npm run boards-test && npm run ai-test && npm run agents-test && npm run smoke && npm run port",
+    "verify": "npm run check && npm run dom-test && npm run boards-test && npm run tribute-test && npm run ai-test && npm run agents-test && npm run smoke && npm run port",
     "ai-check": "node scripts/ai-check.mjs",
     "ai-test": "node scripts/ai-params-check.mjs",
     "agents-test": "node scripts/agents-mock-check.mjs",
+    "tribute-test": "node scripts/tribute-check.mjs",
     "dom-test": "node --experimental-vm-modules scripts/dom-smoke.mjs",
     "boards-test": "node scripts/boards-test.mjs",
     "browser-test": "node scripts/browser-smoke.mjs"

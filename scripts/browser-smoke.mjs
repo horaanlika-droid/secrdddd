@@ -267,7 +267,7 @@ try {
   await page.getByRole('button',{name:'Добавить на доску',exact:true}).click();
   await page.getByRole('button',{name:'+ Добавить',exact:true}).click();
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:/Фото из галереи/}).click();
-  await (await chooser).setFiles([{name:'rotated-camera.jpg',mimeType:'image/jpeg',buffer:fixture(6)},{name:'memory.webp',mimeType:'image/webp',buffer:await fs.readFile(path.join(ROOT,'app/assets/boards/seaside-keepsakes.webp'))}]);
+  await (await chooser).setFiles([{name:'rotated-camera.jpg',mimeType:'image/jpeg',buffer:fixture(6)},{name:'memory.webp',mimeType:'image/webp',buffer:await fs.readFile(path.join(ROOT,'app/assets/boards/creative-mess.webp'))}]);
   await page.waitForFunction(()=>document.querySelectorAll('.tile-photo img').length===2&&[...document.querySelectorAll('.tile-photo img')].every(img=>img.complete&&img.naturalWidth));
   const gallerySize=await page.locator('.tile-photo img').first().evaluate(img=>[img.naturalWidth,img.naturalHeight]);
   check('gallery batch uploads preserve camera orientation in IndexedDB',()=>assert.deepEqual(gallerySize,[40,80]));
@@ -280,10 +280,10 @@ try {
   check('images survive reload and filter redraw',()=>assert.equal(page.url(),boardRoute));
   await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
-  await page.waitForFunction(()=>document.querySelector('.board-canvas').style.backgroundImage.includes('blob:'));
+  await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
   await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
-  await page.waitForFunction(()=>document.querySelector('.board-canvas').style.backgroundImage.includes('blob:'));
+  await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
   const remainingPhotos=await page.locator('.tile-photo').count();
   check('photo used as background survives deleting its tile and reload',()=>assert.equal(remainingPhotos,1));
   await page.getByRole('button',{name:'+ Добавить',exact:true}).click();await page.getByRole('button',{name:/Гифка/}).click();
