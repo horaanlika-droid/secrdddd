@@ -382,18 +382,45 @@ function mascot(pose, line, sub) {
   );
 }
 
-/* v26: одна неподвижная поза, 17 кадров мимики из единой сетки.
-   Движения тела и прыжка при нажатии нет. При reduced-motion остаётся PNG. */
+/* v27: лицо Дибитишки на главной — текущее настроение.
+   Одна неподвижная поза: тело, руки и капюшон берутся из hello.png, поверх
+   ложится только лицо выбранной эмоции (сетка hero-moods.webp). Движения
+   тела и прыжка при нажатии нет — меняется ровно выражение лица.
+   Последняя подтверждённая отметка — это и есть текущее настроение, поэтому
+   лицо не «обнуляется» утром: оно ждёт новой отметки. Без отметок вовсе —
+   спокойное лицо из hello.png, как раньше. */
+const heroMood = () => {
+  const last = moodEntries()[0];   // свежие записи сверху
+  return Number.isInteger(last?.value) && MOOD_FACES[last.value] ? last.value + 1 : 0;
+};
 function liveMascot() {
-  const wrap = el('div', { class: 'live-mascot', role: 'img', 'aria-label': 'Дибитишка рядом' },
+  const mood = heroMood();         // 0 — спокойное лицо, i + 1 — эмоция i
+  return el('div', {
+    class: 'live-mascot' + (mood ? ' has-mood' : ''), role: 'img',
+    'aria-label': mood ? `Дибитишка рядом · настроение: ${MOODS[mood - 1]}` : 'Дибитишка рядом'
+  },
     el('img', { class: 'live-mascot-base', src: 'assets/mascot/hello.png', alt: '', width: 1024, height: 1024 }),
-    el('span', { class: 'live-mascot-frames', 'aria-hidden': 'true' })
+    el('span', {
+      class: 'live-mascot-face' + (mood ? ' mood-in' : ''), 'aria-hidden': 'true',
+      style: `--face-x:${(mood % 4) * 100 / 3}%; --face-y:${Math.floor(mood / 4) * 50}%`
+    })
   );
-  // Ни пустого кадра, ни мигания PNG → сетка на медленном соединении.
-  const preload = new Image();
-  preload.onload = () => wrap.classList.add('frames-ready');
-  preload.src = 'assets/mascot/hero-expressions.webp';
-  return wrap;
+}
+/* Человек только что отметил эмоцию, а главная уже нарисована: обновляем лицо
+   на месте. Полная перерисовка тут вредна — она сбрасывает черновик заметки и
+   прокрутку, а выражение лица должно меняться сразу. */
+function refreshHeroMood(root) {
+  const wrap = root?.querySelector('.live-mascot');
+  const face = wrap?.querySelector('.live-mascot-face');
+  if (!wrap || !face) return;
+  const mood = heroMood();
+  wrap.classList.toggle('has-mood', !!mood);
+  wrap.setAttribute('aria-label', mood ? `Дибитишка рядом · настроение: ${MOODS[mood - 1]}` : 'Дибитишка рядом');
+  face.style.setProperty('--face-x', `${(mood % 4) * 100 / 3}%`);
+  face.style.setProperty('--face-y', `${Math.floor(mood / 4) * 50}%`);
+  face.classList.remove('mood-in');
+  void face.offsetWidth;                       // перезапуск проявления лица
+  if (mood) face.classList.add('mood-in');
 }
 
 const mline = (key) => pick(CONTENT.meta.mascot_lines[key] || ['…'], daySeed() + key.length);
@@ -882,6 +909,7 @@ function screenToday() {
       haptic('success');
       toast('Запись сохранена. Спасибо, что замечаешь себя.');
       refreshDraft(true);
+      refreshHeroMood(scr);          // лицо Дибитишки меняется сразу после отметки
       const goal = scr.querySelector('.daily-mood-status');
       if (goal) goal.textContent = doneCount >= 1 ? 'Настроение отмечено · цель собрана' : 'Настроение отмечено · ещё один бережный шаг';
     } catch (err) {
@@ -941,7 +969,7 @@ function screenToday() {
     el('div', { class: 'poster-copy wide' },
       el('h3', {}, 'Поговорить с Дибитишкой'),
       el('p', {}, 'Совет в трудный момент и напоминание, кто ты — из твоих же записей.'),
-      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('chat') }, 'Открыть чат', el('span', { class: 'arr' }, '→'))
+      el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => go('chat') }, 'Пережить вместе', el('span', { class: 'arr' }, '→'))
     ),
     el('img', { class: 'poster-mascot', src: 'assets/mascot/hug.png', alt: 'Дибитишка' })
   ));

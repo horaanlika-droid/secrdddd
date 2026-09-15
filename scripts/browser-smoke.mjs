@@ -13,6 +13,8 @@ import jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ART = path.join(ROOT, 'test-results/ui'); await fs.mkdir(ART, { recursive: true });
+/* Геометрия лица внутри позы: по ней проверяем, что в кадре меняется только лицо. */
+const moodAtlas = JSON.parse(await fs.readFile(path.join(ROOT, 'app/assets/mascot/hero-moods.json'), 'utf8'));
 const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.webp':'image/webp', '.jpg':'image/jpeg' };
 const server = http.createServer(async (req,res) => {
   const url = new URL(req.url,'http://x');
@@ -48,15 +50,35 @@ function fixture(orientation=6) {
 try {
   browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{}),args:['--no-sandbox','--disable-dev-shm-usage','--no-zygote']});
   const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1,acceptDownloads:true});
-  const errors=[],missing=[],faceRequests=[];
+  const errors=[],missing=[],faceRequests=[],moodAtlasRequests=[];
   page.on('request',r=>{if(r.url().includes('/assets/mascot/faces/'))faceRequests.push(r.url());});
+  page.on('request',r=>{if(r.url().includes('/assets/mascot/hero-moods.webp'))moodAtlasRequests.push(r.url());});
   page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400&&r.url().startsWith(origin))missing.push(`${r.status()} ${r.url()}`);});
   await page.route('https://telegram.org/**',route=>route.abort());
   await page.route('https://media.tenor.com/**',route=>route.fulfill({contentType:'image/gif',body:Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64'),headers:{'Access-Control-Allow-Origin':'*'}}));
   await page.addInitScript(()=>{if(!localStorage.getItem('dibitishka.v1'))localStorage.setItem('dibitishka.v1',JSON.stringify({onboarded:true,trial_started_at:Date.now(),mood_schema:2}));});
   await page.goto(origin,{waitUntil:'networkidle'});
   await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
-  await page.locator('.live-mascot.frames-ready').waitFor();
+  await page.locator('.live-mascot').waitFor();
+  /* Пиксельная проверка обещания «меняется только выражение лица»: снимаем
+     персонажа целиком, ищем прямоугольник различий и сравниваем тело. */
+  const heroShot=async()=>PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
+  const diffBox=(a,b)=>{let box=null;for(let y=0;y<a.height;y++)for(let x=0;x<a.width;x++){const i=(y*a.width+x)*4;
+    if(a.data[i]!==b.data[i]||a.data[i+1]!==b.data[i+1]||a.data[i+2]!==b.data[i+2]||a.data[i+3]!==b.data[i+3])
+      box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};}return box;};
+  const heroState=async()=>page.locator('.live-mascot').evaluate(node=>{const r=node.getBoundingClientRect(),face=node.querySelector('.live-mascot-face');
+    return {hasMood:node.classList.contains('has-mood'),label:node.getAttribute('aria-label'),faceDisplay:getComputedStyle(face).display,
+      faceX:face.style.getPropertyValue('--face-x'),faceY:face.style.getPropertyValue('--face-y'),base:node.querySelector('img').getAttribute('src'),
+      rect:{x:r.x,y:r.y,w:r.width,h:r.height},transform:getComputedStyle(node).transform};});
+  const calm=await heroState();
+  const calmPixels=await heroShot();
+  check('hero starts as the calm hello.png: no mood yet, no atlas download',()=>{
+    assert.equal(calm.hasMood,false);
+    assert.equal(calm.faceDisplay,'none');
+    assert(calm.base.includes('hello.png'));
+    assert(!calm.label.includes('настроение:'));
+    assert.deepEqual(moodAtlasRequests,[]);
+  });
   const boxes=await page.locator('.mood').evaluateAll(nodes=>nodes.map(n=>({w:n.offsetWidth,h:n.offsetHeight,head:n.querySelector('.chip-face').offsetWidth})));
   const backgrounds=await page.locator('.chip-face').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n).backgroundImage));
   check('all emotion heads load from one shared image',()=>{
@@ -72,22 +94,44 @@ try {
   await page.getByRole('button',{name:'Оставить запись',exact:true}).click();
   const after=await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries);
   check('browser: confirm saves chosen emotion and note together',()=>{assert.equal(after.length,1);assert.equal(after[0].note,'Полароид и море');});
+  const mood=await heroState();
+  const moodPixels=await heroShot();
+  check('hero face changes right after the mood is confirmed (no reload)',()=>{
+    assert.equal(mood.hasMood,true);
+    assert.equal(mood.faceDisplay,'block');
+    assert(mood.label.includes('Радостно'),mood.label);
+    assert.equal(mood.faceX,'100%');            // «Радостно» → ячейка 7 сетки 4×3
+    assert.equal(mood.faceY,'50%');
+    assert.equal(moodAtlasRequests.length,1);   // одна загрузка сетки лиц, не на каждую эмоцию
+    assert(moodAtlasRequests[0].endsWith('/assets/mascot/hero-moods.webp'));
+  });
+  check('hero never moves, scales or sways when the expression changes',()=>{
+    assert.equal(mood.transform,'none');
+    assert.deepEqual(mood.rect,calm.rect);
+  });
+  check('only the face pixels change: body, hood and hands stay identical',()=>{
+    const face=moodAtlas.box, scale=mood.rect.w/1024, slack=3;
+    const box={x0:Math.floor(face[0]*scale)-slack,y0:Math.floor(face[1]*scale)-slack,
+      x1:Math.ceil(face[2]*scale)+slack,y1:Math.ceil(face[3]*scale)+slack};
+    const diff=diffBox(calmPixels,moodPixels);
+    assert(diff,'the mood face is actually rendered');
+    assert(diff.x0>=box.x0&&diff.y0>=box.y0&&diff.x1<=box.x1&&diff.y1<=box.y1,JSON.stringify({diff,box}));
+    const start=Math.min(calmPixels.height,box.y1+1)*calmPixels.width*4;
+    assert(calmPixels.data.subarray(start).equals(moodPixels.data.subarray(start)),'body below the face is pixel-identical');
+  });
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   const reloaded = await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries);
   check('browser: confirmation persists through reload',()=>assert.deepEqual(reloaded,after));
-  await page.locator('.live-mascot').scrollIntoViewIfNeeded();
-  const positions=[], bodies=[], faces=[];
-  for(const ms of [0,2500,2600,4500,5000,6600,7999]) {
-    await page.locator('.live-mascot-frames').evaluate((node,time)=>{const animation=node.getAnimations()[0];animation.pause();animation.currentTime=time;},ms);
-    const info=await page.locator('.live-mascot').evaluate(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,transform:getComputedStyle(node).transform};});positions.push(info);
-    const pixels=PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'allow'}));
-    const start=Math.floor(pixels.height*.65)*pixels.width*4; bodies.push(pixels.data.subarray(start));faces.push(pixels.data.subarray(0,start));
-  }
-  check('hero never moves, scales or sways during the expression cycle',()=>assert(positions.every(p=>p.transform==='none'&&JSON.stringify(p)===JSON.stringify(positions[0]))));
-  check('hero body stays pixel-identical while expressions change',()=>{assert(bodies.every(b=>b.equals(bodies[0])));assert(faces.some(f=>!f.equals(faces[0])));});
+  const afterReload=await heroState();
+  check('hero face survives reload: it comes from the diary, not from one render',()=>{
+    assert.equal(afterReload.hasMood,true);
+    assert(afterReload.label.includes('Радостно'));
+    assert.equal(afterReload.faceX,'100%');
+  });
   await page.emulateMedia({reducedMotion:'reduce'});
-  const reduced=await page.locator('.live-mascot').evaluate(node=>({base:getComputedStyle(node.querySelector('img')).visibility,frames:getComputedStyle(node.querySelector('span')).display}));
-  check('reduced motion shows one still frame',()=>assert.deepEqual(reduced,{base:'visible',frames:'none'}));
+  const reduced=await page.evaluate(()=>({running:document.querySelector('.live-mascot').getAnimations({subtree:true}).length,
+    face:getComputedStyle(document.querySelector('.live-mascot-face')).display,base:document.querySelector('.live-mascot-base').naturalWidth}));
+  check('reduced motion: still mood face, nothing animating',()=>{assert.equal(reduced.running,0);assert.equal(reduced.face,'block');assert(reduced.base>0);});
   await page.emulateMedia({reducedMotion:'no-preference'});
   // Both native bitmap decoding and the explicit EXIF fallback: all 8 orientations.
   for(const fallback of [false,true]) for(let orientation=1;orientation<=8;orientation++) {

@@ -877,23 +877,26 @@ html{color-scheme: light}
 .mood-axis-face{width:30px; height:30px}
 .ric .ric-face{width:34px; height:34px}
 
-/* ---------- мимика без плавания: неизменные положение, размер и силуэт ---------- */
+/* ---------- лицо = настроение: неизменные положение, размер и силуэт ---------- */
 .hero-mascot-wrap .live-mascot{position:relative; width:min(68vw,310px,38dvh); aspect-ratio:1;
   filter:drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(var(--accent-rgb),.32));
   animation:none; transform:none}
 .live-mascot-base{display:block; width:100%; height:100%; object-fit:contain}
-.live-mascot-frames{position:absolute; inset:0; display:none;
-  background-image:url('../assets/mascot/hero-expressions.webp'); background-size:500% 400%;
-  background-repeat:no-repeat; background-position:0 0; clip-path:inset(35% 29% 45% 36%)}
-/* Тело всегда берём из одного PNG: даже субпиксельная выборка соседних ячеек
-   сетки не может сдвинуть контур. Поверх него видны только глаза и рот. */
-.frames-ready .live-mascot-base{visibility:visible}
-.frames-ready .live-mascot-frames{display:block; animation:heroExpressionFrames 8s steps(1,end) infinite}
+/* Слой лица: ячейка сетки hero-moods.webp ровно по контуру лица в позе
+   (геометрия — app/css/hero-moods.css). В ячейке только лицо, всё остальное
+   прозрачно, поэтому ни маска, ни clip-path не нужны: капюшон и плечи берутся
+   из hello.png и не могут сдвинуться или «поехать» вместе с выражением. */
+.live-mascot-face{position:absolute; display:none; pointer-events:none;
+  background-image:url('../assets/mascot/hero-moods.webp'); background-repeat:no-repeat;
+  background-size:400% 300%; background-position:var(--face-x,0%) var(--face-y,0%)}
+.live-mascot.has-mood .live-mascot-face{display:block}
 .hero-mascot-wrap::before{animation:none; transform:none}
-@media (prefers-reduced-motion:reduce){
-  .frames-ready .live-mascot-base{visibility:visible}
-  .frames-ready .live-mascot-frames{display:none}
+/* Единственная анимация — проявление лица: выражение меняется мягко, без
+   движения тела. При reduced-motion лицо просто появляется сразу. */
+@media (prefers-reduced-motion:no-preference){
+  .live-mascot-face.mood-in{animation:moodFaceIn .8s ease-out both}
 }
+@keyframes moodFaceIn{from{opacity:0}to{opacity:1}}
 
 /* ---------- навыки: милые папки ---------- */
 /* Раздел = папка: свой цвет, своё лицо на обложке, прогресс внутри. */

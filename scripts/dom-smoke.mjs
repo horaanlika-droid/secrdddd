@@ -87,6 +87,17 @@ try {
   });
   check('note is above the mood choices',()=>assert(q('.mood-note-wrap').compareDocumentPosition(q('.mood-chips')) & w.Node.DOCUMENT_POSITION_FOLLOWING));
   check('confirmation initially disabled, no share button',()=>{assert(q('.mood-confirm').disabled);assert(!current.textButton('Поделиться'));});
+  check('hero keeps the calm face until a mood is saved',()=>{
+    const mascot=q('.live-mascot');
+    assert(mascot,'hero mascot renders');
+    assert(!mascot.classList.contains('has-mood'));
+    assert(mascot.querySelector('.live-mascot-base').src.includes('assets/mascot/hello.png'));
+    assert.equal(mascot.getAttribute('aria-label'),'Дибитишка рядом');
+  });
+  check('home chat button is renamed to «Пережить вместе»',()=>{
+    assert([...w.document.querySelectorAll('button')].some(b=>b.textContent.includes('Пережить вместе')));
+    assert(![...w.document.querySelectorAll('button')].some(b=>b.textContent.includes('Открыть чат')));
+  });
   const startScales = state().game?.scales;
   input(q('#mood-note'),'Слышу море');
   qa('.mood')[1].click(); qa('.mood')[6].click(); qa('.mood')[8].click();
@@ -99,6 +110,16 @@ try {
   const submit = q('.mood-confirm'); submit.click(); submit.click();
   check('confirmation saves one combined entry, double click does not duplicate',()=>{assert.equal(state().mood_entries.length,1);assert.equal(state().mood_entries[0].value,8);assert.equal(state().mood_entries[0].note,'Слышу море');});
   check('successful submit clears draft and disarms button',()=>{assert.equal(q('#mood-note').value,'');assert.equal(qa('.mood.on').length,0);assert(q('.mood-confirm').disabled);assert(q('.daily-mood-status').textContent.includes('Настроение отмечено'));});
+  check('hero face follows the saved mood',()=>{
+    const mascot=q('.live-mascot'),face=mascot.querySelector('.live-mascot-face');
+    // эмоция i лежит в ячейке i+1 сетки 4×3: столбцы 0/33.3/66.7/100%, ряды 0/50/100%
+    const cell=mood=>{const i=mood+1;return{x:(i%4)*100/3,y:Math.floor(i/4)*50};};
+    assert(mascot.classList.contains('has-mood'));
+    assert.equal(parseFloat(face.style.getPropertyValue('--face-x')),cell(8).x);   // «Непонятно» → ячейка 9
+    assert.equal(parseFloat(face.style.getPropertyValue('--face-y')),cell(8).y);
+    assert(face.classList.contains('mood-in'));
+    assert(mascot.getAttribute('aria-label').includes('Непонятно'));
+  });
   qa('.mood')[8].click(); q('.mood-confirm').click();
   check('same emotion can be confirmed again; note is optional',()=>{assert.equal(state().mood_entries.length,2);assert(!state().mood_entries[1].note);});
   input(q('#mood-note'),'Не теряй черновик'); qa('.mood')[0].click();
@@ -163,6 +184,15 @@ try {
   current.dom.window.close();
   current=await app({mood_schema:1,mood_entries:[0,1,2,3,4].map((value,i)=>({ts:Date.now()-i*1000,value}))});
   check('legacy five-state mood migration preserves meaning',()=>assert.deepEqual(current.state().mood_entries.map(e=>e.value),[0,2,3,4,6]));
+  current.dom.window.close();
+  current=await app({mood_entries:[{ts:Date.now()-3*86400000,value:1}]});
+  check('hero keeps the last mood even when it arrived three days ago',()=>{
+    const mascot=current.q('.live-mascot'),face=mascot.querySelector('.live-mascot-face');
+    assert(mascot.classList.contains('has-mood'));
+    assert.equal(parseFloat(face.style.getPropertyValue('--face-x')),(2%4)*100/3);  // «Грустно» → ячейка 2
+    assert.equal(parseFloat(face.style.getPropertyValue('--face-y')),0);
+    assert(mascot.getAttribute('aria-label').includes('Грустно'));
+  });
   current.dom.window.close();
   current=await app({}, {privateMode:true});
   await current.go('board/'+current.boards()[0].id);
