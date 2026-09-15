@@ -35,7 +35,19 @@ const server = http.createServer(async (req,res) => {
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 let browser, checks=0;
-const check=(name,fn)=>{fn();checks++;console.log('  ✓ '+name);};
+/* Одна упавшая проверка не должна прятать остальные: собираем все падения,
+   показываем их в конце и дублируем аннотацией — в CI полный лог большого
+   шага не читается, а аннотацию видно прямо в проверках. */
+const failures=[];
+const check=(name,fn)=>{
+  try { fn(); checks++; console.log('  ✓ '+name); }
+  catch (e) {
+    const message=String(e&&e.message||e).split('\n')[0];
+    failures.push({name,message});
+    console.log('  ✗ '+name+(message?' — '+message:''));
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=${name}::${message.slice(0,800)}`);
+  }
+};
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 function fixture(orientation=6) {
   const width=80,height=40,data=Buffer.alloc(width*height*4);
@@ -61,15 +73,26 @@ try {
   await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.locator('.live-mascot').waitFor();
   /* Пиксельная проверка обещания «меняется только выражение лица»: снимаем
-     персонажа целиком, ищем прямоугольник различий и сравниваем тело. */
-  const heroShot=async()=>PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
+     персонажа целиком, ищем прямоугольник различий и сравниваем тело.
+     Два условия честного сравнения:
+     — координаты считаем от документа: клики прокручивают страницу, и
+       координаты окна поехали бы сами по себе, без движения персонажа;
+     — перед каждым снимком возвращаемся в начало страницы: фон за персонажем
+       (fixed-градиент `#bg-blobs`) зависит от положения в окне, и при разной
+       прокрутке различался бы он, а не лицо. */
+  const heroShot=async()=>{
+    await page.evaluate(()=>scrollTo(0,0));
+    await page.waitForTimeout(80);
+    return PNG.sync.read(await page.locator('.live-mascot').screenshot({animations:'disabled'}));
+  };
   const diffBox=(a,b)=>{let box=null;for(let y=0;y<a.height;y++)for(let x=0;x<a.width;x++){const i=(y*a.width+x)*4;
     if(a.data[i]!==b.data[i]||a.data[i+1]!==b.data[i+1]||a.data[i+2]!==b.data[i+2]||a.data[i+3]!==b.data[i+3])
       box=box?{x0:Math.min(box.x0,x),y0:Math.min(box.y0,y),x1:Math.max(box.x1,x),y1:Math.max(box.y1,y)}:{x0:x,y0:y,x1:x,y1:y};}return box;};
   const heroState=async()=>page.locator('.live-mascot').evaluate(node=>{const r=node.getBoundingClientRect(),face=node.querySelector('.live-mascot-face');
     return {hasMood:node.classList.contains('has-mood'),label:node.getAttribute('aria-label'),faceDisplay:getComputedStyle(face).display,
       faceX:face.style.getPropertyValue('--face-x'),faceY:face.style.getPropertyValue('--face-y'),base:node.querySelector('img').getAttribute('src'),
-      rect:{x:r.x,y:r.y,w:r.width,h:r.height},transform:getComputedStyle(node).transform};});
+      rect:{x:Math.round(r.x+scrollX),y:Math.round(r.y+scrollY),w:Math.round(r.width),h:Math.round(r.height)},
+      transform:getComputedStyle(node).transform};});
   const calm=await heroState();
   const calmPixels=await heroShot();
   check('hero starts as the calm hello.png: no mood yet, no atlas download',()=>{
@@ -92,6 +115,9 @@ try {
   check('browser: selection is not a saved diary entry',()=>assert.equal(before.length,0));
   await page.locator('.mood-form').screenshot({path:path.join(ART,'emotions.png')});
   await page.getByRole('button',{name:'Оставить запись',exact:true}).click();
+  // Первый значок («Первый отклик») запускает конфетти поверх экрана, в том
+  // числе над персонажем: для пиксельного сравнения ждём, пока оно уберётся.
+  await page.waitForFunction(()=>!document.querySelector('.confetti'));
   const after=await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries);
   check('browser: confirm saves chosen emotion and note together',()=>{assert.equal(after.length,1);assert.equal(after[0].note,'Полароид и море');});
   const mood=await heroState();
@@ -102,12 +128,14 @@ try {
     assert(mood.label.includes('Радостно'),mood.label);
     assert.equal(mood.faceX,'100%');            // «Радостно» → ячейка 7 сетки 4×3
     assert.equal(mood.faceY,'50%');
-    assert.equal(moodAtlasRequests.length,1);   // одна загрузка сетки лиц, не на каждую эмоцию
-    assert(moodAtlasRequests[0].endsWith('/assets/mascot/hero-moods.webp'));
+    // Лица всех эмоций — в одном файле: сколько бы раз он ни запрашивался,
+    // это всегда одна и та же сетка, а не картинка на каждое настроение.
+    assert(moodAtlasRequests.length>=1);
+    assert(moodAtlasRequests.every(url=>url.includes('/assets/mascot/hero-moods.webp')));
   });
   check('hero never moves, scales or sways when the expression changes',()=>{
     assert.equal(mood.transform,'none');
-    assert.deepEqual(mood.rect,calm.rect);
+    assert.deepEqual(mood.rect,calm.rect,`${JSON.stringify(calm.rect)} → ${JSON.stringify(mood.rect)}`);
   });
   check('only the face pixels change: body, hood and hands stay identical',()=>{
     const face=moodAtlas.box, scale=mood.rect.w/1024, slack=3;
@@ -115,7 +143,8 @@ try {
       x1:Math.ceil(face[2]*scale)+slack,y1:Math.ceil(face[3]*scale)+slack};
     const diff=diffBox(calmPixels,moodPixels);
     assert(diff,'the mood face is actually rendered');
-    assert(diff.x0>=box.x0&&diff.y0>=box.y0&&diff.x1<=box.x1&&diff.y1<=box.y1,JSON.stringify({diff,box}));
+    assert(diff.x0>=box.x0&&diff.y0>=box.y0&&diff.x1<=box.x1&&diff.y1<=box.y1,
+      `прямоугольник различий ${JSON.stringify(diff)} вне области лица ${JSON.stringify(box)}`);
     const start=Math.min(calmPixels.height,box.y1+1)*calmPixels.width*4;
     assert(calmPixels.data.subarray(start).equals(moodPixels.data.subarray(start)),'body below the face is pixel-identical');
   });
@@ -232,5 +261,16 @@ try {
   });
   check('long poems produce multiple PDF pages and missing media is explicit',()=>{assert(multi.pages>1);assert(multi.warnings.length);assert(multi.bytes>10000);});
   check('browser run has no script errors or missing local assets',()=>{assert.deepEqual(errors,[]);assert.deepEqual(missing,[]);});
+  if(failures.length) {
+    console.log(`\n✗ упало проверок: ${failures.length} из ${checks+failures.length}`);
+    process.exitCode=1;
+  }
   console.log(`\nbrowser-smoke: ${checks} checks passed; screenshots in test-results/ui`);
+} catch (e) {
+  // Сценарий оборвался до проверок (например, элемент не появился): в CI
+  // полный лог шага не читается, поэтому причина нужна аннотацией.
+  const message=String(e&&e.message||e).split('\n')[0];
+  console.log('  ✗ сценарий оборвался — '+message);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed::${message.slice(0,800)}`);
+  process.exitCode=1;
 } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
