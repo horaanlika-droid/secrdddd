@@ -113,12 +113,12 @@ a{color:inherit}
   background:radial-gradient(circle at 55% 55%, rgba(var(--blob-b),.6), transparent 60%)}
 /* dark blobs disabled */
 
-/* ---------- splash: только персонаж, без текстового логотипа ---------- */
+/* ---------- splash: постер IMG_1026 + шкала загрузки снизу ---------- */
 #splash{
+  --splash-ms: 3.2s;
   position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
-  background:
-    radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.9), transparent 70%),
-    linear-gradient(180deg, var(--page-1) 0%, var(--page-2) 55%, var(--page-3) 100%);
+  overflow:hidden;
+  background:#E8F3FF; /* небо постера — одинаково в обеих палитрах */
   transition:opacity .45s ease, visibility .45s;
 }
 /* dark splash disabled */
@@ -709,12 +709,8 @@ a{color:inherit}
 .splash-inner{gap:16px}
 
 /* ---------- splash logo clean (v33: logo-clean.png — маскот с надписью, без «app by») ---------- */
-/* Чистый локап: те же маскот и надпись «ДИБИТИШКА», но без строки
-   «app by @stonym0ntana» под ними. Внешний фон снят в альфа-канал
-   (scripts/cut_bg.py --white --adj-rounds 1600), поэтому на прелоаде нет
-   белой плашки. Пропорции 800×347 шире прошлого локапа (914×537) — картинка
-   берёт больше ширины, а высота колонки остаётся дыхательной. Точки под
-   надписью живые — анимированные .splash-dots. */
+/* Чистый локап остаётся в brand/ для героя и запасных композиций.
+   Прелоад с v37 — полноэкранный постер splash-1026.webp. */
 .splash-logo-clean{position:relative; width:min(88vw, 400px); height:auto; display:block;
   background:none; border:0; border-radius:0; box-shadow:none;
   filter:drop-shadow(0 12px 28px rgba(var(--accent-rgb),.18));
@@ -722,6 +718,40 @@ a{color:inherit}
 @media (max-height:620px){
   .splash-logo-clean{width:min(70vw, 320px)}
 }
+
+/* Постер IMG_1026 на весь экран. object-fit:contain — слово и маскот
+   не обрезаются на высоких телефонах; поля залиты цветом неба постера. */
+.splash-poster{
+  position:absolute; inset:0; width:100%; height:100%; max-width:none;
+  object-fit:contain; object-position:center; pointer-events:none;
+}
+/* Шкала как .xp-track / .xp-fill: пилюля 12px, акцент-градиент, блик xpShimmer.
+   Анимация только при no-preference; иначе полоска сразу полная. */
+.splash-bar{
+  position:absolute; z-index:2; left:22px; right:22px;
+  bottom:calc(env(safe-area-inset-bottom, 0px) + 22px);
+  height:12px; border-radius:999px; background:var(--line-2); overflow:hidden;
+}
+.splash-bar i{
+  display:block; height:100%; width:100%; border-radius:inherit;
+  transform-origin:left center; transform:scaleX(1);
+  background:linear-gradient(90deg, rgba(var(--accent-glow),1), var(--accent) 60%, var(--accent-deep));
+  box-shadow:0 0 14px rgba(var(--accent-rgb),.5);
+  position:relative; overflow:hidden;
+}
+@media (prefers-reduced-motion: no-preference){
+  .splash-bar i{
+    transform:scaleX(0);
+    animation:splashBarFill var(--splash-ms) cubic-bezier(.22,.9,.3,1) forwards;
+  }
+  .splash-bar i::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(105deg, transparent 20%, rgba(255,255,255,.82) 46%, transparent 72%);
+    transform:translateX(-130%);
+    animation:xpShimmer 3.2s ease-in-out infinite;
+  }
+}
+@keyframes splashBarFill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 
 @media (max-width:420px){
   .hero-brand{width:min(88%, 300px)}
@@ -777,9 +807,8 @@ html{color-scheme: light}
   --tint-leaf:#F7F0E7; --tint-grass:#F4F1E6;
 }
 
-/* розовое небо на прелоадинге и под экраном */
-:root[data-palette="pink"] #bg-blobs,
-:root[data-palette="pink"] #splash{
+/* розовое небо под экраном; прелоад всегда в небе постера 1026 */
+:root[data-palette="pink"] #bg-blobs{
   background:
     radial-gradient(90% 34% at 50% 0%, rgba(255,255,255,.94), transparent 70%),
     linear-gradient(180deg, var(--page-1) 0%, var(--page-2) 50%, var(--page-3) 100%);

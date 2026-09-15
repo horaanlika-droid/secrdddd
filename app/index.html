@@ -10,28 +10,23 @@
 <title>Дибитишка</title>
 <link rel="icon" type="image/png" href="assets/mascot/icon.png">
 <link rel="apple-touch-icon" href="assets/mascot/icon.png">
-<link rel="stylesheet" href="css/app.css?v=35-inapp-pay-privacy">
-<link rel="preload" as="image" href="assets/brand/logo-clean.png" fetchpriority="high">
+<link rel="stylesheet" href="css/app.css?v=37-splash-1026">
+<link rel="preload" as="image" href="assets/brand/splash-1026.webp" fetchpriority="high">
 <link rel="stylesheet" href="css/hero-moods.css?v=28">
 <script src="config.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
 <div id="splash" aria-hidden="true">
-  <div class="splash-inner">
-    <!-- Чистый локап (v33): маскот + надпись «ДИБИТИШКА» без строки
-         «app by @stonym0ntana». Фон снаружи вырезан в альфа-канал
-         (scripts/cut_bg.py), так что на градиентном прелоаде нет ни белой
-         плашки, ни подложки. Точки под надписью живые — .splash-dots. -->
-    <img class="splash-logo-clean" src="assets/brand/logo-clean.png" alt="Дибитишка" width="800" height="347" fetchpriority="high">
-    <div class="splash-tagline">Бережно · шаг за шагом · рядом</div>
-    <div class="splash-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-  </div>
+  <!-- Постер IMG_1026: локап, подпись by @vasmedoljno и маскот с dbt diary.
+       Держим ~3.2 с, чтобы успеть рассмотреть. Снизу — шкала в стиле XP. -->
+  <img class="splash-poster" src="assets/brand/splash-1026.webp" alt="Дибитишка" width="768" height="1376" fetchpriority="high">
+  <div class="splash-bar" aria-hidden="true"><i></i></div>
 </div>
 <div id="bg-blobs" aria-hidden="true"><i class="b1"></i><i class="b2"></i></div>
 <main id="app" aria-live="polite"></main>
 <div id="sheet-root"></div>
 <nav id="tabbar" hidden></nav>
-<script type="module" src="js/app.js?v=35-inapp-pay-privacy"></script>
+<script type="module" src="js/app.js?v=37-splash-1026"></script>
 </body>
 </html>
