@@ -53,6 +53,12 @@ const check=(name,fn)=>{
   }
 };
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
+/* Хлебные крошки сценария: логи шага в CI не скачиваются, а аннотацию видно.
+   Если сценарий оборвётся, в заголовке аннотации будет последний шаг, а в
+   тексте — первые строки ошибки Playwright вместе с «Call log» (какой именно
+   локатор чего ждал). Без этого падение браузерного прогона непроверяемо. */
+const trace=[];
+const step=label=>{trace.push(label);if(trace.length>10)trace.shift();};
 function fixture(orientation=6) {
   const width=80,height=40,data=Buffer.alloc(width*height*4);
   for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
@@ -79,6 +85,7 @@ try {
   await page.goto(origin,{waitUntil:'networkidle'});
   await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.locator('.live-mascot').waitFor();
+  step('boot');
   /* Пиксельная проверка обещания «меняется только выражение лица»: снимаем
      персонажа целиком, ищем прямоугольник различий и сравниваем тело.
      Чтобы сравнивать именно персонажа, а не фон:
@@ -151,6 +158,7 @@ try {
     assert(backgrounds.every(background=>background.includes('/faces/sprite.webp')));
   });
   check('compact emotion controls keep accessible tap targets',()=>assert(boxes.every(b=>b.h<=74&&b.h>=44&&b.w>=44&&b.head===34)));
+  step('mood:draft');
   await page.locator('#mood-note').fill('Полароид и море');await page.locator('.mood').nth(6).click();
   const before=await page.evaluate(()=>JSON.parse(localStorage.getItem('dibitishka.v1')).mood_entries||[]);
   check('browser: selection is not a saved diary entry',()=>assert.equal(before.length,0));
@@ -260,15 +268,18 @@ try {
   }
   await page.goto(origin+'/#/boards');await page.locator('.boards-hero img').waitFor();
   await page.screenshot({path:path.join(ART,'boards.png'),fullPage:true});
+  step('boards:create');
   await page.getByRole('button',{name:'+ Новая доска',exact:true}).click();
   await page.getByRole('textbox',{name:'Название доски',exact:true}).fill('Море и маленькие радости');
   await page.getByRole('button',{name:'Создать',exact:true}).click();
+  step('boards:note');
   await page.getByRole('button',{name:'+ Добавить',exact:true}).click();
   await page.getByRole('button',{name:/Заметка, стихи, мысль/}).click();await page.waitForTimeout(450);
   await page.getByRole('textbox',{name:'Текст заметки',exact:true}).fill('Море шумит.\nА я могу просто быть.');
   await page.locator('.sheet.on .board-input').fill('море, тепло');
   await page.getByRole('button',{name:'Добавить на доску',exact:true}).click();
   await page.getByRole('button',{name:'+ Добавить',exact:true}).click();
+  step('boards:photo');
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:/Фото из галереи/}).click();
   await (await chooser).setFiles([{name:'rotated-camera.jpg',mimeType:'image/jpeg',buffer:fixture(6)},{name:'memory.webp',mimeType:'image/webp',buffer:await fs.readFile(path.join(ROOT,'app/assets/boards/creative-mess.webp'))}]);
   await page.waitForFunction(()=>document.querySelectorAll('.tile-photo img').length===2&&[...document.querySelectorAll('.tile-photo img')].every(img=>img.complete&&img.naturalWidth));
@@ -281,28 +292,35 @@ try {
   await page.locator('.board-search').fill('');
   await page.waitForFunction(()=>document.querySelectorAll('.tile-photo img').length===2&&[...document.querySelectorAll('.tile-photo img')].every(img=>img.naturalWidth));
   check('images survive reload and filter redraw',()=>assert.equal(page.url(),boardRoute));
+  step('boards:tile-bg');
   await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
+  step('boards:tile-remove');
   await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
   const remainingPhotos=await page.locator('.tile-photo').count();
   check('photo used as background survives deleting its tile and reload',()=>assert.equal(remainingPhotos,1));
+  step('boards:gif');
   await page.getByRole('button',{name:'+ Добавить',exact:true}).click();await page.getByRole('button',{name:/Гифка/}).click();
   await page.getByRole('searchbox',{name:'Поиск GIF',exact:true}).fill('море');await page.getByRole('button',{name:'Найти',exact:true}).click();
   await page.locator('.gif-result').first().click();await page.getByRole('button',{name:'Добавить на доску',exact:true}).click();
   await page.locator('.tile-gif img').waitFor();
+  step('boards:export-sheet');
   await page.getByRole('button',{name:'Сохранить и распечатать',exact:true}).click();
   await page.getByRole('button',{name:'Скачать PDF',exact:true}).waitFor({timeout:30000});
+  step('export:pdf-click');
   const pdfDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Скачать PDF',exact:true}).click();
   const pdfPath=await (await pdfDownload).path(), pdf=await fs.readFile(pdfPath);
   check('PDF is a real printable file',()=>{assert.equal(pdf.subarray(0,8).toString(),'%PDF-1.4');assert(pdf.includes(Buffer.from('startxref')));assert(pdf.length>10000);});
+  step('export:png-click');
   const pngDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Скачать PNG',exact:true}).click();
   const pngPath=await (await pngDownload).path(), png=PNG.sync.read(await fs.readFile(pngPath));
   check('PNG exports an actual high-resolution board',()=>{assert.equal(png.width,1200);assert.equal(png.height,1697);});
   await fs.copyFile(pngPath,path.join(ART,'board-export.png'));await fs.copyFile(pdfPath,path.join(ART,'board-export.pdf'));
   await page.keyboard.press('Escape');await page.waitForTimeout(400);
+  step('boards:long-note');
   // Long notes at maximum tilt: no clipping at the board boundary.
   await page.evaluate(()=>{
     const key='dibitishka.boards.v1.guest';const boards=JSON.parse(localStorage.getItem(key));const b=boards.find(b=>b.title==='Море и маленькие радости');
@@ -315,6 +333,7 @@ try {
     await page.setViewportSize({width,height:900});
     // 'install' последним: в v40 это не экран, а лист поверх «Сегодня» — пусть он откроется в самом конце прогона
     for(const route of ['', 'skills','profile','boards',boardRoute.split('#/')[1],'install']) {
+      step(`layout:${width}:${route||'home'}`);
       await page.goto(origin+'/#/'+route,{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});
@@ -325,6 +344,7 @@ try {
       }
     }
   }
+  step('export:multipage');
   const multi = await page.evaluate(async()=>{
     const { renderBoardPages, boardPdf } = await import('/js/board-export.js');
     const b = JSON.parse(localStorage.getItem('dibitishka.boards.v1.guest')).find(b=>b.title==='Море и маленькие радости');
@@ -346,6 +366,7 @@ try {
   await hintPage.route('https://telegram.org/**',route=>route.abort());
   // Состояние не перезаписываем на каждой навигации: «Позже» должно пережить переходы
   await hintPage.addInitScript(()=>{if(!localStorage.getItem('dibitishka.v1'))localStorage.setItem('dibitishka.v1',JSON.stringify({onboarded:true,trial_started_at:Date.now(),mood_schema:2}));});
+  step('hint:auto-pop');
   await hintPage.goto(origin,{waitUntil:'networkidle'});
   await hintPage.locator('.sheet-install.on').waitFor({timeout:20000});
   const autoHint=await hintPage.evaluate(()=>{
@@ -367,6 +388,7 @@ try {
     assert(autoHint.ico.includes('assets/icons/apple-touch-180.png'));
     assert.equal(autoHint.clean,true,'no literal «null» text inside the sheet');
   });
+  step('hint:later');
   await hintPage.getByRole('button',{name:'Позже'}).click();
   await hintPage.waitForTimeout(500);
   const snoozed=await hintPage.evaluate(()=>{const st=JSON.parse(localStorage.getItem('dibitishka.v1'));return{days:(st.install_snoozed-Date.now())/86400000,seen:st.install_hint_seen,open:!!document.querySelector('.sheet-install.on')};});
@@ -380,6 +402,7 @@ try {
     await hintPage.goto(origin+'/#/profile',{waitUntil:'networkidle'});
     await hintPage.waitForTimeout(700);
     const popped=await hintPage.locator('.sheet-install').count();
+    step(`hint:row:${width}`);
     await hintPage.getByRole('button',{name:/Иконка на экране «Домой»/}).click();
     await hintPage.locator('.sheet-install.on').waitFor();
     await hintPage.waitForTimeout(450);
@@ -408,9 +431,12 @@ try {
   console.log(`\nbrowser-smoke: ${checks} checks passed; screenshots in test-results/ui`);
 } catch (e) {
   // Сценарий оборвался до проверок (например, элемент не появился): в CI
-  // полный лог шага не читается, поэтому причина нужна аннотацией.
-  const message=String(e&&e.message||e).split('\n')[0];
-  console.log('  ✗ сценарий оборвался — '+message);
-  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed::${message.slice(0,800)}`);
+  // полный лог шага не читается, поэтому причина нужна аннотацией — вместе
+  // с последним шагом и первыми строками «Call log» Playwright.
+  const lines=String(e&&e.message||e).split('\n').map(l=>l.trim()).filter(l=>l&&!/^=+$/.test(l));
+  const where=trace.at(-1)||'start';
+  console.log('  ✗ сценарий оборвался на шаге ['+where+'] — '+lines[0]);
+  console.log('  шаги: '+trace.join(' → '));
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed on ${where}::${lines.slice(0,12).join(' | ').slice(0,900)}`);
   process.exitCode=1;
 } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
