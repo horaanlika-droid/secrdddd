@@ -479,20 +479,25 @@ for (const [label, lock, pkg, dir] of [
     ok('app/js/app.js: локальный чат расширен и защищён от немедленного повтора');
   } else bad('app/js/app.js: мало вариантов локального чата', 'нужно минимум 16 советов, 8 подсказок и защита от повтора');
 
-  /* прелоад: постер IMG_1026 + шкала XP, 3.2 с чтобы рассмотреть */
+  /* прелоад v38: 3D-маскот + орбита элементов + шкала XP, 3.2 с чтобы рассмотреть */
   const pngHasAlpha = (p) => { try { const b = fs.readFileSync(p); return b.subarray(12, 16).toString('latin1') === 'IHDR' && b[24] === 8 && b[25] === 6; } catch { return false; } };
-  const splashArt = path.join(ROOT, 'app', 'assets', 'brand', 'splash-1026.webp');
-  if (exists(splashArt) &&
-      /splash-poster[\s\S]{0,160}splash-1026\.webp/.test(appIndex) &&
-      /<link rel="preload" as="image" href="assets\/brand\/splash-1026\.webp"/.test(appIndex) &&
+  const splashMascot = path.join(ROOT, 'app', 'assets', 'brand', 'splash-mascot-3d.png');
+  const splashWord = path.join(ROOT, 'app', 'assets', 'brand', 'splash-wordmark-hq.png');
+  if (exists(splashMascot) && pngHasAlpha(splashMascot) && exists(splashWord) &&
+      /class="splash-mascot"[\s\S]{0,120}splash-mascot-3d\.png/.test(appIndex) &&
+      /class="splash-wordmark"[\s\S]{0,120}splash-wordmark-hq\.png/.test(appIndex) &&
+      /<link rel="preload" as="image" href="assets\/brand\/splash-mascot-3d\.png"/.test(appIndex) &&
+      (appIndex.match(/class="orbit-ring/g) || []).length === 2 &&
+      (appIndex.match(/class="orb[ "]/g) || []).length >= 8 &&
       /class="splash-bar"/.test(appIndex) &&
       /\.splash-bar\{/.test(css) &&
-      /\.splash-poster\{/.test(css) &&
+      /\.orbit-ring\{/.test(css) &&
+      /@keyframes orbitSpin/.test(css) &&
       /SPLASH_MS\s*=\s*3200/.test(web) &&
       /--splash-ms:\s*3\.2s/.test(css)) {
-    ok('бренд: прелоад — постер 1026 и шкала загрузки, 3.2 с');
-  } else bad('бренд: прелоад не на постере 1026 со шкалой',
-             'app/index.html: .splash-poster → splash-1026.webp и .splash-bar; CSS --splash-ms 3.2s; JS SPLASH_MS 3200');
+    ok('бренд: прелоад — 3D-маскот с орбитой элементов и шкала загрузки, 3.2 с');
+  } else bad('бренд: прелоад не на 3D-маскоте с орбитой и шкалой',
+             'app/index.html: .splash-mascot → splash-mascot-3d.png, .splash-wordmark, 2×.orbit-ring (≥8 .orb) и .splash-bar; CSS .orbit-ring/orbitSpin, --splash-ms 3.2s; JS SPLASH_MS 3200');
 
   /* розовая палитра: первой страницей — логотип 1025, вырезанный без розовой каймы */
   const logo1025 = path.join(ROOT, 'app', 'assets', 'brand', 'logo-1025-clean.png');

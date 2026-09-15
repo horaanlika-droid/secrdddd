@@ -719,11 +719,54 @@ a{color:inherit}
   .splash-logo-clean{width:min(70vw, 320px)}
 }
 
-/* Постер IMG_1026 на весь экран. object-fit:contain — слово и маскот
-   не обрезаются на высоких телефонах; поля залиты цветом неба постера. */
-.splash-poster{
-  position:absolute; inset:0; width:100%; height:100%; max-width:none;
-  object-fit:contain; object-position:center; pointer-events:none;
+/* ---------- splash v38: композитный прелоад с орбитой ----------
+   Маскот — компьютерная 3D-графика (splash-mascot-3d.png, 2048px, тот же
+   стиль, что остальные конфигурации Дибитишки), вокруг него по двум кольцам
+   крутятся сердечки/звёзды/пузырики (SVG), небо и облака — CSS. Всё векторное
+   или в высоком разрешении, поэтому заставка тянется без потери качества
+   на любой экран вплоть до iPad 12.9". */
+#splash{background:linear-gradient(180deg,#ECF6FF 0%,#E8F3FF 55%,#F4FAFF 100%)}
+.splash-cloud{position:absolute; z-index:0; pointer-events:none; opacity:.9; filter:blur(1px);
+  background:
+    radial-gradient(circle at 28% 62%, #fff 0 26%, transparent 27%),
+    radial-gradient(circle at 52% 40%, #fff 0 34%, transparent 35%),
+    radial-gradient(circle at 76% 60%, #fff 0 24%, transparent 25%);
+  animation:cloudDrift 9s ease-in-out infinite alternate}
+.splash-cloud.c1{left:-4vmin; top:-3vmin; width:46vmin; height:22vmin}
+.splash-cloud.c2{right:-6vmin; bottom:-4vmin; width:52vmin; height:24vmin; animation-delay:-4s}
+.splash-cloud.c3{right:6vmin; top:8vmin; width:20vmin; height:10vmin; opacity:.7; animation-delay:-2s}
+@keyframes cloudDrift{to{transform:translate3d(2.5vmin,1vmin,0)}}
+.splash-stage{position:relative; z-index:1; height:100%; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:clamp(10px,3dvh,42px);
+  padding:calc(env(safe-area-inset-top,0px) + 18px) 18px calc(env(safe-area-inset-bottom,0px) + 64px)}
+.splash-wordmark{width:min(76vw,520px); height:auto; display:block;
+  filter:drop-shadow(0 14px 30px rgba(96,140,210,.18)); animation:breathe 4.6s ease-in-out infinite}
+.splash-hero{--hero:min(64vmin,600px); position:relative; width:var(--hero); height:var(--hero); flex:none}
+.splash-mascot{position:absolute; inset:5%; width:90%; height:90%; object-fit:contain;
+  filter:drop-shadow(0 26px 60px rgba(62,113,200,.24)); animation:breathe 3.8s ease-in-out infinite}
+.orbit-ring{position:absolute; inset:0; pointer-events:none; animation:orbitSpin 9s linear infinite}
+.orbit-ring.r2{animation-duration:14s; animation-direction:reverse}
+@keyframes orbitSpin{to{transform:rotate(360deg)}}
+.orb{position:absolute; left:50%; top:50%; width:var(--s); height:var(--s);
+  transform:translate(-50%,-50%) rotate(var(--a)) translateX(calc(var(--hero)*var(--rr)));
+  filter:drop-shadow(0 6px 14px rgba(96,140,210,.25))}
+.orb svg{display:block; width:100%; height:100%; fill:var(--c)}
+.orb.hollow svg{fill:none; stroke:var(--c); stroke-width:2.4}
+.splash-by{color:#7d94bb; font-size:clamp(13px,1.9vmin,18px); font-weight:600; letter-spacing:.02em;
+  opacity:0; animation:fadeUp .8s ease .4s forwards}
+/* широкий экран с небольшой высотой (iPad ландшафтно, низкие окна) */
+@media (orientation:landscape) and (max-height:1080px){
+  .splash-stage{gap:14px}
+  .splash-wordmark{width:min(46vw,420px)}
+  .splash-hero{--hero:min(58vmin,520px)}
+}
+@media (max-height:640px){
+  .splash-stage{gap:10px}
+  .splash-wordmark{width:min(60vw,340px)}
+  .splash-hero{--hero:min(48vmin,420px)}
+}
+@media (prefers-reduced-motion:reduce){
+  .orbit-ring,.splash-cloud,.splash-mascot,.splash-wordmark{animation:none}
 }
 /* Шкала как .xp-track / .xp-fill: пилюля 12px, акцент-градиент, блик xpShimmer.
    Анимация только при no-preference; иначе полоска сразу полная. */
