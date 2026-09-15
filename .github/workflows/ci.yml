@@ -71,6 +71,30 @@ jobs:
       - name: автоочистка порта при деплое
         run: node scripts/port-clash.mjs
 
+  web:
+    name: веб — поведение, фото и доски
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: jsdom — экраны, подтверждение эмоций, IndexedDB и листы
+        run: npm run dom-test
+      - name: приватные доски — авторизация, конфликты, очередь и EXIF
+        run: npm run boards-test
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+      - name: мобильная вёрстка, реальные фото и экспорт
+        run: npm run browser-test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: web-screenshots
+          path: test-results/ui
+
   self-heal:
     name: бот сам ставит зависимости
     # воспроизводит аварию «Cannot find package 'grammy'»: node_modules нет

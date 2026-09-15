@@ -1,4 +1,7 @@
 /* Дибитишка · веб-приложение (TG Mini App + GitHub Pages + bot host) */
+import { compressImage } from './image-tools.js';
+import { BoardSync } from './board-sync.js';
+import { renderBoardPages, boardPdf, boardPageBlob, downloadBlob, printBoardPages } from './board-export.js';
 
 const CFG = window.DIBI_CONFIG || {};
 const $ = (s, r = document) => r.querySelector(s);
@@ -44,7 +47,6 @@ const ICONS = {
   play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
   chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H6l-3 3v-3a8.5 8.5 0 1 1 18-8.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/>'),
   chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
-  share: svg('<path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v4.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V14"/>'),
   image: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.5-4.5 3.5 3.5 3-3 4 4"/>'),
   gif: svg('<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M7 10v4M7 12h2.5M12 10v4M15.5 14v-4h3M15.5 12h2.5"/>'),
   note: svg('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 11h6M9 15h4"/>'),
@@ -224,18 +226,23 @@ const SCALE_DEFS = [
   { key: 'resilience', title: 'Устойчивость', hint: 'Держусь в волне и возвращаюсь', max: 100, tint: 'resilience', emoji: '🌿' },
   { key: 'sensory', title: 'Сенсорный баланс', hint: 'Слышу тело и среду', max: 60, tint: 'sensory', emoji: '🫧' }
 ];
-/* Эмоции v25: девять состояний, и у каждого — своё лицо Дибитишки.
-   Грустно / весело / смешанно / непонятно добавлены к прежним.
-   Стандартные эмодзи в эмоциях больше не используются: вместо них PNG-лица
-   из assets/mascot/faces (сгенерированы из маскота, фон вырезан). */
+/* Эмоции: только головы из ОДНОГО листа 4×4. Первые девять ячеек
+   соответствуют прежним состояниям; остальные семь подготовлены в запас.
+   Главная, дневник и график используют один общий спрайт, не отдельные PNG. */
 const MOODS = ['Тяжело', 'Грустно', 'Тревожно', 'Ровно', 'Тепло', 'Весело', 'Радостно', 'Смешанно', 'Непонятно'];
 const MOOD_FACES = ['hard', 'sad', 'anxious', 'even', 'warm', 'fun', 'joy', 'mixed', 'unclear'];
 // подсказка под чипом: чем этот оттенок отличается от соседних
 const MOOD_HINTS = ['сил мало, всё тянет вниз', 'печально и хочется тишины', 'внутри шатко и неспокойно', 'ни туда, ни сюда — ровно', 'мягко и по-доброму', 'легко, хочется смеяться', 'звонко и радостно', 'и хорошо, и тяжело сразу', 'сама не понимаю, что это'];
 const MOOD_LEVEL = [0, 1, 2, 4, 5, 6, 8, 4, 4];   // где точка стоит на графике (0..8)
 const MOOD_EMOJI = MOOD_FACES;                     // обратная совместимость старых записей
-const moodFaceSrc = (v) => `assets/mascot/faces/${MOOD_FACES[v] || 'even'}.png`;
-const moodFace = (v, cls = 'mood-face') => el('img', { class: cls, src: moodFaceSrc(v), alt: MOODS[v] || '', loading: 'lazy' });
+const moodFace = (v, cls = 'mood-face') => {
+  const index = Number.isInteger(v) && MOOD_FACES[v] ? v : 3;
+  return el('span', {
+    class: `mood-sprite ${cls}`, role: 'img', 'aria-label': MOODS[index],
+    'data-face': MOOD_FACES[index],
+    style: `--face-x:${(index % 4) * 100 / 3}%; --face-y:${Math.floor(index / 4) * 100 / 3}%`
+  });
+};
 const DAILY_PHRASES = [
   "Ты справляешься. Даже если сейчас так не кажется.",
   "Сегодня можно просто быть.",
@@ -324,16 +331,47 @@ function gain(text) {
   setTimeout(() => g.remove(), 1250);
 }
 
+let activeSheetClose = null;
 function sheet(build) {
+  if (activeSheetClose) activeSheetClose();
   const root = $('#sheet-root');
-  root.innerHTML = '';
+  const previousFocus = document.activeElement;
   const veil = el('div', { class: 'sheet-veil' });
-  const sh = el('div', { class: 'sheet' }, el('div', { class: 'grab' }));
+  const sh = el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', tabindex: '-1' }, el('div', { class: 'grab' }));
+  const controller = new AbortController();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    controller.abort();
+    veil.classList.remove('on'); sh.classList.remove('on');
+    sh.inert = true; sh.setAttribute('aria-hidden', 'true');
+    // Убираем только СВОЙ лист: таймер старого листа не должен стереть новый.
+    setTimeout(() => { veil.remove(); sh.remove(); }, 320);
+    if (activeSheetClose === close) activeSheetClose = null;
+    setTimeout(() => { if (boardSync?.state.enabled && boardSync.status.phase === 'waiting') boardSync.sync(); }, 350);
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+  };
+  activeSheetClose = close;
   root.append(veil, sh);
-  const close = () => { veil.classList.remove('on'); sh.classList.remove('on'); setTimeout(() => root.innerHTML = '', 320); };
   veil.addEventListener('click', close);
-  build(sh, close);
-  requestAnimationFrame(() => { veil.classList.add('on'); sh.classList.add('on'); });
+  sh.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const focusable = [...sh.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]')];
+      const first = focusable[0], last = focusable.at(-1);
+      if (!first) { e.preventDefault(); sh.focus(); }
+      else if (e.shiftKey && (document.activeElement === first || document.activeElement === sh)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+  build(sh, close, controller.signal);
+  const title = sh.querySelector('h3');
+  if (title) sh.setAttribute('aria-label', title.textContent);
+  requestAnimationFrame(() => {
+    if (closed) return;
+    veil.classList.add('on'); sh.classList.add('on'); sh.focus({ preventScroll: true });
+  });
   return close;
 }
 
@@ -344,20 +382,18 @@ function mascot(pose, line, sub) {
   );
 }
 
-/* Живой маскот (главная): три кадра одной позы — глаза открыты, моргание,
-   улыбка — лежат стопкой и переключаются по очереди. Внешне это зацикленная
-   анимация: персонаж моргает, улыбается и мягко перекачивается с ноги на ногу
-   (качание и дыхание — в CSS, .live-mascot). Кадры собираются скриптом
-   scripts/make-mascot-frames.mjs, так что совпадают попиксельно. */
-function liveMascot(opts = {}) {
-  const base = opts.base || 'assets/mascot/hello.png';
-  const blink = opts.blink || 'assets/mascot/hero-blink.png';
-  const smile = opts.smile || 'assets/mascot/hero-smile.png';
-  return el('div', { class: 'live-mascot' },
-    el('img', { class: 'live-mascot-face is-base', src: base, alt: 'Дибитишка' }),
-    el('img', { class: 'live-mascot-face is-blink', src: blink, alt: '', 'aria-hidden': 'true' }),
-    el('img', { class: 'live-mascot-face is-smile', src: smile, alt: '', 'aria-hidden': 'true' })
+/* v26: одна неподвижная поза, 17 кадров мимики из единой сетки.
+   Движения тела и прыжка при нажатии нет. При reduced-motion остаётся PNG. */
+function liveMascot() {
+  const wrap = el('div', { class: 'live-mascot', role: 'img', 'aria-label': 'Дибитишка рядом' },
+    el('img', { class: 'live-mascot-base', src: 'assets/mascot/hello.png', alt: '', width: 1024, height: 1024 }),
+    el('span', { class: 'live-mascot-frames', 'aria-hidden': 'true' })
   );
+  // Ни пустого кадра, ни мигания PNG → сетка на медленном соединении.
+  const preload = new Image();
+  preload.onload = () => wrap.classList.add('frames-ready');
+  preload.src = 'assets/mascot/hero-expressions.webp';
+  return wrap;
 }
 
 const mline = (key) => pick(CONTENT.meta.mascot_lines[key] || ['…'], daySeed() + key.length);
@@ -380,6 +416,7 @@ const totalDoneCount = () => Object.values(state.done).reduce((n, arr) => n + (A
 const masteredCount = () => Object.values(state.mastered).filter(Boolean).length;
 
 /* ---------- дневник эмоций ---------- */
+let moodDraft = { value: null, note: '' }; // Не пишем черновик в дневник или localStorage.
 const moodEntries = () => [...state.mood_entries].sort((a, b) => (b.ts || 0) - (a.ts || 0));
 const moodEntriesCount = () => state.mood_entries.length;
 // последняя отметка за сегодняшний день (для подсветки чипа)
@@ -391,15 +428,18 @@ function addMood(value, note) {
   const k = todayKey();
   const hadToday = state.mood_entries.some(e => todayKey(new Date(e.ts)) === k);
   const cleanNote = (note || '').trim().slice(0, 200);
-  state.mood_entries.push({ ts: Date.now(), value, note: cleanNote || undefined });
-  // лёгкий, один раз в день: честность с собой тоже растёт в шкалы
-  // (0–2 — тяжёлые оттенки, тут важнее забота; 3–8 — там, где нужно замечать и называть)
-  if (!hadToday) gainScale(value >= 3 ? 'awareness' : 'care', 1);
-  // храним ~2 года записей
+  if (!Number.isInteger(value) || !MOODS[value]) throw new Error('Выбери эмоцию');
+  const previousEntries = state.mood_entries;
+  const previousScales = { ...state.game.scales };
   const cutoff = Date.now() - 730 * 86400000;
-  state.mood_entries = state.mood_entries.filter(e => (e.ts || 0) >= cutoff);
-  save();
-  reviewBadges(true);
+  state.mood_entries = [...previousEntries.filter(e => (e.ts || 0) >= cutoff),
+    { ts: Date.now(), value, note: cleanNote || undefined }];
+  if (!hadToday) gainScale(value >= 3 ? 'awareness' : 'care', 1);
+  try { save(); }
+  catch (e) { state.mood_entries = previousEntries; state.game.scales = previousScales; throw e; }
+  // Значки не должны превращать успешно сохранённую запись в «ошибку» и дубль.
+  try { reviewBadges(true); } catch { /* Сама запись уже сохранена. */ }
+
 }
 // ряд для графика: последние `days` дней, для каждого — последняя отметка дня (или null)
 function moodSeries(days = 14) {
@@ -635,7 +675,7 @@ function levelCard() {
 
 /* ---------- живой цифровой друг ---------- */
 function bindMascotFriends(root) {
-  root.querySelectorAll('.mascot, .hero-mascot, .onboard-mascot, .poster-mascot, .live-mascot').forEach(img => {
+  root.querySelectorAll('.mascot, .hero-mascot, .onboard-mascot, .poster-mascot').forEach(img => {
     if (img.dataset.friend) return;
     img.dataset.friend = 'true';
     img.setAttribute('role', 'button');
@@ -796,45 +836,62 @@ function screenToday() {
 
   if (!isPremium()) { paywallCard(scr); return scr; }
 
-  // Отметь эмоцию: короткая заметка — СВЕРХУ эмоций, рядом «Поделиться».
-  scr.append(el('div', { class: 'sect' }, 'Отметь эмоцию'));
-  const curEntry = moodTodayValue();
+  // Выбор — только черновик. Ни дневник, ни шкалы не меняются до подтверждения.
+  scr.append(el('div', { class: 'sect', id: 'mood-title' }, 'Отметь эмоцию'));
+  const form = el('form', { class: 'mood-form', 'aria-labelledby': 'mood-title' });
   const noteInput = el('textarea', {
     class: 'mood-note-input', id: 'mood-note', rows: 2, maxlength: 200,
-    placeholder: 'Короткая заметка — что сейчас на душе? (необязательно)'
+    'aria-label': 'Короткая заметка к эмоции — необязательно',
+    placeholder: 'Что сейчас на душе? Можно добавить пару слов…'
   });
-  const shareBtn = el('button', {
-    class: 'share-btn', type: 'button', onclick: () => shareMoodCard()
-  }, icon('share'), el('span', {}, 'Поделиться'));
-  scr.append(el('div', { class: 'mood-note-wrap' },
-    noteInput,
-    el('div', { class: 'mood-note-actions' }, shareBtn,
-      el('span', { class: 'mins' }, 'Заметка попадёт в дневник. «Поделиться» соберёт карточку настроения — её можно отправить в сторис.'))
-  ));
-
-  const mrow = el('div', { class: 'chips mood-chips' });
+  noteInput.value = moodDraft.note;
+  noteInput.addEventListener('input', () => { moodDraft.note = noteInput.value; });
+  form.append(el('div', { class: 'mood-note-wrap' }, noteInput));
+  const mrow = el('div', { class: 'chips mood-chips', role: 'group', 'aria-label': 'Выбери эмоцию' });
+  const hint = el('p', { class: 'mins mood-hint', id: 'mood-hint', role: 'status' });
+  const confirmBtn = el('button', { class: 'btn mood-confirm', type: 'submit', 'aria-describedby': 'mood-hint' },
+    icon('check'), 'Оставить запись');
+  const refreshDraft = (saved = false) => {
+    const selected = Number.isInteger(moodDraft.value);
+    confirmBtn.disabled = !selected;
+    mrow.querySelectorAll('.mood').forEach((btn, i) => {
+      const on = i === moodDraft.value;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    const last = moodTodayValue();
+    hint.textContent = saved ? 'Запись в дневнике. Можно выбрать следующую эмоцию, когда захочется.'
+      : selected ? `Выбрано: «${MOODS[moodDraft.value]}». Сохранится только после «Оставить запись».`
+      : last ? `Последняя запись: «${MOODS[last.value]}». Для новой выбери эмоцию и подтверди.`
+      : 'Выбери эмоцию и нажми «Оставить запись». Заметка — по желанию.';
+  };
   MOODS.forEach((m, k) => mrow.append(el('button', {
-    class: 'chip mood' + (curEntry && curEntry.value === k ? ' on' : ''),
-    'aria-label': `${m} — ${MOOD_HINTS[k]}`,
-    'aria-pressed': curEntry && curEntry.value === k ? 'true' : 'false',
-    onclick: () => {
-      const noteEl = document.getElementById('mood-note');
-      const noteVal = noteEl ? noteEl.value : '';
-      addMood(k, noteVal);
-      if (noteEl) noteEl.value = '';
-      haptic('light');
-      const words = k === 0 ? 'Я рядом. Будь к себе понежнее.'
-        : k === 3 ? 'Ровно — тоже важная отметка.'
-        : k === 8 ? 'Непонятно — это тоже ответ. Не обязательно называть точнее.'
-        : k === 7 ? 'Смешанно — так бывает: и хорошо, и тяжело сразу.'
-        : 'Спасибо за честность. Отмечено.';
-      toast(words);
-      render();
-    }
+    class: 'chip mood', type: 'button',
+    'aria-label': `${m} — ${MOOD_HINTS[k]}`, 'aria-pressed': 'false',
+    onclick: () => { moodDraft.value = k; haptic('light'); refreshDraft(); }
   }, moodFace(k, 'chip-face'), el('span', { class: 'chip-label' }, m))));
-  scr.append(mrow, el('p', { class: 'mins mood-hint' },
-    curEntry ? `Сейчас отмечено: «${MOODS[curEntry.value]}». Можно отметить ещё раз, когда состояние изменится.`
-             : 'Отмечать можно сколько угодно раз за день — выбирай, что ближе сейчас.'));
+  let submitting = false;
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (submitting || !Number.isInteger(moodDraft.value)) return;
+    submitting = true; confirmBtn.disabled = true;
+    try {
+      addMood(moodDraft.value, noteInput.value);
+      moodDraft = { value: null, note: '' };
+      noteInput.value = '';
+      haptic('success');
+      toast('Запись сохранена. Спасибо, что замечаешь себя.');
+      refreshDraft(true);
+      const goal = scr.querySelector('.daily-mood-status');
+      if (goal) goal.textContent = doneCount >= 1 ? 'Настроение отмечено · цель собрана' : 'Настроение отмечено · ещё один бережный шаг';
+    } catch (err) {
+      toast('Не получилось сохранить запись. Освободи немного памяти и попробуй ещё раз.');
+      refreshDraft();
+    } finally { submitting = false; }
+  });
+  refreshDraft();
+  form.append(mrow, confirmBtn, hint);
+  scr.append(form);
 
   // ежедневная цель
   const doneCount = (state.done[todayKey()] || []).length;
@@ -844,7 +901,7 @@ function screenToday() {
     ring(doneCount >= 1 ? 1 : doneCount),
     el('div', { class: 'dm' },
       el('b', {}, doneCount >= 1 ? 'Практика дня сделана' : '1 практика сегодня'),
-      el('span', {}, moodDone ? 'Настроение отмечено · цель собрана' : 'Отметь ещё настроение — это тоже шаг')
+      el('span', { class: 'daily-mood-status' }, moodDone ? (doneCount >= 1 ? 'Настроение отмечено · цель собрана' : 'Настроение отмечено · ещё один бережный шаг') : 'Отметь ещё настроение — это тоже шаг')
     )
   ));
 
@@ -869,16 +926,9 @@ function screenToday() {
     el('span', { class: 'chev' }, '›')
   )));
 
-  // mood moved higher: заметка сверху, лица вместо эмодзи и «Поделиться» — там же
-    // (дубликат убран — блок «Отметь эмоцию» стоит выше дашборда)
-
   scr.append(el('div', { class: 'sect' }, 'Доска впечатлений'));
   scr.append(el('button', { class: 'board-teaser', onclick: () => go('boards') },
-    el('span', { class: 'board-teaser-stack', 'aria-hidden': 'true' },
-      el('img', { src: 'assets/mascot/faces/warm.png', alt: '' }),
-      el('img', { src: 'assets/mascot/faces/joy.png', alt: '' }),
-      el('img', { src: 'assets/mascot/faces/even.png', alt: '' })
-    ),
+    el('img', { class: 'board-teaser-art', src: 'assets/boards/seaside-keepsakes-thumb.webp', alt: '', loading: 'lazy', width: 448, height: 301 }),
     el('span', { class: 'board-teaser-copy' },
       el('b', {}, boardsTeaserTitle()),
       el('span', {}, 'Фото, гифки, стихи и мысли — на фоне, который нравится. То, что напоминает, кто ты.')
@@ -901,7 +951,7 @@ function screenToday() {
 }
 
 /* Папки навыков: у каждого блока своя иконка-папка в стиле маскота
-   (одна генерация → нарезка на пять файлов, см. scripts/slice-folders.mjs). */
+   (одна генерация → нарезка на пять файлов, см. scripts/slice-folders.py). */
 const FOLDER_ART = { base: 'opora', mind: 'osoznannost', stress: 'stress', emo: 'emotions', sense: 'sensorika' };
 
 function screenSkills() {
@@ -1361,7 +1411,7 @@ function screenDiary() {
   if (!entries.length) {
     scr.append(el('div', { class: 'card soft' },
       el('h3', {}, 'Пока пусто'),
-      el('p', {}, 'Отмечай эмоцию на главной каждый раз, когда заходишь. Со временем соберётся твоя история — и станет видно: тяжёлый день это точка на пути, а не весь путь.')));
+      el('p', {}, 'Выбери эмоцию на главной, при желании добавь заметку и нажми «Оставить запись». Только подтверждённые записи попадают сюда. Тяжёлый день — это точка на пути, а не весь путь.')));
     return scr;
   }
   const map = new Map(), days = [];
@@ -1598,7 +1648,7 @@ function screenProfile() {
   const rows = [];
   if (!TG_MODE) rows.push(el('button', { class: 'row', onclick: authSheet },
     el('span', { class: 'ric c-lavender', style: 'color:#4A3A55' }, icon('lock')),
-    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Синхронизация включена' : 'Код придёт в Telegram')),
+    el('span', { class: 'rmain' }, el('b', {}, state.web_user ? `Вход выполнен: ${state.web_user.name}` : 'Войти по коду из бота'), el('span', {}, state.web_user ? 'Аккаунт Telegram подключён' : 'Код придёт в Telegram')),
     el('span', { class: 'chev' }, '›')
   ));
   rows.push(el('button', { class: 'row', onclick: () => openLink(CFG.social?.telegram) },
@@ -1663,7 +1713,7 @@ function authSheet() {
       el('input', { class: 'code-input', id: 'code-in', placeholder: '······', maxlength: 6, inputmode: 'numeric' }),
       el('button', { class: 'btn', style: 'margin-top:12px', onclick: async () => {
         const code = ($('#code-in').value || '').trim();
-        if (code.length < 4) return toast('Введи код целиком.');
+        if (!/^\d{6}$/.test(code)) return toast('Введи все шесть цифр кода.');
         haptic('light');
         if (!API_BASE) { close(); return toast('Бот не подключён к веб-версии: нужен bot_public_url или открытие через bot host.'); }
         try {
@@ -1672,14 +1722,15 @@ function authSheet() {
           });
           const j = await r.json();
           if (j.ok) {
-            state.web_user = { id: j.user.id, name: j.user.name || 'друг' };
+            state.web_user = { id: j.user.id, name: j.user.name || 'друг', session: j.session, session_expires: j.expires };
+            activateBoardAccount();
             save();
             haptic('success');
             close();
-            toast('Вход выполнен. Синхронизация готова.');
+            toast('Вход выполнен. Синхронизацию досок можно включить на странице досок.');
             syncPremium();
             render();
-          } else toast('Код не подошёл или устарел.');
+          } else toast(j.error === 'rate_limit' ? 'Слишком много попыток. Подожди 10 минут и запроси новый код.' : 'Код не подошёл или устарел.');
         } catch (e) { toast('Не удалось связаться с ботом.'); }
       } }, 'Войти'),
       el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { openLink(`https://t.me/${CFG.bot_username || ''}`); } }, 'Открыть бота за кодом')
@@ -1699,103 +1750,117 @@ function authSheet() {
    метаданные — в localStorage под своим ключом.
    ============================================================ */
 const BOARDS_KEY = 'dibitishka.boards.v1';
+const boardIdentity = () => TG_MODE ? String(tg.initDataUnsafe.user.id) : state.web_user?.id ? String(state.web_user.id) : null;
+let boardAccount = boardIdentity() || 'guest';
+const boardsStorageKey = () => `${BOARDS_KEY}.${boardAccount}`;
+// Разовая миграция локальных досок v25; аккаунты после неё хранятся раздельно.
+try {
+  const legacy = localStorage.getItem(BOARDS_KEY);
+  if (legacy && !localStorage.getItem(BOARDS_KEY + '.migrated')) {
+    if (!localStorage.getItem(boardsStorageKey())) localStorage.setItem(boardsStorageKey(), legacy);
+    localStorage.setItem(BOARDS_KEY + '.migrated', '1');
+  }
+} catch { /* Приватный режим: остаёмся на устройстве, без автоматической отправки. */ }
+let boardSync = null;
 const MEDIA_URLS = new Map();     // key → objectURL (чтобы не читать IndexedDB на каждый рендер)
-let MEDIA_DB = null;
+let MEDIA_DB = null, MEDIA_OPEN = null;
+const MEDIA_ERROR = 'Фото не сохранилось. Возможно, память заполнена или браузер в приватном режиме. Попробуй обычный режим — заметки доступны и без фото.';
 
 function mediaDB() {
   if (MEDIA_DB) return Promise.resolve(MEDIA_DB);
-  return new Promise((res) => {
+  if (MEDIA_OPEN) return MEDIA_OPEN;
+  MEDIA_OPEN = new Promise(resolve => {
+    let settled = false;
+    const finish = db => { if (settled) { db?.close(); return; } settled = true; clearTimeout(timer); resolve(db); };
+    const timer = setTimeout(() => finish(null), 4000);
     try {
       const r = indexedDB.open('dibitishka.media', 1);
-      r.onupgradeneeded = () => {
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('media')) r.result.createObjectStore('media'); };
+      r.onsuccess = () => {
         const db = r.result;
-        if (!db.objectStoreNames.contains('media')) db.createObjectStore('media');
+        db.onversionchange = () => { db.close(); MEDIA_DB = null; MEDIA_OPEN = null; };
+        if (!settled) MEDIA_DB = db;
+        finish(db);
       };
-      r.onsuccess = () => { MEDIA_DB = r.result; res(MEDIA_DB); };
-      r.onerror = () => res(null);
-    } catch (e) { res(null); }
-  });
+      r.onerror = r.onblocked = () => finish(null);
+    } catch { finish(null); }
+  }).finally(() => { MEDIA_OPEN = null; });
+  return MEDIA_OPEN;
 }
-async function mediaPut(key, blob) {
+async function mediaTransaction(mode, operation, fallback) {
   const db = await mediaDB();
-  if (!db) return false;
-  return new Promise((res) => {
-    const tx = db.transaction('media', 'readwrite');
-    tx.objectStore('media').put(blob, key);
-    tx.oncomplete = () => res(true);
-    tx.onerror = () => res(false);
+  if (!db) return fallback;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction('media', mode);
+      const request = operation(tx.objectStore('media'));
+      tx.oncomplete = () => resolve(mode === 'readonly' ? (request.result || null) : true);
+      tx.onerror = tx.onabort = () => resolve(fallback);
+    } catch { resolve(fallback); }
   });
 }
-async function mediaGet(key) {
-  const db = await mediaDB();
-  if (!db) return null;
-  return new Promise((res) => {
-    const tx = db.transaction('media', 'readonly');
-    const q = tx.objectStore('media').get(key);
-    q.onsuccess = () => res(q.result || null);
-    q.onerror = () => res(null);
-  });
-}
+const mediaPut = (key, blob) => mediaTransaction('readwrite', store => store.put(blob, key), false);
+const mediaGet = key => mediaTransaction('readonly', store => store.get(key), null);
 async function mediaDel(key) {
+  if (!key || /^(https?:|data:|blob:)/i.test(key)) return;
+  // Одно фото может быть и плиткой, и фоном, в том числе в другой доске.
+  if (BOARDS.some(b => b.bgKey === key || (b.tiles || []).some(t => t.src === key))) return;
+  for (let i = 0; i < localStorage.length; i++) {
+    const name = localStorage.key(i);
+    if (!name?.startsWith(BOARDS_KEY + '.') || name === boardsStorageKey()) continue;
+    try { const other = JSON.parse(localStorage.getItem(name));
+      if (Array.isArray(other) && other.some(b => b.bgKey === key || b.tiles?.some(t => t.src === key))) return;
+    } catch { /* Это может быть служебная запись миграции. */ }
+  }
+  const url = MEDIA_URLS.get(key);
+  if (url) URL.revokeObjectURL(url);
   MEDIA_URLS.delete(key);
-  const db = await mediaDB();
-  if (!db) return;
-  const tx = db.transaction('media', 'readwrite');
-  tx.objectStore('media').delete(key);
+  await mediaTransaction('readwrite', store => store.delete(key), false);
 }
-// ссылки и картинки-файлы живут в одном поле src: http(s)/data:/blob: отдаём как есть
 function mediaUrl(src) {
   if (!src) return Promise.resolve('');
-  if (/^(https?:|data:|blob:)/.test(src)) return Promise.resolve(src);
+  if (/^(https?:|data:image\/|blob:)/i.test(src)) return Promise.resolve(src);
   if (MEDIA_URLS.has(src)) return Promise.resolve(MEDIA_URLS.get(src));
-  return mediaGet(src).then(blob => {
+  return mediaGet(src).then(async blob => {
+    if (!blob && boardSync) blob = await boardSync.downloadMedia(src).catch(() => null);
     if (!blob) return '';
+    if (MEDIA_URLS.has(src)) return MEDIA_URLS.get(src);
     const url = URL.createObjectURL(blob);
     MEDIA_URLS.set(src, url);
     return url;
   });
 }
-// после рендера заполняем <img data-media="ключ"> реальными ссылками
+function missingMedia(node) {
+  node.hidden = true;
+  const parent = node.closest('.tile') || node.parentElement;
+  if (!parent || parent.querySelector('.media-error')) return;
+  parent.append(el('span', { class: 'media-error', role: 'status' }, 'Картинка недоступна. Проверь связь или добавь её снова.'));
+}
 function hydrateMedia(root) {
-  root.querySelectorAll('[data-media]').forEach(async (node) => {
-    const url = await mediaUrl(node.dataset.media);
-    if (url) node.src = url;
-    else { node.classList.add('media-missing'); node.closest('.tile')?.classList.add('tile-broken'); }
+  root.querySelectorAll('img[data-media]').forEach(async node => {
+    node.onerror = () => missingMedia(node);
+    const key = node.dataset.media;
+    const url = await mediaUrl(key);
+    if (node.dataset.media !== key) return;
+    if (url) node.src = url; else missingMedia(node);
+  });
+  root.querySelectorAll('img.tile-media:not([data-media]), .cover-thumbs img:not([data-media])').forEach(node => {
+    node.onerror = () => missingMedia(node);
+  });
+  root.querySelectorAll('[data-bg-media]').forEach(async node => {
+    const key = node.dataset.bgMedia, url = await mediaUrl(key);
+    if (url && node.dataset.bgMedia === key) { node.style.backgroundImage = `url("${url}")`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
   });
 }
 
-/* --- уменьшаем фото перед сохранением: 1400px по длинной стороне, jpeg 82% --- */
-function fileToImage(file) {
-  return new Promise((res, rej) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image')); };
-    img.src = url;
-  });
-}
-async function compressImage(file, max = 1400, quality = 0.82) {
-  try {
-    const img = await fileToImage(file);
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const w = Math.max(1, Math.round(img.width * scale));
-    const h = Math.max(1, Math.round(img.height * scale));
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').drawImage(img, 0, 0, w, h);
-    URL.revokeObjectURL(img.src);
-    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', quality));
-    return blob || file;
-  } catch (e) { return file; }
-}
 function pickFiles(accept, multiple, cb) {
   const inp = el('input', { type: 'file', accept, style: 'display:none', ...(multiple ? { multiple: '' } : {}) });
   document.body.append(inp);
+  inp.addEventListener('cancel', () => inp.remove(), { once: true });
   inp.addEventListener('change', async () => {
-    const files = [...(inp.files || [])];
-    inp.remove();
-    for (const f of files) await cb(f);
-  });
+    const files = [...(inp.files || [])]; inp.remove();
+    for (const f of files) { try { await cb(f); } catch (err) { toast(err.message || 'Не удалось добавить файл.'); } }
+  }, { once: true });
   inp.click();
 }
 
@@ -1815,12 +1880,13 @@ const bgDef = (id) => BOARD_BGS.find(b => b.id === id) || BOARD_BGS[0];
 
 const loadBoards = () => {
   try {
-    const j = JSON.parse(localStorage.getItem(BOARDS_KEY));
+    const j = JSON.parse(localStorage.getItem(boardsStorageKey()) || (!localStorage.getItem(BOARDS_KEY + '.migrated') ? localStorage.getItem(BOARDS_KEY) : 'null'));
     return Array.isArray(j) ? j : null;
   } catch (e) { return null; }
 };
-const boardUid = () => 'b' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
-const tileUid = () => 't' + Math.random().toString(36).slice(2, 8);
+const boardUid = () => 'b' + (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
+const parseBoardTags = text => [...new Set(text.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim().slice(0, 40)).filter(Boolean))].slice(0, 8);
+const tileUid = () => 't' + (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 function seedBoards() {
   return [{
     id: boardUid(), title: 'Моё вдохновение', bg: 'sky', created: Date.now(),
@@ -1831,8 +1897,19 @@ function seedBoards() {
   }];
 }
 let BOARDS = loadBoards();
-if (!BOARDS) { BOARDS = seedBoards(); }
-const saveBoards = () => { try { localStorage.setItem(BOARDS_KEY, JSON.stringify(BOARDS)); } catch (e) { toast('Память переполнена — попробуй убрать пару тяжёлых фото.'); } };
+if (!BOARDS) { BOARDS = boardAccount === 'guest' ? seedBoards() : []; }
+try { localStorage.setItem(boardsStorageKey(), JSON.stringify(BOARDS)); } catch { /* Чтение доступно и без записи. */ }
+const saveBoards = () => {
+  try { localStorage.setItem(boardsStorageKey(), JSON.stringify(BOARDS)); }
+  catch {
+    BOARDS = loadBoards() || [];
+    toast('Память заполнена. Изменения не сохранились — освободи немного места и попробуй ещё раз.');
+    return false;
+  }
+  boardSync?.changed();
+  return true;
+};
+
 const boardById = (id) => BOARDS.find(b => b.id === id);
 const boardTiles = (b) => [...(b.tiles || [])].sort((x, y) => (x.created || 0) - (y.created || 0));
 const boardTileCount = (b) => (b.tiles || []).length;
@@ -1855,31 +1932,33 @@ function boardBgStyle(b) {
 
 /* --- плитка на доске: фото, гифка или заметка --- */
 function tileEl(b, t) {
-  const box = el('div', { class: `tile tile-${t.kind} size-${t.size || 'm'}` });
+  const box = el('div', { class: `tile tile-${t.kind} size-${t.size || 'm'}`, role: 'button', tabindex: '0', 'aria-label': t.kind === 'note' ? 'Открыть заметку' : 'Открыть картинку' });
   box.style.setProperty('--rot', (t.rot || 0) + 'deg');
   if (t.kind === 'photo') {
     box.append(el('img', { class: 'tile-media', 'data-media': t.src, alt: t.caption || 'фото на доске', loading: 'lazy' }));
   } else if (t.kind === 'gif') {
-    box.append(el('img', { class: 'tile-media', src: t.src, alt: t.caption || 'gif', loading: 'lazy', referrerpolicy: 'no-referrer' }));
+    box.append(el('img', { class: 'tile-media', 'data-media': t.src, alt: t.caption || 'gif', loading: 'lazy', referrerpolicy: 'no-referrer' }));
     box.append(el('span', { class: 'tile-gif-mark' }, 'GIF'));
   } else {
-    box.append(el('p', { class: 'tile-note' }, t.text || ''));
+    box.append(el('p', { class: 'tile-note-copy' }, t.text || ''));
   }
   if (t.caption && t.kind !== 'note') box.append(el('span', { class: 'tile-cap' }, t.caption));
   if ((t.tags || []).length) box.append(el('span', { class: 'tile-tags' }, t.tags.map(x => '#' + x).join(' ')));
   box.addEventListener('click', () => tileSheet(b, t));
+  box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tileSheet(b, t); } });
   return box;
 }
 
 function saveTiles(b) {
-  BOARDS = BOARDS.map(x => x.id === b.id ? b : x);
-  saveBoards();
+  BOARDS = BOARDS.some(x => x.id === b.id) ? BOARDS.map(x => x.id === b.id ? b : x) : [...BOARDS, b];
+  return saveBoards();
 }
 
 /* --- лист действий по плитке --- */
 function tileSheet(b, t) {
   sheet((sh, close) => {
-    const capInput = el('input', { class: 'board-input', value: t.caption || '', placeholder: t.kind === 'note' ? 'Текст заметки' : 'Подпись к картинке' });
+    const capInput = el(t.kind === 'note' ? 'textarea' : 'input', { class: 'board-input', maxlength: t.kind === 'note' ? 4000 : 200, rows: t.kind === 'note' ? 7 : null, 'aria-label': t.kind === 'note' ? 'Текст заметки' : 'Подпись к картинке', placeholder: t.kind === 'note' ? 'Текст заметки' : 'Подпись к картинке' });
+    capInput.value = t.kind === 'note' ? t.text || '' : t.caption || '';
     const tagInput = el('input', { class: 'board-input', value: (t.tags || []).join(', '), placeholder: 'теги: вдохновение, лето, море' });
     sh.append(
       el('h3', {}, t.kind === 'note' ? 'Заметка' : t.kind === 'gif' ? 'Гифка' : 'Фото'),
@@ -1890,27 +1969,27 @@ function tileSheet(b, t) {
     const sizeRow = el('div', { class: 'chips' });
     [['s', 'маленькая'], ['m', 'средняя'], ['l', 'большая']].forEach(([id, label]) => sizeRow.append(el('button', {
       class: 'chip' + ((t.size || 'm') === id ? ' on' : ''),
-      onclick: () => { t.size = id; saveTiles(b); close(); render(); }
+      onclick: () => { t.size = id; if (!saveTiles(b)) return; close(); render(); }
     }, label)));
     sh.append(sizeRow,
       el('div', { class: 'chips' },
-        el('button', { class: 'chip', onclick: () => { t.rot = Math.max(-8, (t.rot || 0) - 2); saveTiles(b); close(); render(); } }, '⟲ наклонить'),
-        el('button', { class: 'chip', onclick: () => { t.rot = Math.min(8, (t.rot || 0) + 2); saveTiles(b); close(); render(); } }, '⟳ выпрямить')
+        el('button', { class: 'chip', onclick: () => { t.rot = Math.max(-8, (t.rot || 0) - 2); if (!saveTiles(b)) return; close(); render(); } }, '⟲ наклонить'),
+        el('button', { class: 'chip', onclick: () => { t.rot = Math.min(8, (t.rot || 0) + 2); if (!saveTiles(b)) return; close(); render(); } }, '⟳ выпрямить')
       ),
       el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => {
         const text = capInput.value.trim();
         if (t.kind === 'note') t.text = text || t.text;
         else t.caption = text || undefined;
-        t.tags = tagInput.value.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim()).filter(Boolean).slice(0, 8);
-        saveTiles(b); close(); haptic('light'); toast('Сохранено.'); render();
+        t.tags = parseBoardTags(tagInput.value);
+        if (!saveTiles(b)) return; close(); haptic('light'); toast('Сохранено.'); render();
       } }, 'Сохранить'),
       t.kind === 'photo' ? el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => {
-        b.bg = 'photo'; b.bgKey = t.src; saveBoards(); close(); toast('Это фото стало фоном доски.'); render();
+        b.bg = 'photo'; b.bgKey = t.src; if (!saveBoards()) return; close(); toast('Это фото стало фоном доски.'); render();
       } }, 'Поставить фоном доски') : null,
       el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: async () => {
-        if (t.kind === 'photo') await mediaDel(t.src);
         b.tiles = (b.tiles || []).filter(x => x.id !== t.id);
-        saveTiles(b); close(); haptic('success'); toast('Убрано с доски.'); render();
+        if (!saveTiles(b)) return;
+        if (t.src) await mediaDel(t.src); close(); haptic('success'); toast('Убрано с доски.'); render();
       } }, 'Убрать с доски')
     );
   });
@@ -1921,12 +2000,12 @@ function addTileSheet(b) {
   sheet((sh, close) => {
     sh.append(
       el('h3', {}, 'Что добавим?'),
-      el('p', { class: 'mins' }, 'Фото можно выбрать из галереи, гифку — вставить ссылкой, а мысли и стихи просто написать.'),
+      el('p', { class: 'mins' }, 'Фото можно выбрать из галереи, гифку — найти или вставить ссылкой, а мысли и стихи просто написать.'),
       el('div', { class: 'add-grid' },
         el('button', { class: 'add-opt', onclick: () => { close(); addPhotosToBoard(b); } },
           el('span', { class: 'ric c-sky' }, icon('image')), el('b', {}, 'Фото из галереи'), el('span', {}, 'можно несколько сразу')),
         el('button', { class: 'add-opt', onclick: () => { close(); addGifSheet(b); } },
-          el('span', { class: 'ric c-lavender' }, icon('gif')), el('b', {}, 'GIF по ссылке'), el('span', {}, 'вставь адрес гифки или найди её в Tenor')),
+          el('span', { class: 'ric c-lavender' }, icon('gif')), el('b', {}, 'Гифка'), el('span', {}, 'поиск в Tenor или прямая ссылка')),
         el('button', { class: 'add-opt', onclick: () => { close(); addNoteSheet(b); } },
           el('span', { class: 'ric c-grass' }, icon('note')), el('b', {}, 'Заметка, стихи, мысль'), el('span', {}, 'то, что заставляет дышать по-новому'))
       )
@@ -1934,45 +2013,84 @@ function addTileSheet(b) {
   });
 }
 function addPhotosToBoard(b) {
-  toast('Добавляю фото…');
-  pickFiles('image/*', true, async (file) => {
+  pickFiles('image/*', true, async file => {
+    toast('Добавляю фото…');
+    const account = boardAccount;
     const blob = await compressImage(file);
+    if (account !== boardAccount) return toast('Аккаунт сменился. Выбери фото в нужной доске ещё раз.');
     const key = 'm' + tileUid();
-    const stored = await mediaPut(key, blob);
-    b.tiles = [...(b.tiles || []), stored
-      ? { id: tileUid(), kind: 'photo', src: key, caption: '', tags: [], rot: (Math.random() * 4 - 2), size: (b.tiles || []).length % 3 === 0 ? 'l' : 'm', created: Date.now() }
-      : { id: tileUid(), kind: 'note', text: 'Фото не сохранилось — попробуй ещё раз.', tags: [], rot: 0, size: 'm', created: Date.now() }];
-    saveTiles(b);
-    render();
+    if (!await mediaPut(key, blob)) return toast(MEDIA_ERROR);
+    if (account !== boardAccount) { await mediaDel(key); return; }
+    b.tiles = [...(b.tiles || []), { id: tileUid(), kind: 'photo', src: key, caption: '', tags: [],
+      rot: (Math.random() * 4 - 2), size: (b.tiles || []).length % 3 === 0 ? 'l' : 'm', created: Date.now() }];
+    if (!saveTiles(b)) { await mediaDel(key); return; }
+    haptic('success'); toast('Фото на доске.'); render();
   });
 }
+
 function addGifSheet(b) {
-  const urlInput = el('input', { class: 'board-input', placeholder: 'https://media.tenor.com/… .gif' });
-  const tagInput = el('input', { class: 'board-input', placeholder: 'теги: кот, дождь, поддержка' });
-  sheet((sh, close) => {
-    sh.append(
-      el('h3', {}, 'GIF по ссылке'),
-      el('p', { class: 'mins' }, 'Открой Tenor или Giphy по своим тегам, скопируй адрес гифки (или ссылку на картинку) и вставь сюда — она появится на доске. Если анимацию хочется взять из галереи, сохрани её как фото.'),
+  const urlInput = el('input', { class: 'board-input', type: 'url', maxlength: 2048, 'aria-label': 'Прямая ссылка на GIF', placeholder: 'Или прямая ссылка https://… .gif' });
+  const tagInput = el('input', { class: 'board-input', maxlength: 328, 'aria-label': 'Теги GIF', placeholder: 'теги: кот, дождь, поддержка' });
+  sheet((sh, close, signal) => {
+    const query = el('input', { class: 'board-search', type: 'search', maxlength: 120, 'aria-label': 'Поиск GIF', placeholder: 'Найти гифку: море, объятия, кот…' });
+    const searchBtn = el('button', { class: 'chip', type: 'submit' }, 'Найти');
+    const searchForm = el('form', { class: 'gif-search-form' }, query, searchBtn);
+    const status = el('p', { class: 'mins', role: 'status' }, 'Поиск внутри приложения работает через Tenor. Можно также вставить прямую ссылку на гифку.');
+    const results = el('div', { class: 'gif-results', 'aria-label': 'Результаты поиска GIF' });
+    let request = null, selectedCaption = '';
+    signal.addEventListener('abort', () => request?.abort(), { once: true });
+    urlInput.addEventListener('input', () => { selectedCaption = ''; results.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', 'false')); });
+    searchForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const q = query.value.trim();
+      if (!q) return;
+      request?.abort(); request = new AbortController();
+      const current = request, timer = setTimeout(() => current.abort(), 10000);
+      searchBtn.disabled = true; status.textContent = 'Ищу гифки…'; results.replaceChildren();
+      try {
+        const response = await fetch(apiUrl('/gif') + '?q=' + encodeURIComponent(q), { signal: current.signal });
+        if (!response.ok) throw new Error('search');
+        const data = await response.json();
+        if (signal.aborted || current !== request) return;
+        if (!data.enabled) { status.textContent = 'Поиск в приложении пока не подключён на боте. Найди GIF в Tenor и вставь прямую ссылку ниже.'; return; }
+        const items = Array.isArray(data.items) ? data.items : [];
+        status.textContent = items.length ? 'Выбери гифку, затем нажми «Добавить на доску».' : 'По этому запросу ничего не нашлось. Попробуй другое слово.';
+        for (const item of items) results.append(el('button', {
+          class: 'gif-result', type: 'button', 'aria-label': item.title || 'Выбрать GIF', 'aria-pressed': 'false',
+          onclick: e => {
+            results.querySelectorAll('button').forEach(btn => btn.setAttribute('aria-pressed', 'false'));
+            e.currentTarget.setAttribute('aria-pressed', 'true');
+            urlInput.value = item.url; selectedCaption = item.title || '';
+            status.textContent = 'Гифка выбрана. Можно добавить теги и подтвердить.';
+          }
+        }, el('img', { src: item.preview, alt: item.title || 'GIF', loading: 'lazy', referrerpolicy: 'no-referrer' })));
+      } catch {
+        if (!signal.aborted && current === request) status.textContent = 'Поиск сейчас недоступен. Попробуй ещё раз или вставь ссылку из Tenor.';
+      } finally {
+        clearTimeout(timer); if (current === request) searchBtn.disabled = false;
+      }
+    });
+    sh.append(el('h3', {}, 'Гифка на доску'), searchForm, status, results,
+      el('p', { class: 'gif-credit' }, 'Поиск: Tenor'),
       urlInput, tagInput,
       el('button', { class: 'btn secondary', style: 'margin-top:10px', onclick: () => {
-        const q = tagInput.value.trim() || 'вдохновение';
+        const q = query.value.trim() || tagInput.value.trim() || 'вдохновение';
         openLink('https://tenor.com/search/' + encodeURIComponent(q.replace(/\s+/g, '-')));
-      } }, 'Найти в Tenor по тегам', el('span', { class: 'arr' }, '→')),
+      } }, 'Открыть поиск в Tenor', el('span', { class: 'arr' }, '→')),
       el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => {
         const src = urlInput.value.trim();
-        if (!/^https?:\/\//i.test(src)) return toast('Нужна ссылка на гифку или картинку.');
-        b.tiles = [...(b.tiles || []), {
-          id: tileUid(), kind: 'gif', src, caption: '',
-          tags: tagInput.value.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim()).filter(Boolean).slice(0, 8),
-          rot: (Math.random() * 4 - 2), size: 'm', created: Date.now()
-        }];
-        saveTiles(b); close(); haptic('success'); toast('Гифка на доске.'); render();
+        try { const url = new URL(src); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
+        catch { return toast('Нужна прямая HTTPS-ссылка на гифку или картинку.'); }
+        b.tiles = [...(b.tiles || []), { id: tileUid(), kind: 'gif', src, caption: selectedCaption,
+          tags: parseBoardTags(tagInput.value), rot: Math.random() * 4 - 2, size: 'm', created: Date.now() }];
+        if (!saveTiles(b)) return; close(); haptic('success'); toast('Гифка на доске.'); render();
       } }, 'Добавить на доску')
     );
   });
 }
+
 function addNoteSheet(b) {
-  const ta = el('textarea', { class: 'mood-note-input', rows: 5, placeholder: 'Мысль, строки, цитата — то, что держит…' });
+  const ta = el('textarea', { class: 'mood-note-input', rows: 5, maxlength: 4000, 'aria-label': 'Текст заметки', placeholder: 'Мысль, строки, цитата — то, что держит…' });
   const tagInput = el('input', { class: 'board-input', placeholder: 'теги: опора, тёплое, вечер' });
   sheet((sh, close) => {
     sh.append(
@@ -1983,10 +2101,10 @@ function addNoteSheet(b) {
         if (!text) return toast('Напиши хотя бы строку.');
         b.tiles = [...(b.tiles || []), {
           id: tileUid(), kind: 'note', text,
-          tags: tagInput.value.split(/[,\s]+/).map(x => x.replace(/^#/, '').trim()).filter(Boolean).slice(0, 8),
+          tags: parseBoardTags(tagInput.value),
           rot: (Math.random() * 4 - 2), size: 'm', created: Date.now()
         }];
-        saveTiles(b); close(); haptic('success'); toast('На доске.'); render();
+        if (!saveTiles(b)) return; close(); haptic('success'); toast('На доске.'); render();
       } }, 'Добавить на доску')
     );
   });
@@ -1999,7 +2117,7 @@ function boardBgSheet(b) {
     for (const bg of BOARD_BGS) {
       grid.append(el('button', {
         class: 'bg-opt' + (b.bg === bg.id ? ' on' : ''), style: `background:${bg.css}`,
-        onclick: () => { b.bg = bg.id; b.bgKey = null; saveBoards(); close(); haptic('light'); render(); }
+        onclick: () => { b.bg = bg.id; b.bgKey = null; if (!saveBoards()) return; close(); haptic('light'); render(); }
       }, el('span', {}, bg.title)));
     }
     sh.append(
@@ -2011,9 +2129,9 @@ function boardBgSheet(b) {
           const blob = await compressImage(file, 1600, .8);
           const key = 'bg' + tileUid();
           const stored = await mediaPut(key, blob);
-          if (!stored) return toast('Не получилось сохранить фото.');
+          if (!stored) return toast(MEDIA_ERROR);
           b.bg = 'photo'; b.bgKey = key;
-          saveBoards(); close(); toast('Фон обновлён.'); render();
+          if (!saveBoards()) return; close(); toast('Фон обновлён.'); render();
         });
       } }, icon('image'), 'Своё фото фоном')
     );
@@ -2030,9 +2148,11 @@ function screenBoards() {
   ));
   scr.append(el('h1', { class: 'ltitle' }, 'Доски впечатлений',
     el('small', {}, 'То, что заставляет понять, кто ты, что любишь и чем вдохновляешься. Иногда это очень важно вспомнить.')));
-  scr.append(el('div', { class: 'mascot-wrap peeking' },
-    el('img', { class: 'mascot', src: 'assets/mascot/notebook.png', alt: 'Дибитишка' }),
-    el('div', { class: 'bubble' }, 'Заведи сколько угодно досок: «любимое», «вдохновение», «стихи», «лето». На каждой — свой фон, фото, гифки и заметки.')
+  scr.append(el('figure', { class: 'boards-hero' },
+    el('img', { src: 'assets/boards/seaside-keepsakes.webp', width: 1264, height: 848,
+      alt: 'Морские воспоминания: ракушка, камушек, стеклышки и украшения, фантики, билеты и полароид с Дибитишкой у моря.' }),
+    el('figcaption', {}, el('b', {}, 'Маленькие вещи. Большие чувства.'),
+      el('span', {}, 'Собирай то, что хочется сберечь: любимые места, случайные строки и кусочки счастливых дней.'))
   ));
 
   // поиск по тегам и подписям — сразу по всем доскам
@@ -2065,11 +2185,12 @@ function screenBoards() {
   for (const b of BOARDS) {
     const cover = el('button', { class: 'board-cover', onclick: () => go('board/' + b.id) });
     cover.style.cssText = boardBgStyle(b);
+    if (b.bg === 'photo' && b.bgKey) cover.dataset.bgMedia = b.bgKey;
     const preview = el('span', { class: 'cover-thumbs' });
     const media = boardTiles(b).filter(t => t.kind !== 'note').slice(0, 3);
     if (media.length) {
       for (const t of media) preview.append(el('img', {
-        src: t.kind === 'gif' ? t.src : '', 'data-media': t.kind === 'photo' ? t.src : null, alt: '', loading: 'lazy'
+        'data-media': t.src, alt: '', loading: 'lazy'
       }));
     } else {
       const notes = boardTiles(b).filter(t => t.kind === 'note').slice(0, 1);
@@ -2081,14 +2202,17 @@ function screenBoards() {
         el('span', {}, `плиток: ${boardTileCount(b)}`)));
     grid.append(cover);
   }
+  if (!BOARDS.length) grid.append(el('div', { class: 'boards-empty card soft' },
+    el('h3', {}, 'Здесь будет то, что дорого тебе'),
+    el('p', {}, 'Начни с одной фотографии, строчки или воспоминания. Доску можно назвать «Маленькие радости» — и собирать без спешки.')));
   scr.append(grid);
-  scr.append(el('button', { class: 'btn', style: 'margin-top:16px', onclick: () => newBoardSheet() }, '＋ Новая доска'));
-  scr.append(el('p', { class: 'foot' }, 'Доски хранятся на этом устройстве. Сюда можно возвращаться в любой момент — это твоё место.'));
+  scr.append(el('button', { class: 'btn', style: 'margin-top:16px', onclick: () => newBoardSheet() }, '+ Новая доска'));
+  scr.append(boardSyncPanel());
   return scr;
 }
 
 function newBoardSheet() {
-  const title = el('input', { class: 'board-input', placeholder: 'Название: «Любимое», «Вдохновение», «Лето»…' });
+  const title = el('input', { class: 'board-input', maxlength: 80, 'aria-label': 'Название доски', placeholder: 'Название: «Любимое», «Вдохновение», «Лето»…' });
   let bg = 'sky';
   sheet((sh, close) => {
     const grid = el('div', { class: 'bg-grid' });
@@ -2113,7 +2237,7 @@ function newBoardSheet() {
         if (!name) return toast('Дай доске имя — хотя бы одно слово.');
         const b = { id: boardUid(), title: name, bg, tiles: [], created: Date.now() };
         BOARDS = [...BOARDS, b];
-        saveBoards(); close(); haptic('success');
+        if (!saveBoards()) return; close(); haptic('success');
         go('board/' + b.id);
       } }, 'Создать')
     );
@@ -2144,7 +2268,18 @@ function screenBoard(id) {
   const q = el('input', { class: 'board-search', type: 'search', placeholder: 'Поиск по тегам: #море, #тёплое' });
   const canvas = el('div', { class: 'board-canvas' });
   canvas.style.cssText = boardBgStyle(b);
+  if (b.bg === 'photo' && b.bgKey) canvas.dataset.bgMedia = b.bgKey;
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const w = target.offsetWidth, h = target.offsetHeight;
+      const a = Math.abs(parseFloat(target.style.getPropertyValue('--rot')) || 0) * Math.PI / 180;
+      const fit = w && h ? Math.min(w / (w * Math.cos(a) + h * Math.sin(a)), h / (h * Math.cos(a) + w * Math.sin(a))) : 1;
+      target.style.setProperty('--tile-fit', fit);
+    }
+  }) : null;
+  screenCleanup = () => resize?.disconnect();
   const drawTiles = (term = '') => {
+    resize?.disconnect();
     canvas.innerHTML = '';
     const s = term.trim().toLowerCase().replace(/^#/, '');
     const list = boardTiles(b).filter(t => !s ||
@@ -2157,15 +2292,18 @@ function screenBoard(id) {
         el('span', {}, b.tiles.length ? 'Попробуй другой тег или очисти поиск.' : 'Добавь первое фото, гифку или мысль — доска начнёт собираться.')));
       return;
     }
-    for (const t of list) canvas.append(tileEl(b, t));
+    for (const t of list) { const tile = tileEl(b, t); canvas.append(tile); resize?.observe(tile); }
+    hydrateMedia(canvas);
   };
   q.addEventListener('input', () => drawTiles(q.value));
   drawTiles();
   scr.append(q, canvas);
   scr.append(el('div', { class: 'board-actions' },
-    el('button', { class: 'btn', onclick: () => addTileSheet(b) }, '＋ Добавить'),
+    el('button', { class: 'btn', onclick: () => addTileSheet(b) }, '+ Добавить'),
     el('button', { class: 'btn secondary', 'aria-label': 'Фон доски', onclick: () => boardBgSheet(b) }, icon('image'), 'Фон')
   ));
+  scr.append(el('button', { class: 'btn secondary board-export', onclick: () => exportBoardSheet(b) }, icon('print'), 'Сохранить и распечатать'));
+  scr.append(boardSyncPanel());
   // фон-картинку подтягиваем после отрисовки (объект-ссылки из IndexedDB)
   if (b.bg === 'photo' && b.bgKey && !MEDIA_URLS.has(b.bgKey)) {
     mediaUrl(b.bgKey).then(() => { canvas.style.cssText = boardBgStyle(b); });
@@ -2174,7 +2312,7 @@ function screenBoard(id) {
 }
 
 function boardMenuSheet(b) {
-  const title = el('input', { class: 'board-input', value: b.title, placeholder: 'Название доски' });
+  const title = el('input', { class: 'board-input', maxlength: 80, value: b.title, 'aria-label': 'Название доски', placeholder: 'Название доски' });
   sheet((sh, close) => {
     sh.append(
       el('h3', {}, 'Настройки доски'),
@@ -2182,132 +2320,138 @@ function boardMenuSheet(b) {
       el('button', { class: 'btn', style: 'margin-top:12px', onclick: () => {
         const name = title.value.trim();
         if (!name) return toast('Название пустое.');
-        b.title = name; saveBoards(); close(); toast('Название обновлено.'); render();
+        b.title = name; if (!saveBoards()) return; close(); toast('Название обновлено.'); render();
       } }, 'Сохранить название'),
       el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); boardBgSheet(b); } }, icon('image'), 'Сменить фон'),
       el('button', { class: 'btn ghost', style: 'margin-top:8px', onclick: async () => {
-        for (const t of b.tiles || []) if (t.kind === 'photo') await mediaDel(t.src);
-        if (b.bgKey) await mediaDel(b.bgKey);
         BOARDS = BOARDS.filter(x => x.id !== b.id);
-        saveBoards(); close(); haptic('success'); toast('Доска удалена.'); go('boards');
+        if (!saveBoards()) return;
+        for (const t of b.tiles || []) if (t.src) await mediaDel(t.src);
+        if (b.bgKey) await mediaDel(b.bgKey); close(); haptic('success'); toast('Доска удалена.'); go('boards');
       } }, 'Удалить доску')
     );
   });
 }
 
-/* ============================================================
-   v25 · «Поделиться» — карточка настроения картинкой
-   ============================================================ */
-function loadImg(src) {
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = () => res(null);
-    img.src = src;
+/* Приватная синхронизация: отдельная очередь и доски для каждого аккаунта. */
+const boardAuthHeaders = () => {
+  if (TG_MODE && tg.initData) return { Authorization: 'tma ' + tg.initData };
+  const u = state.web_user;
+  return u?.session && u.session_expires > Date.now() ? { Authorization: 'Bearer ' + u.session } : {};
+};
+function syncStatusText() {
+  const status = boardSync?.status;
+  if (!boardSync?.state.enabled) return 'Доски пока только на этом устройстве. Синхронизацию с Telegram можно включить по желанию.';
+  if (status?.phase === 'syncing') return 'Синхронизирую доски и фото…';
+  if (status?.phase === 'error') return status.error;
+  if (status?.phase === 'waiting') return 'Изменения сохранены здесь и ждут синхронизации.';
+  return 'Доски синхронизированы с твоим аккаунтом Telegram.';
+}
+function updateSyncStatus(status) {
+  document.querySelectorAll('[data-board-sync-status]').forEach(node => { node.textContent = syncStatusText(); });
+  if (status?.conflicts) toast('Были изменения на двух устройствах. Обе версии сохранены — проверь доску.');
+}
+function initBoardSync() {
+  boardSync?.dispose(); boardSync = null;
+  if (!boardIdentity()) return;
+  const account = boardAccount;
+  boardSync = new BoardSync({
+    storage: localStorage, key: 'dibitishka.board-sync.v1.' + account,
+    apiUrl, authHeaders: boardAuthHeaders,
+    getBoards: () => BOARDS, getMedia: mediaGet, putMedia: mediaPut,
+    canApply: () => !activeSheetClose && account === boardAccount,
+    setBoards: boards => {
+      if (account !== boardAccount) return;
+      const changed = JSON.stringify(BOARDS) !== JSON.stringify(boards);
+      localStorage.setItem(boardsStorageKey(), JSON.stringify(boards));
+      BOARDS = boards;
+      if (changed && ['boards', 'board'].includes(route().a) && !activeSheetClose) {
+        const y = window.scrollY; render(); window.scrollTo({ top: y });
+      }
+    },
+    onStatus: updateSyncStatus
   });
 }
-function roundRect(g, x, y, w, h, r) {
-  g.beginPath();
-  g.moveTo(x + r, y);
-  g.arcTo(x + w, y, x + w, y + h, r);
-  g.arcTo(x + w, y + h, x, y + h, r);
-  g.arcTo(x, y + h, x, y, r);
-  g.arcTo(x, y, x + w, y, r);
-  g.closePath();
+function activateBoardAccount() {
+  const account = boardIdentity() || 'guest';
+  if (account !== boardAccount) { boardAccount = account; BOARDS = loadBoards() || []; }
+  initBoardSync();
+  if (boardSync?.state.enabled) boardSync.sync();
 }
-function wrapText(g, text, x, y, maxWidth, lineHeight, maxLines = 4) {
-  const words = String(text).split(/\s+/);
-  let line = '', lines = [];
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (g.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
-    else line = test;
-    if (lines.length >= maxLines) break;
+function boardSyncPanel() {
+  return el('section', { class: 'board-sync-panel' },
+    el('p', { class: 'mins', 'data-board-sync-status': '', role: 'status' }, syncStatusText()),
+    el('button', { class: 'btn ghost', onclick: boardCloudSheet }, 'Синхронизация с Telegram')
+  );
+}
+function boardCloudSheet() {
+  if (!boardAuthHeaders().Authorization) {
+    if (TG_MODE) return toast('Открой приложение из Telegram заново, чтобы подтвердить вход. Доски остаются на устройстве.');
+    return authSheet();
   }
-  if (line && lines.length < maxLines) lines.push(line);
-  lines.forEach((l, i) => g.fillText(l, x, y + i * lineHeight));
-  return lines;
-}
-const lastMoodNote = () => {
-  const e = moodTodayValue();
-  return (e && (e.note || '').trim()) || '';
-};
-async function renderMoodCard() {
-  const W = 1080, H = 1350;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const cur = moodTodayValue();
-  const v = cur ? cur.value : 4;
-  const pink = paletteId() === 'pink';
-  const grad = g.createLinearGradient(0, 0, W, H);
-  if (pink) { grad.addColorStop(0, '#FCEFF5'); grad.addColorStop(.55, '#F7E3EE'); grad.addColorStop(1, '#EEDCEA'); }
-  else { grad.addColorStop(0, '#EDF3FE'); grad.addColorStop(.55, '#E2ECFD'); grad.addColorStop(1, '#D8E6FB'); }
-  g.fillStyle = grad; g.fillRect(0, 0, W, H);
-  const blob = (x, y, r, col) => {
-    const rg = g.createRadialGradient(x, y, 0, x, y, r);
-    rg.addColorStop(0, col); rg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = rg; g.fillRect(0, 0, W, H);
-  };
-  blob(180, 170, 520, 'rgba(255,255,255,.9)');
-  blob(940, 1180, 520, pink ? 'rgba(216,164,175,.35)' : 'rgba(126,147,194,.28)');
-  g.save();
-  g.shadowColor = 'rgba(40,70,130,.18)'; g.shadowBlur = 60; g.shadowOffsetY = 24;
-  g.fillStyle = '#fff';
-  roundRect(g, 90, 110, W - 180, H - 220, 68); g.fill();
-  g.restore();
-  const logo = await loadImg(brandLogo());
-  if (logo) {
-    const lw = 560, lh = lw / (logo.width / logo.height);
-    g.drawImage(logo, (W - lw) / 2, 165, lw, lh);
-  }
-  const face = await loadImg(moodFaceSrc(v));
-  if (face) g.drawImage(face, (W - 520) / 2, 300, 520, 520);
-  g.textAlign = 'center';
-  g.fillStyle = '#1E2A45';
-  g.font = '800 62px "Nunito", "Segoe UI", system-ui, sans-serif';
-  g.fillText(`Сейчас мне: ${MOODS[v].toLowerCase()}`, W / 2, 930);
-  const note = lastMoodNote() || dailyPhrase();
-  g.fillStyle = '#48557A';
-  g.font = '500 42px "Nunito", "Segoe UI", system-ui, sans-serif';
-  wrapText(g, `«${note}»`, W / 2, 1010, W - 300, 58, 4);
-  const d = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-  g.fillStyle = '#7C89AB';
-  g.font = '600 32px "Nunito", "Segoe UI", system-ui, sans-serif';
-  g.fillText(d, W / 2, 1215);
-  g.font = '700 30px "Nunito", "Segoe UI", system-ui, sans-serif';
-  g.fillText('Дибитишка · бережно, шаг за шагом', W / 2, 1272);
-  return new Promise(res => c.toBlob(res, 'image/png'));
-}
-function downloadBlob(blob, name) {
-  const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: name });
-  document.body.append(a); a.click();
-  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
-}
-async function shareMoodCard() {
-  haptic('light');
-  const cur = moodTodayValue();
-  const blob = await renderMoodCard().catch(() => null);
-  const note = lastMoodNote();
-  const text = `${cur ? 'Мне сейчас: ' + MOODS[cur.value].toLowerCase() : 'Дибитишка — про состояние и опору'}${note ? '\n«' + note + '»' : ''}`;
-  if (!blob) { toast('Не получилось собрать карточку — попробуй ещё раз.'); return; }
-  const file = new File([blob], 'dibitishka-mood.png', { type: 'image/png' });
-  // 1) нативный «поделиться» с картинкой (работает и внутри Telegram)
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], text });
-      haptic('success');
+  sheet((sh, close) => {
+    sh.append(el('h3', {}, 'Твои доски на других устройствах'),
+      el('p', { class: 'mins', 'data-board-sync-status': '', role: 'status' }, syncStatusText()));
+    if (boardSync?.state.enabled) {
+      sh.append(
+        el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => { close(); boardSync.sync(); } }, 'Синхронизировать сейчас'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => {
+          boardSync.disable(); initBoardSync(); close(); render(); toast('Автосинхронизация выключена. Доски на устройстве и на боте не удалены.');
+        } }, 'Выключить автосинхронизацию')
+      );
       return;
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;
     }
-  }
-  // 2) запасной путь: сохраняем картинку и кладём подпись в буфер
-  downloadBlob(blob, 'dibitishka-mood.png');
-  copyText(text);
-  toast('Карточка сохранена — можно отправить её в чат или сторис.');
-  haptic('success');
+    sh.append(el('p', {}, 'Доски, заметки и фото будут сохранены на сервере бота и станут доступны после входа в этот же аккаунт Telegram. Без связи можно продолжать собирать доски — изменения отправятся позже.'));
+    let guest = [];
+    try { guest = JSON.parse(localStorage.getItem(BOARDS_KEY + '.guest')) || []; } catch { /* Нет гостевых досок. */ }
+    const includeGuest = el('input', { type: 'checkbox' });
+    if (guest.length) sh.append(el('label', { class: 'cloud-import' }, includeGuest, el('span', {}, 'Также перенести мои локальные гостевые доски в этот аккаунт')));
+    sh.append(el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => {
+      if (includeGuest.checked) {
+        const existing = new Set(BOARDS.map(b => b.id));
+        BOARDS = [...BOARDS, ...guest.filter(b => !existing.has(b.id))];
+        if (!saveBoards()) return;
+      }
+      close();
+      try { boardSync.enable(); } catch { toast('Не удалось сохранить настройки. Проверь свободную память.'); }
+      updateSyncStatus();
+    } }, 'Включить синхронизацию'));
+  });
+}
+window.addEventListener('online', () => boardSync?.sync());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) boardSync?.sync(); });
+
+/* Экспорт не меняет доску и не включает активный фильтр: всегда все плитки. */
+function exportBoardSheet(b) {
+  sheet((sh, close, signal) => {
+    sh.append(el('h3', {}, 'Сохранить и распечатать'));
+    const status = el('p', { class: 'mins', role: 'status' }, 'Собираю твою доску…');
+    sh.append(status);
+    const snapshot = JSON.parse(JSON.stringify(b));
+    renderBoardPages(snapshot, { mediaUrl, signal }).then(async ({ pages, warnings }) => {
+      if (signal.aborted) return;
+      const pdf = await boardPdf(pages);
+      if (signal.aborted) return;
+      status.textContent = `${pages.length === 1 ? 'Вся доска на одной странице.' : `Страниц: ${pages.length}. PDF сохранит их все.`} GIF сохраняются неподвижным кадром.`;
+      if (warnings.length) sh.append(el('p', { class: 'export-warning', role: 'status' }, warnings.join(' ')));
+      let index = 0;
+      const preview = el('img', { class: 'board-export-preview', alt: 'Предпросмотр доски для печати' });
+      const label = el('span', { class: 'mins' });
+      const show = () => { preview.src = pages[index].toDataURL('image/png'); label.textContent = `Страница ${index + 1} из ${pages.length}`; };
+      show(); sh.append(preview);
+      if (pages.length > 1) sh.append(el('div', { class: 'export-pager' },
+        el('button', { class: 'chip', 'aria-label': 'Предыдущая страница', onclick: () => { index = (index + pages.length - 1) % pages.length; show(); } }, '←'), label,
+        el('button', { class: 'chip', 'aria-label': 'Следующая страница', onclick: () => { index = (index + 1) % pages.length; show(); } }, '→')));
+      sh.append(
+        el('button', { class: 'btn', style: 'margin-top:14px', onclick: () => downloadBlob(pdf, 'dibitishka-board.pdf') }, 'Скачать PDF'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: async () => {
+          try { downloadBlob(await boardPageBlob(pages[index]), `dibitishka-board-${index + 1}.png`); }
+          catch { toast('Не получилось сохранить картинку. Попробуй PDF.'); }
+        } }, pages.length > 1 ? 'Скачать PNG этой страницы' : 'Скачать PNG'),
+        el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => printBoardPages(pages, b.title) }, icon('print'), 'Распечатать')
+      );
+    }).catch(err => { if (!signal.aborted) status.textContent = err.name === 'BoardExportLimit' ? err.message : 'Не получилось собрать доску. Проверь доступ к фото и попробуй ещё раз.'; });
+  });
 }
 
 /* ---------- профиль: подписка и поддержка одним блоком (v25) ----------
@@ -2339,6 +2483,7 @@ function subscriptionCard() {
 /* ---------- render ---------- */
 function render() {
   const r = route();
+  document.documentElement.dataset.screen = r.a || 'today';
   const app = $('#app');
   if (typeof screenCleanup === 'function') { try { screenCleanup(); } catch (e) {} }
   screenCleanup = null;
@@ -2383,6 +2528,8 @@ window.addEventListener('hashchange', render);
     save();
   }
   syncPremium();
+  initBoardSync();
   render();
+  if (boardSync?.state.enabled) boardSync.sync();
   setTimeout(() => $('#splash').classList.add('gone'), 1500);
 })();

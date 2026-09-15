@@ -226,7 +226,8 @@ for (const [label, lock, pkg, dir] of [
     for (const spec of importsOf(f)) {
       if (isRelative(spec) || isBuiltin(spec)) continue;
       const name = pkgName(spec);
-      if (!botDeps[name] && !rootDeps[name]) unknown.push(`${rel}: ${spec}`);
+      const isDevScript = f.startsWith(path.join(ROOT, 'scripts') + path.sep);
+      if (!botDeps[name] && !rootDeps[name] && !(isDevScript && rootPkg?.devDependencies?.[name])) unknown.push(`${rel}: ${spec}`);
     }
   }
   if (unknown.length) bad('импорты не объявлены в dependencies', unknown.join('; '));
@@ -566,9 +567,18 @@ for (const [label, lock, pkg, dir] of [
     if (noteAt > 0 && chipsAt > noteAt) ok('главная: короткая заметка стоит выше эмоций');
     else bad('главная: заметка уехала под эмоции', 'в итерации 25 просили перенести её наверх');
 
-    /* кнопка «Поделиться» */
-    if (/shareMoodCard/.test(web) && /navigator\.share/.test(web)) ok('«Поделиться»: карточка настроения собирается на canvas + нативный share');
-    else bad('«Поделиться»: нет сборки карточки или нативного share');
+    if (/class: `mood-sprite/.test(web) && /faces\/sprite\.webp/.test(css) && exists(path.join(ROOT, 'app', 'assets', 'mascot', 'faces', 'sprite.webp'))) ok('эмоции: интерфейс использует ячейки одного общего спрайта');
+    else bad('эмоции: единый спрайт не подключён к интерфейсу');
+
+    /* v26: отправка только по подтверждению, «Поделиться» больше нет. */
+    if (/moodDraft/.test(web) && /Оставить запись/.test(web) && /form.addEventListener\('submit'/.test(web)) ok('эмоции: черновик + явное подтверждение');
+    else bad('эмоции: нет подтверждения записи');
+    if (!/shareMoodCard|renderMoodCard|navigator\.share/.test(web) && !/\.share-btn/.test(css)) ok('эмоции: кнопка «Поделиться» и её обработчик убраны');
+    else bad('эмоции: остался старый сценарий «Поделиться»');
+    const sheetSource = path.join(ROOT, 'scripts', 'art-src', 'mood-heads-sheet.webp');
+    const faceBuilder = read(path.join(ROOT, 'scripts', 'build-mood-faces.py'));
+    if (exists(sheetSource) && /mood-heads-sheet/.test(faceBuilder) && /curious.*proud.*love/.test(faceBuilder)) ok('эмоции: 16 голов из единой генерации 4×4');
+    else bad('эмоции: нет единого листа голов/нарезки');
     if (/support-card/.test(web) && /support-card/.test(css)) ok('профиль: подписка и донат — один блок (support-card)');
     else bad('профиль: подписка и донат снова разъехались', 'верни subscriptionCard() и стиль .support-card');
     const subAt = web.indexOf('subscriptionCard()');
@@ -612,6 +622,27 @@ for (const [label, lock, pkg, dir] of [
       bad('маскот: кадры анимации разного размера с hello.png',
         'при переключении слоёв персонаж будет дёргаться — пересобери: python3 scripts/build-mascot-frames.py');
     }
+
+    const frames = readJson(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-frames.json'));
+    if (frames?.frames >= 17 && exists(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-expressions.webp')) && exists(path.join(ROOT, 'app', 'css', 'hero-animation.css'))) ok('маскот: промежуточные кадры в единой сетке');
+    else bad('маскот: не хватает промежуточных кадров');
+    if (!/liveSway|liveBreathe/.test(css) && /heroExpressionFrames/.test(css)) ok('маскот: только мимика, без покачивания и дыхания');
+    else bad('маскот снова плавает или потерял мимику');
+    if (/seaside-keepsakes/.test(web) && exists(path.join(ROOT, 'app', 'assets', 'boards', 'seaside-keepsakes.webp'))) ok('доски: морской коллаж на странице');
+    else bad('доски: нет новой иллюстрации');
+    const images = read(path.join(ROOT, 'app', 'js', 'image-tools.js'));
+    if (/imageOrientation: 'from-image'/.test(images) && /jpegOrientation/.test(images) && /orientationTransform/.test(images)) ok('фото: EXIF 1..8 + fallback без двойного поворота');
+    else bad('фото: не обработана EXIF-ориентация');
+    if (/exportBoardSheet/.test(web) && exists(path.join(ROOT, 'app', 'js', 'board-export.js'))) ok('доски: PNG/PDF/печать');
+    else bad('доски: пропал экспорт');
+    const api = read(path.join(ROOT, 'bot', 'src', 'boards.js'));
+    const auth = read(path.join(ROOT, 'bot', 'src', 'web-auth.js'));
+    if (/auth.authenticate/.test(api) && /base_revision/.test(api) && /timingSafeEqual/.test(auth)) ok('доски: приватный API с авторизацией и ревизиями');
+    else bad('доски: приватный API не защищён');
+    const webPkg = readJson(path.join(ROOT, 'package.json'));
+    const webCi = read(path.join(ROOT, '.github', 'workflows', 'ci.yml'));
+    if (webPkg?.scripts?.['dom-test'] && webPkg?.scripts?.['boards-test'] && webPkg?.scripts?.['browser-test'] && /npm run dom-test/.test(webCi) && /npm run browser-test/.test(webCi)) ok('веб: поведенческие и браузерные проверки в CI');
+    else bad('веб: проверки поведения не включены в CI');
 
     /* папки навыков */
     const folderLine = (web.match(/const FOLDER_ART = \{[^}]*\}/) || [''])[0];
