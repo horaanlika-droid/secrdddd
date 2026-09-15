@@ -10,7 +10,8 @@
     "fixdeps": "node src/ensure-deps.js",
     "smoke": "node ../scripts/smoke.mjs",
     "ai-check": "node ../scripts/ai-check.mjs",
-    "agents-test": "node ../scripts/agents-mock-check.mjs"
+    "agents-test": "node ../scripts/agents-mock-check.mjs",
+    "exec-server": "node ../scripts/exec-server.mjs"
   },
   "dependencies": {
     "grammy": "^1.30.0",

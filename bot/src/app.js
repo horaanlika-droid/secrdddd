@@ -809,7 +809,9 @@ function statusReport(opts = {}) {
   else if (!aiH.last_ok_at) problems.push(`ни одного успешного ответа модели: ${aiH.last_error_detail || aiH.last_error || 'запросов ещё не было'}`);
   else if (aiH.last_error && now - (aiH.last_error_at || 0) < 600000) problems.push(`последняя ошибка OpenAI: ${aiH.last_error}`);  const ag = agents.agentsDiagnostics();
   if (ag.enabled && ag.last_error) problems.push(`agents: ${ag.last_error}${ag.last_error_detail ? ' — ' + ag.last_error_detail : ''}`);
-  if (ag.enabled && !ag.executor_key) problems.push('agents: не задан OPENAI_EXECUTOR_API_KEY — исполнителю нечем подключаться к окружению');
+  if (ag.enabled && !ag.executor_key) problems.push('agents: не задан ключ окружения (OPENAI_EXECUTOR_API_KEY / OPENAI_ENVIRONMENT_KEY) — исполнителю нечем подключаться');
+  if (ag.enabled && ag.static_mode && ag.static_executor === 'off') problems.push('agents: статический режим, но exec-server не поднят (AGENTS_STATIC_EXECUTOR=1 или запускай npm run exec-server)');
+  if (ag.enabled && (ag.static_executor === 'dead' || ag.static_executor === 'no_key')) problems.push('agents: exec-server лежит (' + ag.static_executor + ') — сессия не получит окружение');
   if (ag.enabled && !ag.executor_cmd) problems.push('agents: AGENTS_EXECUTOR_CMD не задан — codex exec-server надо запускать вручную');
 
   return {
@@ -1070,6 +1072,9 @@ acquirePort(server, PORT, { host: '0.0.0.0' })
     console.log(ai.aiStatusLine());
     const line = agents.agentsStatusLine();
     if (line) console.log(line);
+    // AGENTS_STATIC_EXECUTOR=1 — бот сам держит codex exec-server над
+    // заранее созданной сессией (тот же однострочник из гайда, но с рестартами)
+    agents.maybeStartStaticExecutor();
   })
   .catch((e) => {
     console.error('[http] ' + (e?.message || e));
@@ -1088,6 +1093,7 @@ async function shutdown(signal) {
   try { flush(); } catch (e) { console.error('[db] не записал: ' + (e?.message || e)); }
   try { await bot.stop(); } catch { /* polling мог и не подняться */ }
   // исполнители окружения (codex exec-server) не должны пережить процесс
+  try { agents.stopStaticExecutor(); } catch { /* и не поднимали */ }
   try { agents.closeAllSessions('shutdown'); } catch { /* и не было ни одного */ }
   try { server.close(); } catch { /* уже закрыт */ }
   process.exit(0);

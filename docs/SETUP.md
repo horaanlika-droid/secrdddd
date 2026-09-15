@@ -344,6 +344,67 @@ codex exec-server --remote "https://api.openai.com/v1/agents/api/connect/rt_xxxx
 Токен из `remote_url` бот нигде целиком не печатает (`connect/rt_***`), и в
 `/health` он не попадает.
 
+### 4b. Статический режим: одна сессия и exec-server, который держишь ты
+
+Строка из гайда
+
+```bash
+CODEX_API_KEY="$OPENAI_ENVIRONMENT_KEY" \
+  codex exec-server \
+    --remote "https://api.openai.com/v1/agents/api/connect/rt_xxxx" \
+    --environment-id "ccarenv_b64_..."
+```
+
+— это **подключение к уже созданной сессии**, а не создание сессии: `remote_url`
+и `environment.id` отдаёт ответ `POST /v1/agents/sessions`. Один такой процесс
+обслуживает одну сессию (у каждой сессии своё окружение и свой исполнитель —
+переиспользовать нельзя). Поэтому режим годится для «мой личный диалог с
+агентом в песочнице», и для этого есть явные переменные:
+
+```
+AGENTS_ENABLED=1
+AGENTS_SESSION_ID=ses_...           # твоя сессия: бот её не создаёт и НЕ удаляет
+AGENTS_STATIC_KEYS=tg:123456789     # кому она разрешена (иначе — всем: чужие
+                                    # сообщения попадут в один тред с твоими)
+AGENTS_REMOTE_URL=https://api.openai.com/v1/agents/api/connect/rt_xxxx
+AGENTS_ENVIRONMENT_ID=ccarenv_...
+AGENTS_STATIC_EXECUTOR=1            # бот сам поднимает exec-server и перезапускает при падениях
+OPENAI_ENVIRONMENT_KEY=sk-env-...   # принимается наравне с OPENAI_EXECUTOR_API_KEY / CODEX_API_KEY
+```
+
+`AGENTS_STATIC_EXECUTOR=1` — это та же команда, но с надзирателем: backoff при
+падениях, лимит `AGENTS_EXEC_RESTART_MAX`, masked-логи и гарантированное
+закрытие вместе с ботом (иначе `exec-server` переживёт деплой и будет
+держать окружение).
+
+Без `AGENTS_STATIC_EXECUTOR` держи процесс отдельным — например юнитом или так:
+
+```bash
+npm run exec-server -- --check   # проверить конфиг, показать команду (секреты — замаскированными)
+npm run exec-server              # поднять и держать; SIGTERM гасит аккуратно
+```
+
+Пример unit-файла (если бот живёт в systemd, а песочница — рядом):
+
+```ini
+[Service]
+EnvironmentFile=/srv/dibitishka/.env
+ExecStart=/usr/bin/node /srv/dibitishka/scripts/exec-server.mjs
+Restart=always
+```
+
+Что видно в `/health`:
+
+```json
+"agents": { "static_mode": true, "static_session": "ses_…", "static_keys": ["tg:123456789"],
+            "static_executor": "running", "static_executor_restarts": 0, "static_executor_pid": 4213 }
+```
+
+`static_executor: "off" | "no_key" | "retry" | "dead"` — это и есть ответ на
+«почему агент молчит» в этом режиме: `"dead"` означает, что `codex` падает
+`AGENTS_EXEC_RESTART_MAX` раз подряд (сеть до `wss://codex-cloud-environments.chatgpt.com`,
+права ключа окружения, отсутствующий `@openai/codex` в образе).
+
 ### 5. Как это выглядит в рантайме
 
 ```

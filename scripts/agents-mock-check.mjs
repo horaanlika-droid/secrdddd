@@ -109,8 +109,8 @@ else bad('environment передан неправильно', JSON.stringify(cre
 if (String(created.agent?.instructions || '').length > 500) ok('персона уезжает в instructions сессии (из persona.js, один источник правды)');
 else bad('instructions сессии пустые — Дибитишка забудет, кто она');
 if (/Аня/.test(String(created.agent?.instructions || ''))) ok('контекст пользователя попал в инструкции');
-else warn_bad('контекст пользователя не в instructions');
-function warn_bad(m) { bad(m); }
+else bad('контекст пользователя не в instructions');
+
 
 await wait(150);
 r = await A.ask({ key: 'tg:1', userText: 'привет', userContext: { name: 'Аня' }, channel: 'telegram' });
@@ -173,12 +173,58 @@ const d2 = A.agentsDiagnostics();
 if (d2.last_error && d2.live.find) ok('ошибки агентов видны в диагностике (/health, /diag)');
 else bad('агентские ошибки не попадают в диагностику');
 
-console.log('\n3) выключенный режим — тишины не должно быть');
+console.log('\n3) статический режим: внешняя сессия и свой exec-server');
+// (a) AGENTS_SESSION_ID + AGENTS_STATIC_KEYS: чужую сессию не создаём и не удаляем
+mode = 'happy';
+process.env.AGENTS_SESSION_ID = 'ses_external_1';
+process.env.AGENTS_STATIC_KEYS = 'tg:999';
+const createsBefore = seen.creates.length, deletesBefore = seen.deletes.length;
+r = await A.ask({ key: 'tg:999', userText: 'привет', userContext: {}, channel: 'telegram' });
+if (seen.creates.length === createsBefore) ok('внешняя сессия не создаётся заново (бот берёт AGENTS_SESSION_ID)');
+else bad('в статическом режиме создана новая сессия — персона и память уедут не туда');
+if (seen.inputs[seen.inputs.length - 1]?.events?.[0]?.type === 'agent.session.input.message') ok('input ушёл во внешнюю сессию');
+else bad('input не ушёл во внешнюю сессию');
+const other = await A.ask({ key: 'tg:777', userText: 'привет', userContext: {}, channel: 'telegram' });
+if (seen.creates.length === createsBefore + 1 && other.text) ok('чужой диалог получает СВОЮ сессию — статическая не размывает приватность');
+else bad('статическая сессия подсела на чужой диалог: ' + JSON.stringify({ creates: seen.creates.length, other }).slice(0, 140));
+await A.closeSession('tg:999', 'test');
+if (seen.deletes.length === deletesBefore) ok('внешнюю сессию не удаляем (DELETE только для созданных ботом)');
+else bad('бот удалил чужую сессию — /reset или TTL не должны убивать то, что создал человек');
+
+// (b) надзиратель: AGENTS_STATIC_EXECUTOR=1 + ключ из OPENAI_ENVIRONMENT_KEY (имя из команды OpenAI)
+process.env.AGENTS_STATIC_EXECUTOR = '1';
+process.env.AGENTS_REMOTE_URL = 'https://api.openai.com/v1/agents/api/connect/rt_staticsecret';
+process.env.AGENTS_ENVIRONMENT_ID = 'ccarenv_static_1';
+delete process.env.AGENTS_EXECUTOR_CMD;
+delete process.env.OPENAI_EXECUTOR_API_KEY;
+delete process.env.CODEX_API_KEY;
+process.env.OPENAI_ENVIRONMENT_KEY = 'sk-env-alias-777';
+const WATCH = path.join(tmp, 'static-exec.json');
+process.env.AGENTS_CODEX_BIN = `node -e 'const fs=require("fs");const a=process.argv;const g=(f)=>a[a.indexOf(f)+1];fs.writeFileSync(${JSON.stringify(WATCH)},JSON.stringify({remote:g("--remote")||null,env_id:g("--environment-id")||null,key:process.env.CODEX_API_KEY||null,leak:process.env.OPENAI_API_KEY||null}))'`;
+A.maybeStartStaticExecutor();
+await wait(250);
+const w = JSON.parse(fs.readFileSync(WATCH, 'utf8'));
+if (w.remote === 'https://api.openai.com/v1/agents/api/connect/rt_staticsecret' && w.env_id === 'ccarenv_static_1') ok('exec-server получает remote_url и environment.id целиком (маскируются только лог и /health)');
+else bad('аргументы исполнителя испорчены: ' + JSON.stringify(w).slice(0, 160));
+if (w.key === 'sk-env-alias-777') ok('OPENAI_ENVIRONMENT_KEY принимается как ключ окружения (то имя, что в команде OpenAI)');
+else bad('алиас OPENAI_ENVIRONMENT_KEY не работает: ' + JSON.stringify(w).slice(0, 140));
+if (!w.leak) ok('в процесс исполнителя не подмешан ключ приложения');
+else bad('утечка OPENAI_API_KEY в песочницу');
+const dStatic = A.agentsDiagnostics();
+if (dStatic.static_mode && dStatic.static_executor && !/rt_staticsecret|sk-env-alias/.test(JSON.stringify(dStatic))) ok('диагностика знает про статический режим и молчит про секреты');
+else bad('статический режим не виден в диагностике (или светит секреты): ' + JSON.stringify(dStatic).slice(0, 160));
+A.stopStaticExecutor();
+await wait(50);
+if (A.agentsDiagnostics().static_executor === 'stopped') ok('stopStaticExecutor() гасит надзирателя (иначе он пережил бы деплой)');
+else bad('надзиратель не остановился: ' + A.agentsDiagnostics().static_executor);
+
+console.log('\n4) выключенный режим — тишины не должно быть');
 process.env.AGENTS_ENABLED = '0';
 r = await A.ask({ key: 'tg:5', userText: 'привет' });
 if (r.error === 'off') ok('без AGENTS_ENABLED=1 модуль честно отвечает «off» (выбор бэкенда делает app.js)');
 else bad('выключенный режим ведёт себя странно: ' + JSON.stringify(r).slice(0, 120));
 
+process.env.AGENTS_ENABLED = '0';
 server.closeAllConnections?.();
 server.close();
 for (const s of A.agentsDiagnostics().live || []) { /* исполнителей подбиваем */ }

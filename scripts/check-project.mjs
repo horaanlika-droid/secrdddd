@@ -521,6 +521,20 @@ for (const [label, lock, pkg, dir] of [
   else bad('docs/SETUP.md: не описан codex exec-server / AGENTS_EXECUTOR_CMD');
   if (pkg?.scripts?.['agents-test'] && ci?.includes('agents-test') && exists(path.join(ROOT, 'scripts', 'agents-mock-check.mjs'))) ok('npm run agents-test: мок Agents API в CI');
   else bad('нет agents-test в package.json/CI', 'контракт беты надо проверяять без живого ключа');
+  // статический режим: внешняя сессия не должна никнуть, имя ключа — как в доках OpenAI,
+  // а исполнитель обязан иметь надзирателя (иначе «чат висит после первого падения»)
+  if (/OPENAI_ENVIRONMENT_KEY/.test(ag)) ok('bot/src/agents.js: принимает OPENAI_ENVIRONMENT_KEY (имя из команды OpenAI)');
+  else bad('bot/src/agents.js: имя ключа окружения из гайда не поддерживается', 'нужны алиасы OPENAI_EXECUTOR_API_KEY / OPENAI_ENVIRONMENT_KEY / CODEX_API_KEY');
+  if (/external/.test(ag) && /НЕ удалял|не моя/.test(ag)) ok('bot/src/agents.js: внешнюю сессию не создаёт и не удаляет');
+  else bad('bot/src/agents.js: внешняя (AGENTS_SESSION_ID) сессия не защищена от DELETE/TTL', 'человек потеряет свой чат при /reset или по таймауту');
+  if (/AGENTS_STATIC_KEYS/.test(ag)) ok('bot/src/agents.js: статическая сессия выдаётся только явным диалогам');
+  else bad('bot/src/agents.js: нет AGENTS_STATIC_KEYS', 'иначе одна статическая сессия смешает чужие диалоги в один тред');
+  if (/launchStatic|maybeStartStaticExecutor/.test(ag) && /stopStaticExecutor/.test(ag) && /stopStaticExecutor\(\)/.test(app)) ok('bot/src/app.js: надзиратель exec-server гасится по SIGTERM');
+  else bad('bot/src/app.js: статический исполнитель не останавливается при выходе', 'он переживёт деплой и будет держать окружение');
+  if (exists(path.join(ROOT, 'scripts', 'exec-server.mjs')) && pkg?.scripts?.['exec-server']) ok('npm run exec-server: отдельный надзиратель на месте');
+  else bad('нет scripts/exec-server.mjs / npm run exec-server');
+  if (/exec-server/.test(docs) && /AGENTS_STATIC_KEYS/.test(docs)) ok('docs/SETUP.md: статический режим описан');
+  else bad('docs/SETUP.md: не описан статический режим (AGENTS_SESSION_ID / exec-server)');
 }
 
 /* ---------- итог ---------- */

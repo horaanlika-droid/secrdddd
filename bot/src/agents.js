@@ -59,6 +59,22 @@ const env = (k, d = '') => String(process.env[k] ?? '').trim() || d;
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) && v > 0 ? v : d; };
 
 const BASE = () => env('AGENTS_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, '');
+/* Ключ окружения. Имена принимаем любые из документированных и из команды
+   OpenAI (`CODEX_API_KEY="$OPENAI_ENVIRONMENT_KEY"`), чтобы не пришлось
+   переименовывать то, что уже вписано на хосте. */
+export const EXECUTOR_KEY_ALIASES = ['OPENAI_EXECUTOR_API_KEY', 'OPENAI_ENVIRONMENT_KEY', 'CODEX_API_KEY'];
+const executorKey = () => { for (const n of EXECUTOR_KEY_ALIASES) { const v = env(n); if (v) return v; } return ''; };
+/* Статический режим: одна заранее созданная сессия (свой remote_url +
+   environment.id). Нужен, когда исполнитель запускаешь отдельно — systemd,
+   второй контейнер, «просто в терминале». Внешнюю сессию бот НЕ создаёт и
+   НЕ удаляет: это чужое, удалить — значит сломать тебе чат. */
+const staticSession = () => env('AGENTS_SESSION_ID');
+const staticKeys = () => {
+  const list = env('AGENTS_STATIC_KEYS').split(',').map((x) => x.trim()).filter(Boolean);
+  return new Set(list.length ? list : []);
+};
+const staticRemote = () => env('AGENTS_REMOTE_URL') || env('AGENTS_EXEC_REMOTE_URL');
+const staticEnvId = () => env('AGENTS_ENVIRONMENT_ID') || env('AGENTS_ENV_ID');
 const API = () => env('OPENAI_API_KEY', '');
 const HEADERS = (extra = {}) => ({
   'Content-Type': 'application/json',
@@ -91,11 +107,14 @@ const maskKey = (k) => (k ? `${String(k).slice(0, 3)}…${String(k).slice(-3)}` 
 const sessions = new Map();
 const health = {
   enabled: false, model: null, base: null, workspace: null,
-  sessions: 0, executor_cmd: false, executor_key: false,
+  sessions: 0, executor_cmd: false, executor_key: false, attached: 0, static_mode: false,
   last_error: null, last_error_detail: null, last_error_at: null,
   last_event: null, last_session_id: null, turns: 0, fallbacks: 0,
   created: 0, closed: 0
 };
+/* Статический исполнитель: один надзиратель над codex exec-server.
+   Перезапускает, если упал, и глохнет вместе с ботом. */
+const staticExecutor = { child: null, state: 'off', restarts: 0, last_error: null, stop: false };
 function fail(err, detail) {
   health.last_error = err;
   health.last_error_detail = detail ? String(detail).slice(0, 240) : null;
@@ -103,8 +122,9 @@ function fail(err, detail) {
   console.error(`[agents] ${err}${detail ? ': ' + String(detail).slice(0, 200) : ''}`);
 }
 export function agentsDiagnostics() {
-  health.executor_cmd = !!env('AGENTS_EXECUTOR_CMD');
-  health.executor_key = !!(env('OPENAI_EXECUTOR_API_KEY') || env('CODEX_API_KEY'));
+  health.executor_cmd = !!env('AGENTS_EXECUTOR_CMD') || !!staticExecutor.child;
+  health.executor_key = !!executorKey();
+  health.static_mode = !!staticSession();
   const list = [...sessions.values()].map((s) => ({
     key: s.key, session_id: s.session_id, environment_id: s.environment_id,
     environment_state: s.env_state || 'unknown',
@@ -119,6 +139,11 @@ export function agentsDiagnostics() {
     base: BASE(),
     workspace: env('AGENTS_WORKSPACE', '/workspace'),
     sessions: sessions.size,
+    static_session: staticSession() || null,
+    static_keys: [...staticKeys()],
+    static_executor: staticExecutor.state,
+    static_executor_restarts: staticExecutor.restarts,
+    static_executor_pid: staticExecutor.pid || null,
     live: list
   };
 }
@@ -168,6 +193,28 @@ function instructions(userContext = {}, channel = 'telegram') {
   ].join('\n\n');
 }
 
+/** Берёт заранее созданную сессию: никаких POST /sessions, никакого DELETE потом. */
+function attachSession(key) {
+  const rec = {
+    key,
+    session_id: staticSession(),
+    environment_id: staticEnvId() || null,
+    remote_url: staticRemote() || null,
+    external: true,
+    created_at: Date.now(),
+    last_used: Date.now(),
+    turns: 0,
+    env_state: 'connected',      // исполнитель уже подключён снаружи; события лишь поправят
+    executor: null
+  };
+  sessions.set(key, rec);
+  health.attached++;
+  health.last_session_id = rec.session_id;
+  console.log(`[agents] внешняя сессия ${rec.session_id} для «${key}» · окружение ${maskSecret(rec.environment_id || '—')} (не создаём и не удаляем)`);
+  if (!rec.environment_id) console.warn('[agents] AGENTS_ENVIRONMENT_ID не задан — исполнитель для этой сессии бот поднять не сможет, запускай сам (npm run exec-server)');
+  return rec;
+}
+
 async function createSession(key, { userContext, channel } = {}) {
   const body = {
     agent: { model: agentsModel(), instructions: instructions(userContext, channel) },
@@ -199,9 +246,11 @@ async function createSession(key, { userContext, channel } = {}) {
 function startExecutor(rec) {
   const tpl = env('AGENTS_EXECUTOR_CMD');
   if (!tpl) {
-    const cmd = `OPENAI…ЕНА> codex exec-server --remote "${maskSecret(rec.remote_url)}" --environment-id "${rec.environment_id}"`;
+    const cmd = rec.external
+      ? `CODEX_API_KEY="<ключ окружения>" codex exec-server --remote "${maskSecret(rec.remote_url)}" --environment-id "${rec.environment_id}"   // или npm run exec-server`
+      : `CODEX_API_KEY="<ключ окружения>" codex exec-server --remote "${maskSecret(rec.remote_url)}" --environment-id "${rec.environment_id}"`;
     console.log(`[agents] исполнитель не запущен (AGENTS_EXECUTOR_CMD не задан). Вручную в окружении:\n    ${cmd}`);
-    rec.executor_note = 'AGENTS_EXECUTOR_CMD не задан — запуск руками';
+    rec.executor_note = 'AGENTS_EXECUTOR_CMD не задан — запуск руками или npm run exec-server';
     return null;
   }
   if (!rec.remote_url || !rec.environment_id) {
@@ -211,8 +260,8 @@ function startExecutor(rec) {
   const cmd = tpl
     .replace('{remote_url}', rec.remote_url)
     .replace('{environment_id}', rec.environment_id);
-  const key = env('OPENAI_EXECUTOR_API_KEY') || env('CODEX_API_KEY');
-  if (!key) fail('no_executor_key', 'OPENAI_EXECUTOR_API_KEY (он же CODEX_API_KEY) не задан — codex exec-server не подключится');
+  const key = executorKey();
+  if (!key) fail('no_executor_key', `${EXECUTOR_KEY_ALIASES.join(' / ')} не задан — codex exec-server не подключится`);
   let child;
   try {
     child = spawn(cmd, {
@@ -428,12 +477,15 @@ export async function ask({ key, userText, userContext = {}, channel = 'telegram
   if (!text) return { error: 'empty' };
   const mapKey = String(key || channel);
   let rec = sessions.get(mapKey);
-  if (rec && Date.now() - (rec.last_used || 0) > num('AGENTS_SESSION_TTL_S', 3600) * 1000) {
+  if (rec && !rec.external && Date.now() - (rec.last_used || 0) > num('AGENTS_SESSION_TTL_S', 3600) * 1000) {
     await closeSession(mapKey, 'ttl');
     rec = null;
   }
   try {
-    if (!rec) rec = await createSession(mapKey, { userContext, channel });
+    if (!rec) {
+      const useStatic = !!staticSession() && (staticKeys().size === 0 || staticKeys().has(mapKey));
+      rec = useStatic ? attachSession(mapKey) : await createSession(mapKey, { userContext, channel });
+    }
   } catch (e) {
     fail(e.code || 'create_session', e.detail || e.message);
     return { error: e.code || 'create_session', detail: e.detail || e.message };
@@ -449,6 +501,12 @@ export async function closeSession(key, why = 'manual') {
   if (!rec) return false;
   sessions.delete(String(key));
   stopExecutor(rec);
+  if (rec.external) {
+    // внешняя сессия: только забываем. DELETE убил бы тебе чат в другой вкладке.
+    health.closed++;
+    console.log(`[agents] внешняя сессия ${rec.session_id} откреплена (${why}) — не удалял, она не моя`);
+    return true;
+  }
   try {
     await call('DELETE', `/agents/sessions/${encodeURIComponent(rec.session_id)}`, undefined, { timeoutMs: 10000 });
   } catch (e) { /* уже умерла или нет прав — не критично */ }
@@ -460,11 +518,96 @@ export function closeAllSessions(why = 'shutdown') {
   for (const key of [...sessions.keys()]) closeSession(key, why);
 }
 
+/* ---------- статический исполнитель: твоя команда + надзиратель ----------
+   Ровно то, что в гайде OpenAI:
+
+     CODEX_API_KEY="$OPENAI_ENVIRONMENT_KEY" \
+       codex exec-server --remote "<AGENTS_REMOTE_URL>" --environment-id "<AGENTS_ENVIRONMENT_ID>"
+
+   ...но с тем, чего в однострочнике нет: если exec-server упадёт (ключ,
+   сеть, рестарт контейнера), чат перестанет получать ответы и будет висеть
+   до таймаута. Поэтому рестарт с backoff, лимит попыток, и общая смерть с
+   процессом бота. Логи — только замаскированные. */
+export function buildExecutorCommand({ remote, environmentId } = {}) {
+  const tpl = env('AGENTS_EXECUTOR_CMD');
+  if (tpl) return tpl.replace('{remote_url}', remote || '').replace('{environment_id}', environmentId || '');
+  const parts = [env('AGENTS_CODEX_BIN', 'codex'), 'exec-server'];
+  if (remote) parts.push('--remote', `"${remote}"`);
+  if (environmentId) parts.push('--environment-id', `"${environmentId}"`);
+  return parts.join(' ');
+}
+
+function launchStatic(attempt = 1) {
+  const cmd = buildExecutorCommand({ remote: staticRemote(), environmentId: staticEnvId() });
+  let child = null;
+  try {
+    child = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env: executorEnv(executorKey()) });
+  } catch (e) {
+    staticExecutor.state = 'error';
+    staticExecutor.last_error = String(e?.message || e);
+    fail('executor_spawn', staticExecutor.last_error);
+    return null;
+  }
+  staticExecutor.child = child;
+  staticExecutor.state = 'running';
+  staticExecutor.pid = child.pid;
+  console.log(`[agents] exec-server: pid ${child.pid} за окружением ${maskSecret(staticEnvId())} (попытка ${attempt})`);
+  const log = (buf) => {
+    for (const line of String(buf).split('\n')) {
+      const t = line.trim();
+      if (t) console.log('[exec-server] ' + maskSecret(t).slice(0, 300));
+    }
+  };
+  child.stdout?.on('data', log);
+  child.stderr?.on('data', log);
+  child.on('error', (e) => { staticExecutor.last_error = String(e?.message || e); staticExecutor.state = 'error'; });
+  child.on('exit', (code, signal) => {
+    staticExecutor.child = null;
+    if (staticExecutor.stop) { staticExecutor.state = 'stopped'; return; }
+    staticExecutor.restarts++;
+    const max = num('AGENTS_EXEC_RESTART_MAX', 20);
+    if (attempt >= max) {
+      staticExecutor.state = 'dead';
+      fail('executor_dead', `exec-server падал ${max} раз подряд (последний код ${code}) — чат пойдёт через chat/completions`);
+      return;
+    }
+    const delay = Math.min(2000 * 2 ** Math.min(attempt - 1, 4), 60000);
+    staticExecutor.state = 'retry';
+    console.warn(`[agents] exec-server завершился (code=${code}, signal=${signal || 'нет'}) — рестарт через ${Math.round(delay / 1000)} с`);
+    setTimeout(() => launchStatic(attempt + 1), delay).unref?.();
+  });
+  return child;
+}
+
+/** Включается только явно: AGENTS_STATIC_EXECUTOR=1 при наличии AGENTS_REMOTE_URL + AGENTS_ENVIRONMENT_ID. */
+export function maybeStartStaticExecutor() {
+  if (env('AGENTS_STATIC_EXECUTOR') !== '1') return null;
+  if (!agentsEnabled()) { console.warn('[agents] AGENTS_STATIC_EXECUTOR=1, но режим выключен (нужен AGENTS_ENABLED=1 и OPENAI_API_KEY)'); return null; }
+  if (!staticRemote() || !staticEnvId()) {
+    staticExecutor.state = 'off';
+    console.warn('[agents] статический исполнитель не поднят: нужны AGENTS_REMOTE_URL и AGENTS_ENVIRONMENT_ID');
+    return null;
+  }
+  if (!executorKey()) {
+    staticExecutor.state = 'no_key';
+    fail('no_executor_key', `нужен ключ окружения в одной из переменных: ${EXECUTOR_KEY_ALIASES.join(', ')}`);
+    return null;
+  }
+  return launchStatic();
+}
+
+export function stopStaticExecutor() {
+  staticExecutor.stop = true;
+  try { staticExecutor.child?.kill('SIGTERM'); } catch { /* уже всё */ }
+  staticExecutor.child = null;
+  if (staticExecutor.state === 'running' || staticExecutor.state === 'retry') staticExecutor.state = 'stopped';
+}
+
 /* ---------- чистка протухших ---------- */
 const sweeper = setInterval(() => {
   const ttl = num('AGENTS_SESSION_TTL_S', 3600) * 1000;
   for (const [key, rec] of sessions) {
-    if (Date.now() - (rec.last_used || 0) > ttl) closeSession(key, 'ttl');
+    if (!rec.external && Date.now() - (rec.last_used || 0) > ttl) closeSession(key, 'ttl');
   }
 }, 60000);
 sweeper.unref?.();
@@ -473,6 +616,9 @@ sweeper.unref?.();
 export function agentsStatusLine() {
   if (!agentsEnabled()) return null;
   const h = agentsDiagnostics();
-  return `[agents] Agents API: модель ${h.model}, окружение ${h.workspace}, исполнитель: ${h.executor_cmd ? 'автозапуск' : 'вручную'}, ключ окружения: ${maskKey(env('OPENAI_EXECUTOR_API_KEY') || env('CODEX_API_KEY'))}`;
+  const mode = h.static_mode
+    ? `внешняя сессия ${h.static_session}${h.static_keys.length ? ' для ' + h.static_keys.join(', ') : ' для всех диалогов (AGENTS_STATIC_KEYS не задан — так делать не стоит)'} · исполнитель: ${h.static_executor}`
+    : (h.executor_cmd ? 'автозапуск на сессию' : 'вручную');
+  return `[agents] Agents API: модель ${h.model}, окружение ${h.workspace}, ${mode}, ключ окружения: ${maskKey(executorKey())}`;
 }
-export const agentsEnv = { hasExecutorKey: () => !!(env('OPENAI_EXECUTOR_API_KEY') || env('CODEX_API_KEY')), hasExecutorCmd: () => !!env('AGENTS_EXECUTOR_CMD') };
+export const agentsEnv = { hasExecutorKey: () => !!executorKey(), hasExecutorCmd: () => !!env('AGENTS_EXECUTOR_CMD') };

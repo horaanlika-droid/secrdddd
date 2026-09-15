@@ -11,6 +11,14 @@
 >   агентов — обычный `chat/completions`, а человек вообще ничего не замечает.
 >   Секреты окружения (connect-токен, `CODEX_API_KEY`) не светятся ни в логах,
 >   ни в `/health`, ни в песочнице. Проверка контракта — `npm run agents-test`.
+> - **Статический режим для «я запускаю exec-server сам»**: `AGENTS_SESSION_ID` +
+>   `AGENTS_REMOTE_URL` + `AGENTS_ENVIRONMENT_ID` + `OPENAI_ENVIRONMENT_KEY` (имя
+>   из команды OpenAI принимается наравне с `OPENAI_EXECUTOR_API_KEY`). Такую сессию
+>   бот не создаёт и не удаляет — её создал человек; и выдаёт её только диалогам из
+>   `AGENTS_STATIC_KEYS`, иначе одна сессия смешала бы чужие чаты в один тред.
+>   `AGENTS_STATIC_EXECUTOR=1` поднимает `codex exec-server` внутри бота с backoff
+>   и аккуратным закрытием; отдельным процессом — `npm run exec-server`
+>   (`--check` — только проверить конфиг).
 > - **«Чат молчит» теперь имеет причину.** `GET /health` отдаёт `telegram.polling`
 >   (running / retry / dead + `poll_error: conflict|auth|network`), `ai_health`
 >   (модель, счётчики, последняя ошибка и текст из ответа OpenAI), `problems[]`
