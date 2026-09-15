@@ -705,6 +705,19 @@ a{color:inherit}
 .splash-tagline{position:relative; color:var(--ink-2); font-size:15px; line-height:1.5; text-align:center; max-width:300px}
 .splash-inner{gap:16px}
 
+/* ---------- splash lockup (v31: IMG_0969 — маскот с надписью, без фона) ---------- */
+/* Картинка из папки «элементы нового дизайна»: внешний фон снят в альфа-канал
+   (scripts/cut_bg.py --white --adj-rounds 1600), поэтому на прелоаде нет белой
+   плашки. Напечатанные под надписью точки обрезаны — вместо них живые
+   анимированные .splash-dots. */
+.splash-lockup{position:relative; width:min(84vw, 360px); height:auto; display:block;
+  background:none; border:0; border-radius:0; box-shadow:none;
+  filter:drop-shadow(0 12px 28px rgba(var(--accent-rgb),.18));
+  animation:breathe 4.6s ease-in-out infinite}
+@media (max-height:620px){
+  .splash-lockup{width:min(64vw, 300px)}
+}
+
 @media (max-width:420px){
   .hero-brand{width:min(88%, 300px)}
   .hero-phrase{font-size:26px; max-width:18ch}
@@ -1234,3 +1247,25 @@ html{color-scheme: light}
   .board-teaser-art{width:106px;height:88px}
 }
 @media(min-width:600px){.board-canvas{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* ---------- v32: свободный холст доски (двигать · крутить · масштабировать) ---------- */
+/* Плитки больше не в сетке: позиция (x/y/w) — в процентах ширины холста,
+   в режиме «Оформить» плитка тянется пальцем, угловая ручка крутит и маштабирует. */
+.board-canvas.free{display:block; column-count:unset; grid-template-columns:none; gap:0;
+  padding:0; height:auto; min-height:260px; overflow:visible; border:0; background:none; box-shadow:none}
+.board-canvas.free .tile{position:absolute; min-width:0; margin:0; break-inside:auto; -webkit-column-break-inside:auto;
+  transform:rotate(var(--rot,0deg)); transition:box-shadow .2s ease}
+.board-canvas.free .tile.drag{box-shadow:0 26px 48px rgba(var(--ink-rgb),.22); cursor:grabbing}
+.board-canvas.free.edit .tile{touch-action:none; overflow:visible; cursor:grab;
+  user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent}
+.board-canvas.free.edit .tile-media{border-radius:17px 17px 0 0; pointer-events:none}
+.board-canvas.free.edit .tile-note-copy{border-radius:17px; pointer-events:none}
+.board-canvas.free.edit .tile-cap,
+.board-canvas.free.edit .tile-tags,
+.board-canvas.free.edit .tile-gif-mark{pointer-events:none}
+.board-canvas.free .tile.sel{outline:3px solid var(--accent); outline-offset:5px}
+.tile-handle{position:absolute; right:-16px; bottom:-16px; width:36px; height:36px; border-radius:50%;
+  background:var(--accent); color:#fff; font-size:19px; line-height:1; display:grid; place-items:center;
+  box-shadow:0 8px 18px rgba(var(--accent-rgb),.42), inset 0 1px 0 rgba(255,255,255,.35);
+  touch-action:none; cursor:nwse-resize; z-index:5}
+.board-edit-toggle.on{background:var(--accent-soft); color:var(--accent-deep); font-weight:700}

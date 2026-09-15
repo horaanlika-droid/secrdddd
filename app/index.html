@@ -10,7 +10,8 @@
 <title>Дибитишка</title>
 <link rel="icon" type="image/png" href="assets/mascot/icon.png">
 <link rel="apple-touch-icon" href="assets/mascot/icon.png">
-<link rel="stylesheet" href="css/app.css?v=30-splash-wordmark">
+<link rel="stylesheet" href="css/app.css?v=32-folders-boards-logo">
+<link rel="preload" as="image" href="assets/brand/splash-lockup.png" fetchpriority="high">
 <link rel="stylesheet" href="css/hero-moods.css?v=28">
 <script src="config.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -18,17 +19,19 @@
 <body>
 <div id="splash" aria-hidden="true">
   <div class="splash-inner">
-    <img class="splash-wordmark" src="assets/brand/logo-wordmark.png" alt="Дибитишка" width="800" height="347" fetchpriority="high" data-brand-logo>
-    <img class="splash-art" src="assets/mascot/splash.png" alt="" style="width:min(62vw, 280px); aspect-ratio:auto; border-radius:32px; box-shadow:none; background:transparent">
+    <!-- Локап из IMG_0969: маскот + надпись «ДИБИТИШКА» и «app by @stonym0ntana».
+         Фон снаружи вырезан в альфа-канал (scripts/cut_bg.py), так что на
+         градиентном прелоаде нет ни белой плашки, ни подложки. Напечатанные
+         точки под надписью обрезаны — вместо них живые .splash-dots. -->
+    <img class="splash-lockup" src="assets/brand/splash-lockup.png" alt="Дибитишка" width="914" height="537" fetchpriority="high">
     <div class="splash-tagline">Бережно · шаг за шагом · рядом</div>
     <div class="splash-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-    <div class="splash-by">app by @stonym0ntana</div>
   </div>
 </div>
 <div id="bg-blobs" aria-hidden="true"><i class="b1"></i><i class="b2"></i></div>
 <main id="app" aria-live="polite"></main>
 <div id="sheet-root"></div>
 <nav id="tabbar" hidden></nav>
-<script type="module" src="js/app.js?v=30-splash-wordmark"></script>
+<script type="module" src="js/app.js?v=32-folders-boards-logo"></script>
 </body>
 </html>

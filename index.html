@@ -21,7 +21,7 @@
                      linear-gradient(180deg, #D7E4FA, #F4F8FF); color: #0B1F4D;
          font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   .card { text-align: center; padding: 32px; }
-  .hero { width: 200px; height: auto; margin: 0 auto;
+  .hero { width: min(72vw, 300px); height: auto; margin: 0 auto;
           filter: drop-shadow(0 0 44px rgba(255,255,255,.95)) drop-shadow(0 26px 34px rgba(47,125,246,.32));
           animation: float 5.5s ease-in-out infinite; }
   @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
@@ -31,7 +31,7 @@
 </head>
 <body>
 <div class="card">
-  <img class="hero" src="app/assets/mascot/hello.png" alt="">
+  <img class="hero" src="app/assets/brand/splash-lockup.png" alt="Дибитишка" width="914" height="537">
   <p class="hint">открываю приложение…<br>
   если не перешло — <a href="app/index.html">войди в приложение</a></p>
 </div>
