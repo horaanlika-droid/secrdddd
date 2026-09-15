@@ -1181,8 +1181,10 @@ html{color-scheme: light}
 .board-teaser .chev{padding-right:4px}
 
 /* У личной доски нет внешней карточки. Выбранный фон разлит под экраном,
-   а заметки и фото лежат прямо поверх интерфейса. */
-.board-screen{position:relative; isolation:isolate}
+   а заметки и фото лежат прямо поверх интерфейса. overflow:clip держит
+   боковой напуск фона (-18px) внутри экрана: напуск виден до края
+   вьюпорта, но не рождает горизонтальный скролл (ломает layout-смоук). */
+.board-screen{position:relative; isolation:isolate; overflow:clip}
 .board-space-bg{
   position:absolute;
   z-index:-1;
