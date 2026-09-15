@@ -13,7 +13,9 @@
     "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
     "smoke": "node scripts/smoke.mjs",
     "port": "node scripts/port-clash.mjs",
-    "verify": "npm run check && npm run smoke && npm run port"
+    "verify": "npm run check && npm run ai-test && npm run smoke && npm run port",
+    "ai-check": "node scripts/ai-check.mjs",
+    "ai-test": "node scripts/ai-params-check.mjs"
   },
   "dependencies": {
     "grammy": "^1.30.0",

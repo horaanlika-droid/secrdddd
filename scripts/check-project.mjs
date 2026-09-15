@@ -408,6 +408,68 @@ for (const [label, lock, pkg, dir] of [
   }
 }
 
+/* ---------- 14. «чат молчит» должен быть диагностируем, а не угадываем ----------
+   Поломка, из-за которой появилась эта проверка: HTTP API жил, /health
+   показывал «ai: true», а Telegram-половина процесса не получала ничего
+   (409: polling держала старая копия). Искали полгода не там. Правила ниже
+   не дают снова оставить бота без самодиагностики, а ошибки OpenAI — без
+   разбора на «ключ / деньги / модель / параметры». */
+{
+  const ai = read(path.join(BOT, 'src', 'ai.js'));
+  const app = read(path.join(BOT, 'src', 'app.js'));
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const css = read(path.join(ROOT, 'app', 'css', 'app.css'));
+  const rootIndex = read(path.join(ROOT, 'index.html'));
+  const docs = read(path.join(ROOT, 'docs', 'SETUP.md'));
+  const pkg = readJson(path.join(ROOT, 'package.json'));
+
+  /* OpenAI: совместимость параметров и разбор кодов ошибок */
+  if (!ai) bad('нет bot/src/ai.js');
+  else {
+    if (/max_completion_tokens/.test(ai)) ok('bot/src/ai.js: есть режим max_completion_tokens (gpt-5*/o* не принимают max_tokens)');
+    else bad('bot/src/ai.js не умеет max_completion_tokens', 'свежие модели отвечают 400 Unsupported parameter, и чат молча скатывается в шаблоны');
+    if (/insufficient_quota/.test(ai)) ok('bot/src/ai.js: «кончились средства» отличается от «перегрузки»');
+    else bad('bot/src/ai.js: 429 insufficient_quota не разбирается', 'иначе «no_quota» выглядит как «меня слишком много спрашивают» и чинится не там');
+    for (const fn of ['aiDiagnostics', 'selfTest', 'errorHint']) {
+      if (new RegExp('export (async )?function ' + fn + '\\b|export const ' + fn + '\\b').test(ai)) ok(`bot/src/ai.js: отдаёт ${fn}()`);
+      else bad(`bot/src/ai.js не отдаёт ${fn}()`, 'без него /diag и /health нечем проверять связь');
+    }
+  }
+
+  /* бот: состояние polling, лимит на публичный /chat, техничка — только админу */
+  if (!app) bad('нет bot/src/app.js');
+  else {
+    if (/polling/.test(app) && /statusReport/.test(app)) ok('bot/src/app.js: /health отдаёт состояние polling');
+    else bad('bot/src/app.js: /health не показывает polling', 'именно поэтому «бот жив, но молчит» было не найти');
+    if (/'\/diag'|command\('diag'/.test(app)) ok('bot/src/app.js: /diag для диагностики на месте');
+    else bad('bot/src/app.js: нет /diag', 'должна быть одна команда, отвечающая «почему молчит»');
+    if (!/free-port/.test(app)) ok('bot/src/app.js: не зовёт free-port (он убивал чужие процессы на порту)');
+    else bad('bot/src/app.js снова зовёт ./free-port.js', 'нужен acquirePort из bot/src/port.js: он трогает только наши копии');
+    if (/CHAT_RATE/.test(app)) ok('bot/src/app.js: публичный POST /chat под лимитом');
+    else bad('bot/src/app.js: у открытого /chat нет лимита', 'один скрипт съедает бюджет ключа владельца');
+    if (/OWNER_ERRORS/.test(app)) ok('bot/src/app.js: технические причины уходят админу, а не в чат');
+    else bad('bot/src/app.js: причину ошибки API видно гостю', '«проверь OPENAI_API_KEY» в чате поддержки пугает — неси её админу');
+  }
+
+  /* веб: отказ живого чата виден человеку */
+  if (/AI_REASON/.test(web) && /chat-note/.test(web)) ok('app/js/app.js: чат объясняет, почему отвечает шаблонами');
+  else bad('app/js/app.js: фолбэк чата снова без объяснения причины', 'тихий локальный ответ выглядит как «ии не реагирует»');
+  if (/\.chat-note/.test(css)) ok('app/css/app.css: стиль .chat-note на месте');
+  else bad('app/css/app.css: нет стиля .chat-note');
+
+  /* корень Pages: редирект не должен съедать #hash (в нём tgWebAppData) */
+  if (rootIndex && /http-equiv="refresh"/.test(rootIndex)) {
+    bad('index.html в корне снова редиректит через <meta http-equiv="refresh">',
+      'meta-refresh уносит только путь: теряется #hash с tgWebAppData → Mini App не узнаёт пользователя, чат без памяти');
+  } else if (rootIndex) ok('index.html в корне: редирект скриптом, #hash сохраняется');
+
+  /* инструменты и документация */
+  if (pkg?.scripts?.['ai-check'] && exists(path.join(ROOT, 'scripts', 'ai-check.mjs'))) ok('npm run ai-check: проверка «почему молчит» на месте');
+  else bad('нет npm run ai-check (scripts/ai-check.mjs)', 'быстрая диагностика должна быть одной командой, а не расследованием');
+  if (/\/diag/.test(docs) && /ai-check/.test(docs)) ok('docs/SETUP.md: раздел про диагностику чата есть');
+  else bad('docs/SETUP.md: нет раздела «чат молчит» с /diag и npm run ai-check', 'человек не должен гадать, где смотреть причину');
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');

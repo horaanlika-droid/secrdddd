@@ -16,9 +16,9 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDB, save } from './store.js';
+import { getDB, save, flush, dbFile } from './store.js';
 import { removeWhiteBackground } from './bgremove.js';
-import { freePort } from './free-port.js';
+import { acquirePort } from './port.js';
 import * as tribute from './tribute.js';
 import * as ai from './ai.js';
 
@@ -46,6 +46,69 @@ if (!TOKEN) {
 
 const bot = new Bot(TOKEN);
 const db = getDB();
+db.stats = db.stats || { sent: 0 };
+
+/* ============================================================
+   Самодиагностика: почему бот молчит — видно снаружи, без терминала
+   ------------------------------------------------------------
+   Telegram-половина (polling) и HTTP-половина (/chat) живут в одном
+   процессе, но ломаются независимо. HTTP может бодро отвечать,
+   /health показывать «ai: true» — а сообщений из Telegram этот процесс
+   не видит вообще (409: polling держит старая копия; токен от другого
+   бота; NO_POLLING=1). Раньше это было нечем проверить, и «ии чат не
+   реагирует» искали в OpenAI. Поэтому состояние пишется всегда,
+   а /health и /diag его отдают.
+   ============================================================ */
+const runtime = {
+  started_at: Date.now(),
+  port: null,
+  polling: 'starting',   // starting | running | retry | dead | off
+  poll_attempts: 0,
+  poll_error: null,      // conflict | auth | network | unknown
+  poll_error_text: null,
+  poll_error_at: null,
+  last_update_at: null,  // когда процесс в последний раз видел апдейт
+  me: null               // { id, username } — какой именно бот это отвечает
+};
+
+async function notifyAdmins(text) {
+  const ids = [...ADMINS];
+  if (!ids.length) {
+    console.warn('[admin] ADMIN_IDS пуст — некому сообщить: ' + String(text).replace(/\n/g, ' | '));
+    return;
+  }
+  for (const id of ids) {
+    try { await bot.api.sendMessage(id, text); }
+    catch (e) { console.warn(`[admin] не дошло до ${id}: ${e?.message || e}`); }
+  }
+}
+const alerts = new Map();
+/** Одно и то же предупреждение — не чаще раза в 10 минут. */
+function alertAdmins(key, text, everyMs = 600000) {
+  if (Date.now() - (alerts.get(key) || 0) < everyMs) return false;
+  alerts.set(key, Date.now());
+  notifyAdmins(text).catch(() => {});
+  return true;
+}
+/* Ошибки, которые может починить только владелец: ключ, деньги, модель, регион.
+   Гостю их показывать нельзя, админу — можно и нужно. */
+const OWNER_ERRORS = new Set(['bad_key', 'no_key', 'no_quota', 'bad_model', 'bad_param', 'too_long', 'geo_blocked']);
+function alertOwner(key, err) {
+  if (!err || !OWNER_ERRORS.has(err)) return false;
+  return alertAdmins(key, `⚠️ Живой чат Дибитишки не отвечает\nошибка: ${err}\nчто делать: ${ai.errorHint(err)}\n\nПодробности — /diag или GET /health`);
+}
+
+/* Любой апдейт — доказательство, что polling действительно принимает сообщения. */
+bot.use(async (ctx, next) => {
+  runtime.last_update_at = Date.now();
+  db.stats.updates = (db.stats.updates || 0) + 1;
+  if (runtime.polling !== 'running') {
+    runtime.polling = 'running';
+    runtime.poll_error = null;
+    console.log('[bot] polling принимает апдейты');
+  }
+  await next();
+});
 
 /* ---------- контент: рабочая копия ---------- */
 function seedContent() {
@@ -334,15 +397,54 @@ bot.command('tribute', async (ctx) => {
 
 bot.command('ai', (ctx) => {
   if (!isAdmin(ctx)) return;
-  const us = Object.values(db.users);
-  const talked = us.filter(u => (u.chat && u.chat.length) || (u.web_chat && u.web_chat.length)).length;
-  ctx.reply(
-    (ai.aiConfigured()
-      ? `Живой чат: включён ✅\nМодель: ${process.env.OPENAI_MODEL || 'gpt-4o-mini'}\nБаза API: ${process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}`
-      : 'Живой чат: выключен ⏸\nВпиши OPENAI_API_KEY на бот-хосте и перезапусти бота — включится сам.') +
-    `\nПользователей, говоривших со мной: ${talked}`
-  );
+  const rep = statusReport();
+  const h = rep.ai_health;
+  const lines = [
+    h.configured ? 'Живой чат: ключ есть ✅' : 'Живой чат: ключа нет ⏸ — впиши OPENAI_API_KEY на бот-хосте',
+    `Модель: ${h.model} · API: ${h.base}`,
+    `Параметры запроса: ${h.param_mode || 'по умолчанию для этой модели'} · память диалога: ${h.history} реплик`,
+    `Запросов: ${h.calls}, неудачных: ${h.fails}`,
+    h.last_ok_at ? `Последний ответ модели: ${Math.round((Date.now() - h.last_ok_at) / 1000)} с назад (${h.last_latency_ms || '?'} мс)` : 'Успешных ответов модели ещё не было ❌',
+    h.last_error ? `Последняя ошибка: ${h.last_error}${h.last_error_detail ? ' — ' + h.last_error_detail : ''}` : 'Ошибок API нет',
+    h.last_error ? `Что делать: ${ai.errorHint(h.last_error)}` : '',
+    `Пользователей, говоривших со мной: ${rep.db.users_talked}`,
+    `Telegram-половина: polling ${rep.telegram.polling}${rep.telegram.as ? ', я ' + rep.telegram.as : ''}`
+  ].filter(Boolean);
+  ctx.reply(lines.join('\n') + '\n\nПолная диагностика с проверкой связи — /diag');
 });
+
+/* /diag — ответ на «чат молчит, но я не понимаю где». Один запрос:
+   Telegram (polling), HTTP (порт), OpenAI (живой тестовый вызов), база. */
+bot.command('diag', async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  await ctx.replyWithChatAction('typing').catch(() => {});
+  const rep = statusReport();
+  const t = rep.telegram, a = rep.ai_health;
+  const test = await ai.selfTest();
+  const ago = (s) => s === null || s === undefined ? 'никогда' : s < 60 ? `${s} с назад` : s < 3600 ? `${Math.round(s / 60)} мин назад` : `${Math.round(s / 3600)} ч назад`;
+  const lines = [
+    'Диагностика Дибитишки',
+    '',
+    `Telegram: ${t.as || 'getMe не прошёл'} · polling: ${t.polling} (попыток ${t.poll_attempts}) · апдейтов: ${t.updates} · последний: ${ago(t.last_update_age_s)}`,
+    t.poll_error ? `  ⚠️ ${t.poll_error}: ${t.poll_error_text || ''}\n  ${POLL_ADVICE[t.poll_error] || ''}` : '  сообщения доходят ✅',
+    '',
+    `HTTP API: порт ${runtime.port ?? 'не занят'} · аптайм ${Math.round(rep.uptime_s / 60)} мин`,
+    '',
+    `OpenAI: ${a.configured ? 'ключ есть' : 'НЕТ КЛЮЧА'} · модель ${a.model} · ${a.base}`,
+    `  последний ответ: ${a.last_ok_at ? ago(a.last_ok_age_s) : 'не было'} · ошибок ${a.fails}/${a.calls}`,
+    a.last_error ? `  последняя ошибка: ${a.last_error} — ${a.last_error_detail || ai.errorHint(a.last_error)}` : '',
+    test.ok
+      ? `  тест живого чата: ок ✅ (${test.model}, ${test.ms} мс) — «${test.answer}»`
+      : `  тест живого чата: ❌ ${test.error} → ${test.detail || test.hint}`,
+    '',
+    `База: ${rep.db.file} · пользователей ${rep.users}, из них говорили ${rep.db.users_talked}`,
+    a.configured && rep.users === 0 ? '  ⚠️ база пустая, а HTTP жив: похоже, данные не переживают рестарт (том не примонтирован) или Telegram читает другая копия' : '',
+    '',
+    rep.problems.length ? 'Что мешает: \n· ' + rep.problems.join('\n· ') : 'Всё на месте — если чат всё ещё молчит, напиши мне /start'
+  ].filter(Boolean);
+  for (const part of splitMessage(lines.join('\n'), 3500)) await ctx.reply(part).catch(() => {});
+});
+
 
 bot.command('users', (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -430,10 +532,17 @@ bot.on('message:text', async (ctx) => {
   const u = getUser(ctx);
   save();
   const text = ctx.message.text || '';
-  if (text.startsWith('/')) return; // неизвестная команда — молчим, чтобы не спорить с grammY
+  if (text.startsWith('/')) {
+    // неизвестная команда: не молчим в пустоту (именно так выглядит «бот не реагирует»),
+    // но и не спорим с grammY — объясняем, где команды
+    console.log(`[bot] неизвестная команда: ${text.slice(0, 40)}`);
+    return ctx.reply('Такой команды у меня нет. /start — с чего начать, /today — практика дня, /help — всё остальное.').catch(() => {});
+  }
   if (!ai.aiConfigured()) {
+    alertOwner('web:no_key', 'no_key');
     const p = todayPractice();
-    return ctx.reply(`Я тут. Живой разговор со мной включится, когда владелец впишет OPENAI_API_KEY на бот-хосте. А пока: /today — практика дня (${p.title}), /code — код для веба.`).catch(() => {});
+    const tech = isAdmin(ctx) ? '\n\n(у бота нет OPENAI_API_KEY на хосте — /diag покажет подробности)' : '';
+    return ctx.reply(`Я тут, просто отвечаю коротко: живой голос ещё не подключён. А пока — /today, практика дня (${p.title}) или /code для веба.${tech}`).catch(() => {});
   }
   await ctx.replyWithChatAction('typing').catch(() => {});
   const typing = setInterval(() => ctx.replyWithChatAction('typing').catch(() => {}), 4000);
@@ -454,12 +563,16 @@ bot.on('message:text', async (ctx) => {
     });
     clearInterval(typing);
     if (!res || res.error) {
-      // при ошибках API (rate_limit/timeout/сеть) отвечаем из локальной памяти,
-      // а не шаблоном «попробуй позже» — человеку нужен живой ответ прямо сейчас
-      const useLocal = res?.error && res.error !== 'bad_key';
-      const out = useLocal ? ai.localReply(text, userContext) : ai.fallbackLine(res?.error);
+      /* Человек в трудный момент не должен читать про переменные окружения:
+         отвечаем из его же записей (localReply), а причину — владельцу
+         отдельным сообщением и в /health. Стабильные ошибки (ключ, деньги,
+         модель) не прячем: без них «чат молчит» ищут вслепую. */
+      alertOwner('tg:' + res?.error, res?.error);
+      const tech = isAdmin(ctx)
+        ? `\n\n(технически: ${res?.error}${res?.detail ? ' — ' + String(res.detail).slice(0, 180) : ''}\n${ai.errorHint(res?.error)}\n/diag — полная диагностика)`
+        : '';
       // не добавляем в историю, чтобы при следующем запросе контекст не ломался
-      return ctx.reply(out).catch(() => {});
+      return ctx.reply(ai.localReply(text, userContext) + tech).catch(() => {});
     }
     u.chat = ai.pushHistory(u.chat, 'user', text);
     u.chat = ai.pushHistory(u.chat, 'assistant', res.text);
@@ -634,17 +747,87 @@ const tryServeApp = (res, pathname) => {
   return sendFile(res, resolved);
 };
 
+/* ---------- отчёт о состоянии: /health, /diag и веб-чат смотрят сюда ---------- */
+function statusReport(opts = {}) {
+  const now = Date.now();
+  const aiH = ai.aiDiagnostics();
+  const users = Object.keys(db.users).length;
+  const talked = Object.values(db.users)
+    .filter(u => (u.chat && u.chat.length) || (u.web_chat && u.web_chat.length)).length;
+  const problems = [];
+  if (runtime.polling === 'off') problems.push('polling выключён (NO_POLLING=1): бот отвечает только по HTTP');
+  else if (runtime.polling !== 'running') {
+    problems.push(`polling не работает (${runtime.poll_error || 'не поднялся'}) — сообщения из Telegram до этого процесса не доходят`);
+  } else if (!runtime.last_update_at) {
+    problems.push('polling работает, но не видел ещё ни одного сообщения — проверь, что пишешь тому же боту, чей TG_TOKEN здесь');
+  }
+  if (!aiH.configured) problems.push('OPENAI_API_KEY не задан — и Telegram, и веб отвечают шаблонами');
+  else if (!aiH.last_ok_at) problems.push(`ни одного успешного ответа модели: ${aiH.last_error_detail || aiH.last_error || 'запросов ещё не было'}`);
+  else if (aiH.last_error && now - (aiH.last_error_at || 0) < 600000) problems.push(`последняя ошибка OpenAI: ${aiH.last_error}`);
+
+  return {
+    ok: true,
+    app: 'dibitishka-bot',
+    uptime_s: Math.round((now - runtime.started_at) / 1000),
+    users,
+    ai: aiH.configured,
+    telegram: {
+      as: runtime.me ? `@${runtime.me.username}` : null,
+      bot_id: runtime.me ? runtime.me.id : null,
+      polling: runtime.polling,
+      poll_attempts: runtime.poll_attempts,
+      poll_error: runtime.poll_error,
+      poll_error_text: runtime.poll_error_text,
+      last_update_age_s: runtime.last_update_at ? Math.round((now - runtime.last_update_at) / 1000) : null,
+      updates: db.stats.updates || 0,
+      admins: ADMINS.size
+    },
+    ai_health: aiH,
+    ai_hint: aiH.last_error ? ai.errorHint(aiH.last_error) : null,
+    tribute: tribute.tributeStatus(),
+    db: { file: dbFile, users_talked: talked },
+    problems
+  };
+}
+
+/* ---------- лимит на открытый /chat: чат публичный, а ключ OpenAI — твой ---------- */
+const CHAT_RATE = Math.max(1, Number(process.env.CHAT_RATE_PER_MIN || 20));
+const rate = new Map(); // ip -> [ts, ...]
+function rateOk(ip) {
+  const now = Date.now();
+  const list = (rate.get(ip) || []).filter((t) => now - t < 60000);
+  if (list.length >= CHAT_RATE) { rate.set(ip, list); return false; }
+  list.push(now);
+  rate.set(ip, list);
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, list] of rate) {
+    const live = list.filter((t) => now - t < 60000);
+    if (live.length) rate.set(ip, live); else rate.delete(ip);
+  }
+}, 60000).unref?.();
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
   const u = new URL(req.url, 'http://x');
 
   if (req.method === 'GET' && u.pathname === '/health') {
-    return json(res, 200, { ok: true, app: 'dibitishka-bot', users: Object.keys(db.users).length, ai: ai.aiConfigured(), tribute: tribute.tributeStatus() });
+    return json(res, 200, statusReport());
   }
   if (req.method === 'GET' && u.pathname === '/chat/status') {
-    return json(res, 200, { ok: true, ai: ai.aiConfigured() });
+    const rep = statusReport();
+    // веб смотрит только на rep.ai — остальное для отладки из браузера (console)
+    return json(res, 200, {
+      ok: true,
+      ai: rep.ai,
+      problems: rep.problems,
+      ...(process.env.DIAG_PUBLIC === '1' ? { ai_health: rep.ai_health, telegram: rep.telegram } : {})
+    });
   }
   if (req.method === 'POST' && u.pathname === '/chat') {
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
     let body = '';
     req.on('data', c => { body += c; if (body.length > 64000) req.destroy(); });
     req.on('end', async () => {
@@ -652,6 +835,10 @@ const server = http.createServer(async (req, res) => {
         const { user_id, text, context, history } = JSON.parse(body || '{}');
         const msg = String(text || '').trim();
         if (!msg) return json(res, 400, { ok: false, error: 'empty' });
+        if (!rateOk(ip)) {
+          // чат публичный: без лимита один скрипт съедает бюджет ключа владельца
+          return json(res, 200, { ok: false, ai: ai.aiConfigured(), error: 'slow_down', text: ai.fallbackLine('rate_limit') });
+        }
         if (!ai.aiConfigured()) return json(res, 200, { ok: false, ai: false, error: 'no_key' });
         const uid = Number(user_id);
         const user = uid ? db.users[uid] : null;
@@ -665,19 +852,22 @@ const server = http.createServer(async (req, res) => {
         userContext.todayPractice = todayPractice()?.title;
         const out = await ai.complete({ userText: msg, history: hist, userContext, channel: 'web' });
         if (!out || out.error) {
-          // при перегрузке/таймауте/сети отдаём локальный ответ из памяти пользователя,
-          // а не «меня слишком много спрашивают» — на фроненде есть ещё свой локальный чат,
-          // это запас на случай, если фронт не может сгенерировать сам (например, гость без localStorage)
-          const useLocal = out?.error && out.error !== 'bad_key';
-          const text = useLocal ? ai.localReply(msg, userContext) : ai.fallbackLine(out?.error);
-          return json(res, 200, { ok: false, ai: true, error: out?.error || 'unknown', text, local: !!useLocal });
+          /* Человеку — тёплый ответ из его же записей, никогда «проверь OPENAI_API_KEY»:
+             техническое сообщение в чате поддержки только пугает. Причину — админу
+             и в /health, а не в пузырь чата. */
+          alertOwner('web:' + out?.error, out?.error);
+          return json(res, 200, {
+            ok: false, ai: true, error: out?.error || 'unknown',
+            text: ai.localReply(msg, userContext), local: true,
+            ...(process.env.DIAG_PUBLIC === '1' ? { hint: ai.errorHint(out?.error), detail: out?.detail || null } : {})
+          });
         }
         if (user) {
           user.web_chat = ai.pushHistory(user.web_chat, 'user', msg);
           user.web_chat = ai.pushHistory(user.web_chat, 'assistant', out.text);
           save();
         }
-        return json(res, 200, { ok: true, ai: true, text: out.text });
+        return json(res, 200, { ok: true, ai: true, text: out.text, model: out.model });
       } catch (e) {
         return json(res, 400, { ok: false, error: 'bad_request' });
       }
@@ -808,34 +998,42 @@ const server = http.createServer(async (req, res) => {
   json(res, 404, { ok: false });
 });
 
-/* ---------- авто-очистка порта при деплое ---------- */
-let httpRetries = 0;
+/* ---------- занимаем порт: своя прошлая копия уходит, чужая не страдает ---------- */
 server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE' && httpRetries < 2) {
-    httpRetries++;
-    console.error(`[http] порт ${PORT} заняли в долю секунды (EADDRINUSE) — чищу снова и повторяю (попытка ${httpRetries}/2)`);
-    setTimeout(() => {
-      takePort().catch((err) => {
-        console.error('[http] ' + err.message);
-        process.exit(1);
-      });
-    }, 500);
-    return;
-  }
-  console.error('[http] ' + e.message + (e.code === 'EADDRINUSE' ? ` — не удалось освободить, закрой процесс вручную: fuser -k ${PORT}/tcp` : ''));
-  process.exit(1);
+  // EADDRINUSE разбирает acquirePort (он просит уйти нашу прошлую копию и,
+  // если держатель чужой, берёт следующий порт) — здесь только настоящий мусор
+  if (e?.code === 'EADDRINUSE') return;
+  console.error('[http] ' + (e?.message || e));
 });
 
-async function takePort() {
-  const freed = await freePort(PORT);
-  if (freed.length) console.log(`[port] порт ${PORT} освобождён до старта: pid ${freed.join(', ')}`);
-  server.listen(PORT, '0.0.0.0', () => { console.log(`[http] API on :${PORT}`); console.log(ai.aiStatusLine()); });
+acquirePort(server, PORT, { host: '0.0.0.0' })
+  .then((actual) => {
+    runtime.port = actual;
+    console.log(`[http] API on :${actual}`);
+    if (actual !== PORT) console.warn(`[http] порт ${PORT} был занят — я на ${actual}. Для вева это значит: обнови bot_public_url/проброс порта, иначе чат не достучится.`);
+    console.log(ai.aiStatusLine());
+  })
+  .catch((e) => {
+    console.error('[http] ' + (e?.message || e));
+    process.exit(1);
+  });
+
+/* ---------- аккуратный выход: база на диск, polling остановлен, порт свободен ----------
+   Без этого старый процесс переживает деплой и продолжает держать polling
+   Telegram: новая копия вечно ловит 409 Conflict и выглядит как
+   «бот жив (HTTP отвечает), но на сообщения молчит». */
+let closing = false;
+async function shutdown(signal) {
+  if (closing) return;
+  closing = true;
+  console.log(`[bot] ${signal} — сохраняю базу и освобождаю порт`);
+  try { flush(); } catch (e) { console.error('[db] не записал: ' + (e?.message || e)); }
+  try { await bot.stop(); } catch { /* polling мог и не подняться */ }
+  try { server.close(); } catch { /* уже закрыт */ }
+  process.exit(0);
 }
-
-takePort().catch((e) => {
-  console.error('[http] ' + e.message);
-  process.exit(1);
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 /* ---------- планировщик напоминаний ---------- */
 setInterval(() => {
@@ -856,20 +1054,59 @@ setInterval(() => {
   }
 }, 30000);
 
-/* ---------- polling ---------- */
+/* ---------- polling: с внятной причиной, а не молчаливым ретраем ---------- */
+function classifyPollError(err) {
+  const s = `${err?.description || ''} ${err?.message || ''} ${err?.error_code || ''}`.toLowerCase();
+  if (/409|conflict|terminated by other getupdates|only one bot instance/.test(s)) return 'conflict';
+  if (/401|unauthorized|invalid token/.test(s)) return 'auth';
+  if (/enotfound|eai_again|etimedout|econn|network|fetch failed|proxy|socket hang/.test(s)) return 'network';
+  return 'unknown';
+}
+const POLL_ADVICE = {
+  conflict: 'polling этого токена уже держит ДРУГАЯ копия бота. Найди её (docker ps; pgrep -af "bot/src/index.js") и останови — либо сделай restart старого контейнера. Пока она жива, новая копия сообщений не увидит: Telegram отдаёт апдейты одному получателю.',
+  auth: 'Telegram не принимает TG_TOKEN (401). Проверь токен в @BotFather и убедись, что это токен ТОГО бота, которому ты пишешь (сравни @username из getMe с адресатом в чате).',
+  network: 'Нет связи с api.telegram.org с этого хоста (DNS, файрвол, прокси). HTTP API при этом может работать — поэтому /health отвечает, а чат молчит.',
+  unknown: 'Смотри telegram.poll_error_text в /health'
+};
+
 async function startPolling(attempt = 1) {
+  runtime.poll_attempts = attempt;
   try {
-    await bot.start({ drop_pending_updates: false });
-    console.log('[bot] polling started');
+    await bot.init();                                  // getMe: падает здесь, если токен не тот
+    const me = bot.botInfo || {};
+    runtime.me = { id: me.id, username: me.username };
+    console.log(`[bot] это @${me.username} (id ${me.id}) · админов: ${ADMINS.size} · порт: ${runtime.port ?? 'не занят'}`);
+    if (!ADMINS.size) console.warn('[bot] ADMIN_IDS пуст — /diag и /ai никто не увидит');
+    await bot.start({
+      drop_pending_updates: false,
+      // grammY резолвит start() только когда polling остановлен, поэтому «жив» отмечаем в onStart
+      onStart: () => {
+        runtime.polling = 'running';
+        runtime.poll_error = null;
+        runtime.poll_error_text = null;
+        console.log('[bot] polling started');
+      }
+    });
+    if (runtime.polling === 'running') { runtime.polling = 'stopped'; console.log('[bot] polling остановлен'); }
   } catch (err) {
-    console.error(`[bot] polling не поднялся (попытка ${attempt}):`, err?.message || err);
-    console.error('[bot] HTTP API продолжает работать, polling повторю через 15 секунд');
-    setTimeout(() => startPolling(attempt + 1), 15000);
+    const kind = classifyPollError(err);
+    runtime.polling = attempt >= 4 ? 'dead' : 'retry';
+    runtime.poll_error = kind;
+    runtime.poll_error_text = String(err?.description || err?.message || err).slice(0, 300);
+    runtime.poll_error_at = Date.now();
+    const backoff = Math.min(15000 * 2 ** Math.min(attempt - 1, 3), 120000);
+    console.error(`[bot] polling не поднялся (попытка ${attempt}, ${kind}): ${runtime.poll_error_text}`);
+    console.error('[bot] ' + (POLL_ADVICE[kind] || POLL_ADVICE.unknown));
+    console.error(`[bot] HTTP API продолжает работать, повторю через ${Math.round(backoff / 1000)} с`);
+    alertAdmins('polling:' + kind, `⚠️ Дибитишка не получает сообщения из Telegram (${kind})\n${POLL_ADVICE[kind] || POLL_ADVICE.unknown}`);
+    setTimeout(() => startPolling(attempt + 1), backoff);
   }
 }
 
 if (process.env.NO_POLLING === '1') {
+  runtime.polling = 'off';
   console.log('[bot] polling отключён (NO_POLLING=1) — работает только HTTP API');
 } else {
   startPolling();
 }
+
