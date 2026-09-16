@@ -434,7 +434,13 @@ try {
       return await new Promise((res) => {
         let done = false;
         const fin = (v) => { if (!done) { done = true; try { ctx.close(); } catch (e) {} res(v); } };
-        try { ctx.decodeAudioData(bytes, () => fin(true), () => fin(false)); } catch (e) { fin(false); }
+        let p;
+        try { p = ctx.decodeAudioData(bytes, () => fin(true), () => fin(false)); } catch (e) { fin(false); }
+        /* Chromium возвращает промис, даже когда переданы обратные вызовы.
+           Отказ надо забрать: иначе «Unable to decode audio data» всплывает
+           ошибкой страницы и валит проверку «нет ошибок страницы», хотя
+           приложение этот отказ обрабатывает (app/js/ambient.js, decodeAudio). */
+        if (p && typeof p.then === 'function') p.then(() => {}, () => {});
         setTimeout(() => fin(false), 4000);
       });
     } catch (e) { return false; }
@@ -495,14 +501,24 @@ try {
     assert(total<=3*1024*1024,`весь звук ${(total/1048576).toFixed(2)} МБ — бюджет 3 МБ`);
   });
   await page.screenshot({path:path.join(ART,'sound-screen.png'),fullPage:true});
-  /* музыка не должна обрываться при переходе на другой экран */
-  await page.goto(origin+'/',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
+  /* Музыка не должна обрываться при переходе на другой экран. Переходим так,
+     как это делает человек, — тапом по вкладке, то есть сменой якоря внутри
+     приложения: page.goto(origin+'/') может перезагрузить документ, и тогда
+     проверка измерит не «музыка пережила переход», а «страница перезагрузилась»
+     (вместе с ней обнуляется и зонд, и движок). */
+  await page.evaluate(()=>{location.hash='';});
+  await page.waitForTimeout(600);
   const onHome=await page.evaluate(()=>({
     pill:document.querySelectorAll('.sound-pill').length,
-    teaser:(document.querySelector('.sound-teaser')||{}).className||''
+    teaser:(document.querySelector('.sound-teaser')||{}).className||'',
+    hash:location.hash,
+    ctxCount:window.__ctxCount,
+    osc:(window.__osc||[]).length,
+    pillText:(document.querySelector('.sound-pill-copy')||{}).textContent||''
   }));
   check('музыка переживает переход на главную: плашка и живой тизер',()=>{
-    assert.equal(onHome.pill,1,'плашка с музыкой есть');
+    assert(onHome.ctxCount>=1,`документ перезагрузился, зонд обнулился: ${JSON.stringify(onHome)}`);
+    assert.equal(onHome.pill,1,`плашка с музыкой: ${JSON.stringify(onHome)}`);
     assert(onHome.teaser.includes('on'),`тизер показывает идущую сессию: ${onHome.teaser}`);
   });
   await page.evaluate(()=>{
