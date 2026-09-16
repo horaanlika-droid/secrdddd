@@ -24,7 +24,9 @@
     "workbook-test": "node scripts/workbook-test.mjs",
     "stickers-test": "node scripts/stickers-test.mjs",
     "ambient-test": "node scripts/ambient-test.mjs",
-    "ambient-render": "node scripts/ambient-render.mjs"
+    "ambient-render": "node scripts/ambient-render.mjs",
+    "ambience-build": "bash scripts/ambience/build-ambience.sh",
+    "ambience-measure": "node scripts/ambience/measure.mjs"
   },
   "dependencies": {
     "grammy": "^1.30.0",

@@ -6,6 +6,7 @@
            node scripts/ambient-render.mjs --all          (все шесть сцен)
            node scripts/ambient-render.mjs --scene sea --seconds 60 --out море.wav
            node scripts/ambient-render.mjs --all --seconds 20 --rate 32000
+           node scripts/ambient-render.mjs --scene sea --bed-dir test-results/ambience/f32
                                               (лёгкие файлы для прослушивания)
 
    Зачем: музыку нельзя проверить моком — мок проверяет только граф.
@@ -178,11 +179,22 @@ class SoftBufferSource extends SoftNode {
     super(ctx, 'buffer');
     this.buffer = null;
     this.loop = false;
+    this.loopStart = 0;
+    this.loopEnd = 0;
+    this.playbackRate = new SoftParam(1);
     this.playhead = 0;
     this.startedAt = Infinity;
     this.stoppedAt = Infinity;
   }
-  start(t = this.ctx.currentTime) { this.startedAt = t; return this; }
+  /* start(when, offset, duration) — как в браузере: движок играет петлю
+     не с начала (иначе две копии записи звучали бы в фазе) и акценты
+     останавливает длительностью, а не stop(). */
+  start(t = this.ctx.currentTime, offset = 0, duration = null) {
+    this.startedAt = t;
+    this.playhead = offset * this.ctx.sampleRate;
+    if (duration != null) this.stoppedAt = t + duration;
+    return this;
+  }
   stop(t = Infinity) { this.stoppedAt = t; return this; }
   process(frames, start) {
     const L = new Float32Array(frames);
@@ -190,17 +202,20 @@ class SoftBufferSource extends SoftNode {
     const rate = this.ctx.sampleRate;
     const src = this.buffer && this.buffer.getChannelData(0);
     if (src) {
+      const end = this.loop && this.loopEnd > 0 ? Math.min(this.loopEnd, src.length) : src.length;
+      const beg = this.loop ? Math.min(this.loopStart, Math.max(0, end - 1)) : 0;
       for (let i = 0; i < frames; i++) {
         const t = (start + i) / rate;
         if (t < this.startedAt || t >= this.stoppedAt) continue;
         let idx = Math.floor(this.playhead);
-        if (idx >= src.length) {
+        if (idx >= end || idx < 0) {
           if (!this.loop) break;
-          idx = idx % src.length;
+          const span = end - beg;
+          idx = beg + (((idx - beg) % span) + span) % span;
         }
         const s = src[idx];
         L[i] = s; R[i] = s;
-        this.playhead += 1;
+        this.playhead += Math.max(0.05, this.playbackRate.at ? this.playbackRate.at(t) : 1);
       }
     }
     this.outL = L; this.outR = R;
@@ -426,7 +441,7 @@ function makeClock(getContext) {
 }
 
 /* ---------- один прогон движка ---------- */
-function renderPass({ scene, seed, seconds, volume, minutes, texture, reverb, wet, rate }) {
+async function renderPass({ scene, seed, seconds, volume, minutes, texture, reverb, wet, rate, bedDir }) {
   /* Движок создаёт контекст сам — поэтому перехватываем его здесь. */
   let ctx = null;
   class RenderContext extends SoftAudioContext {
@@ -438,7 +453,24 @@ function renderPass({ scene, seed, seconds, volume, minutes, texture, reverb, we
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
     now: clock.now,
-    seed
+    seed,
+    /* Настоящие записи: если рядом лежат сырые f32-петли (их делает
+       build-ambience.sh, а из .m4a их можно получить ffmpeg'ом), рендер
+       играет запись вместо запасного шума. Если файла нет — движок честно
+       остаётся на шуме, и это видно в отчёте (airMode). */
+    loadBed: bedDir
+      ? (file) => new Promise((resolve, reject) => {
+        const f32 = path.join(bedDir, `${path.basename(file, path.extname(file))}.f32`);
+        if (!fs.existsSync(f32)) return reject(new Error(`нет ${path.relative(ROOT, f32)}`));
+        const raw = fs.readFileSync(f32);
+        const data = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 4));
+        const buf = ctx.createBuffer(1, data.length, rate);
+        buf.getChannelData(0).set(data);
+        /* движок проверяет buf.duration — у мягкого буфера его нет */
+        buf.duration = data.length / rate;
+        resolve(buf);
+      })
+      : null
   });
 
   engine.configure({ scene, volume, minutes, texture, reverb });
@@ -461,9 +493,15 @@ function renderPass({ scene, seed, seconds, volume, minutes, texture, reverb, we
     }
   }
 
+  /* Запись сцены приезжает промисом — а рендер синхронный. Поэтому первую
+     пару секунд уступаем очередь задач: loadBed успевает разрешиться, и
+     дальше запись играет весь рендер (как в браузере, где файл приходит
+     не мгновенно). Дальше уступать не нужно — это только замедлило бы. */
+  const yieldUntil = Math.min(1.5, seconds);
   let steps = 0;
   while (ctx.sample < total) {
     clock.fireDue();
+    if (bedDir && ctx.currentTime < yieldUntil) await new Promise((r) => setImmediate(r));
     ctx.renderBlock(Math.min(BLOCK, total - ctx.sample));
     steps++;
   }
@@ -471,9 +509,9 @@ function renderPass({ scene, seed, seconds, volume, minutes, texture, reverb, we
 }
 
 /** Полный рендер сцены: два прохода + свёртка. */
-function renderScene({ sceneId, seconds, seed, volume, minutes, texture, reverb, rate }) {
+async function renderScene({ sceneId, seconds, seed, volume, minutes, texture, reverb, rate, bedDir }) {
   const scene = sceneById(sceneId);
-  const first = renderPass({ scene: sceneId, seed, seconds, volume, minutes, texture, reverb, wet: null, rate });
+  const first = await renderPass({ scene: sceneId, seed, seconds, volume, minutes, texture, reverb, wet: null, rate, bedDir });
   const dry = first.mix;
   let out = dry;
   if (first.send && first.ir) {
@@ -481,7 +519,7 @@ function renderScene({ sceneId, seconds, seed, volume, minutes, texture, reverb,
       convolve(first.send[0], first.ir.getChannelData(0)),
       convolve(first.send[1], first.ir.getChannelData(1))
     ];
-    const second = renderPass({ scene: sceneId, seed, seconds, volume, minutes, texture, reverb, wet: W, rate });
+    const second = await renderPass({ scene: sceneId, seed, seconds, volume, minutes, texture, reverb, wet: W, rate, bedDir });
     out = second.mix;
   }
   return {
@@ -491,7 +529,8 @@ function renderScene({ sceneId, seconds, seed, volume, minutes, texture, reverb,
     dry,
     stats: measure(out[0], out[1], rate),
     dryStats: measure(dry[0], dry[1], rate),
-    engine: first.engine
+    engine: first.engine,
+    air: first.engine && first.engine.state ? first.engine.state().air : { source: 'unknown' }
   };
 }
 
@@ -581,6 +620,13 @@ const rate = number('rate', SAMPLE_RATE);   // 32000 — файлы в три р
 const reverb = flag('reverb', '1') !== '0';
 const only = flag('scene', null);
 const all = args.includes('--all');
+/* Сырые f32-петли для честного рендера с настоящими записями. Их делает
+   scripts/ambience/build-ambience.sh; из готовых .m4a — одна команда:
+     ffmpeg -i app/assets/ambience/sea.m4a -f f32le -ar 32000 -ac 1 test-results/ambience/f32/sea.f32
+   (частота обязана совпадать с --rate). Если папки нет — рендер честно
+   играет запасной шум и пишет об этом. */
+const bedDir = path.resolve(flag('bed-dir', path.join(ROOT, 'test-results', 'ambience', 'f32')));
+const bedUsable = fs.existsSync(bedDir);
 const scenes = all ? AMBIENT_SCENES.map((s) => s.id)
   : only ? [sceneById(only).id]
     : ['sea', 'rain'];
@@ -593,13 +639,15 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 const results = [];
 for (const id of scenes) {
   const t0 = Date.now();
-  const r = renderScene({ sceneId: id, seconds, seed, volume, minutes, texture, reverb, rate });
+  const r = await renderScene({ sceneId: id, seconds, seed, volume, minutes, texture, reverb, rate, bedDir: bedUsable ? bedDir : null });
   const file = path.join(OUT_DIR, outName || `${id}.wav`);
   const bytes = writeWav(file, r.left, r.right, rate);
   const st = r.stats;
   const dry = r.dryStats;
-  results.push({ id, title: r.scene.title, file, bytes, st, dry, ms: Date.now() - t0 });
+  results.push({ id, title: r.scene.title, file, bytes, st, dry, air: r.air, ms: Date.now() - t0 });
   console.log(`\n${r.scene.title} (${id}) — ${seconds} с, ${(bytes / 1048576).toFixed(1)} МБ, рендер ${((Date.now() - t0) / 1000).toFixed(1)} с`);
+  const src = r.air && r.air.source;
+  console.log(`  воздух: ${src === 'file' ? `настоящая запись (${r.air.file})` : src === 'noise' ? 'запасной шум — записи не подкладывались' : src}`);
   console.log(`  пик ${st.peak} · RMS ${st.db} dBFS · DC ${st.dc.toFixed(5)} · макс. скачок ${st.maxJump.toFixed(4)}`);
   console.log(`  полосы: низ ${st.bands.low}% · середина ${st.bands.mid}% · верх ${st.bands.high}% (без эха: низ ${dry.bands.low}% · середина ${dry.bands.mid}% · верх ${dry.bands.high}%)`);
   if (st.peak >= 0.999) console.log('  ⚠ клиппинг');
@@ -613,9 +661,14 @@ for (const id of scenes) {
 if (results.length > 1) {
   console.log('\nсводка');
   for (const r of results) {
-    console.log(`  ${r.id.padEnd(8)} пик ${String(r.st.peak).padEnd(6)} RMS ${String(r.st.db).padStart(6)} dB  низ/сер/верх ${r.st.bands.low}/${r.st.bands.mid}/${r.st.bands.high}`);
+    console.log(`  ${r.id.padEnd(8)} пик ${String(r.st.peak).padEnd(6)} RMS ${String(r.st.db).padStart(6)} dB  низ/сер/верх ${r.st.bands.low}/${r.st.bands.mid}/${r.st.bands.high}  воздух: ${r.air && r.air.source}`);
   }
   const diff = results.some((r, i) => i > 0 && Math.abs(r.st.db - results[0].st.db) > 0.5);
   console.log(`  сцены ${diff ? 'отличаются' : '⚠ звучат одинаково по громкости — проверь данные'}`);
+}
+if (!bedUsable) {
+  console.log(`\nзаписи природы не подкладывались: нет ${path.relative(ROOT, bedDir)}`);
+  console.log('чтобы услышать и измерить настоящий микс, положи туда сырые f32-петли:');
+  console.log('  bash scripts/ambience/build-ambience.sh   (или декодируй .m4a через ffmpeg)');
 }
 console.log(`\nфайлы: ${OUT_DIR}`);

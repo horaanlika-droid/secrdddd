@@ -535,6 +535,17 @@ try {
     assert(current.qa('.sound-notes').length === 1 && /[A-G]\d/.test(current.q('.sound-notes').textContent),
       `ноты аккорда перечислены: ${current.q('.sound-notes').textContent}`);
   });
+  check('экран честно рассказывает про записи, мотив и запасной шум', () => {
+    const txt = current.q('#app').textContent;
+    assert(txt.includes('CC0'), 'сказано, что записи природы открытые (CC0)');
+    assert(txt.includes('мотив'), 'сказано про мотив — это музыка, а не только полотно');
+    assert(txt.includes('синтезированный воздух'), 'честно: без записи играет запасной шум');
+    assert(/300–550 КБ/.test(txt), 'сказано, сколько весит файл сцены');
+    assert(!/ноль мегабайт|Ни одного аудиофайла|не нужен файл|Ничего не скачивается/i.test(txt),
+      'прежних обещаний «музыка без единого файла» на экране не осталось');
+    assert(current.q('.sound-motif'), 'на экране есть строка мотива');
+    assert(current.q('.sound-air'), 'на экране сказано, чем дышит сцена');
+  });
   check('«без конца» — это отдельный выбор, а не таймер', () => {
     const lasts = current.qa('.sound-time').map(b => b.textContent);
     assert.equal(lasts[lasts.length - 1], 'без конца');
@@ -561,6 +572,17 @@ try {
     assert(!current.q('.sound-stop').classList.contains('hidden'), 'стоп виден');
     assert(current.q('.sound-screen').classList.contains('playing'), 'экран в состоянии «играет»');
   });
+  await sleep(150);   // запись сцены в jsdom не декодируется — экран обязан честно это сказать
+  check('во время игры экран показывает мотив и то, чем дышит сцена', () => {
+    const motif = current.q('.sound-motif').textContent;
+    assert(motif.includes('мотив'), `строка мотива: ${motif}`);
+    /* первая нота приходит через 4–27 с, поэтому сразу после запуска экран
+       честно ждёт, а не показывает ноты, которых ещё не слышно
+       (публикацию мотива в момент звука проверяет ambient-test) */
+    assert(motif.includes('ждём фразу'), `до первой ноты экран ждёт: ${motif}`);
+    const air = current.q('.sound-air').textContent;
+    assert(air.includes('запасной шум'), `без декодера играем шумом и говорим об этом: ${air}`);
+  });
   await current.go('');
   check('на другом экране музыку держит плашка, а тизер оживает', () => {
     assert(current.q('.sound-pill'), 'плашка появилась');
@@ -584,6 +606,17 @@ try {
     assert.equal(st.texture, 0);
     assert.equal(st.reverb, false);
     assert.equal(current.q('.sound-space').getAttribute('aria-pressed'), 'false');
+  });
+  check('«Голос» — третья ручка микшера, и выбор сохраняется', () => {
+    assert.equal(current.qa('.sound-mixer').length, 3, 'микшера три: громкость, воздух, голос');
+    const voice = current.q('.sound-mixer:nth-child(3) .sound-range');
+    assert(voice.getAttribute('aria-label').includes('мелодии'), 'подпись ручки — про мелодию');
+    voice.value = '0'; voice.dispatchEvent(new current.dom.window.Event('input'));
+    assert.equal(current.state().sound.voice, 0, 'голос выключен и сохранён в памяти телефона');
+    assert(current.q('.sound-mixer:nth-child(3) .sound-val').textContent.includes('выключен'),
+      'значение подписано словами, а не только процентом');
+    voice.value = '70'; voice.dispatchEvent(new current.dom.window.Event('input'));
+    assert.equal(current.state().sound.voice, 0.7, 'доля мелодии вернулась');
   });
   current.dom.window.close();
   current = await app({ onboarded: true, sound: { preset: 'beta', volume: 0.5, minutes: 5, noise: true } }, { audio: null });

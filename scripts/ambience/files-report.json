@@ -1,0 +1,79 @@
+[
+  {
+    "file": "assets/ambience/sea.m4a",
+    "bytes": 395274,
+    "seconds": 38.52,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -27.2,
+    "peak_dbfs": -3.3,
+    "peak_linear": 0.684
+  },
+  {
+    "file": "assets/ambience/rain.m4a",
+    "bytes": 513075,
+    "seconds": 50.02,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -27.2,
+    "peak_dbfs": -1.7,
+    "peak_linear": 0.822
+  },
+  {
+    "file": "assets/ambience/hearth.m4a",
+    "bytes": 423346,
+    "seconds": 42.02,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -29.1,
+    "peak_dbfs": -11,
+    "peak_linear": 0.282
+  },
+  {
+    "file": "assets/ambience/forest.m4a",
+    "bytes": 379589,
+    "seconds": 37.02,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -28.2,
+    "peak_dbfs": -15,
+    "peak_linear": 0.178
+  },
+  {
+    "file": "assets/ambience/lullaby.m4a",
+    "bytes": 328696,
+    "seconds": 32.02,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -30,
+    "peak_dbfs": -7,
+    "peak_linear": 0.447
+  },
+  {
+    "file": "assets/ambience/space.m4a",
+    "bytes": 533431,
+    "seconds": 52.02,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -33.2,
+    "peak_dbfs": -15.6,
+    "peak_linear": 0.166
+  },
+  {
+    "file": "assets/ambience/chimes.m4a",
+    "bytes": 77773,
+    "seconds": 7.52,
+    "codec": "aac (LC)",
+    "sample_rate": 48000,
+    "channels": "mono",
+    "mean_dbfs": -33.6,
+    "peak_dbfs": -10.7,
+    "peak_linear": 0.292
+  }
+]

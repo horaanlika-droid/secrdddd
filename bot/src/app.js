@@ -834,7 +834,16 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  /* v45: записи природы для тихой музыки (app/assets/ambience/*.m4a).
+     Без правильного типа decodeAudioData в некоторых вебвью не срабатывает,
+     и сцена осталась бы на запасном шуме. */
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',   // контейнер один, но видео должно отдаваться видео
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.wav': 'audio/wav'
 };
 
 const json = (res, code, obj) => {

@@ -102,7 +102,8 @@ const defaultState = {
     scene: 'sea',            // сцена-полотно (AMBIENT_SCENES)
     volume: 0.35,            // громкость (0..1)
     minutes: 30,             // длительность сессии, 0 — «без конца»
-    texture: 1,              // доля слоя воздуха: дождь, волны, ветер
+    texture: 1,              // доля слоя воздуха: дождь, волны, ветер (v45 — записи природы)
+    voice: 1,                // v45: доля мелодии («Голос»), 0 — только полотно и воздух
     reverb: true             // большое эхо («Пространство»)
   },
   picked: {},                // примеры из практик, которые человек отметил своими: "practiceId:extrasKey" → [тексты]
@@ -2737,13 +2738,23 @@ function boardBgSheet(b) {
 
 /* --- экран со списком досок --- */
 /* ============================================================
-   v44 · Тихая музыка — генеративный эмбиент на Web Audio
+   v45 · Тихая музыка — записи природы + генеративный эмбиент
    ------------------------------------------------------------
-   Музыка здесь не запись и не стриминг: приложение само собирает
-   полотно из тёплых тонов прямо на устройстве (ноты, аккорды, шум,
-   эхо и движок — в ambient.js). Отсюда три следствия, ради которых
-   всё и делалось: ноль мегабайт в паке, работа офлайн и никакой
-   зависимости от лицензий и региональных блокировок стримингов.
+   Три слоя (всё считается в ambient.js, на устройстве):
+
+     1. Земля — настоящие записи: волны, дождь, костёр, утро в лесу
+        (app/assets/ambience/*.m4a, CC0, ≈2,5 МБ на шесть сцен).
+        Файл сцены подгружается при её выборе, следующая сцена — в
+        простое. Если записи нет (первый запуск без сети, старый
+        вебвью), играет прежний шумовой слой — музыка не замолкает.
+     2. Полотно — аккорды из расстроенных синусов, как раньше.
+     3. Голос — мотив из 3–5 нот, который сочиняется один раз на
+        сессию и транспонируется под каждый аккорд: это и есть
+        «мелодичнее». Ручка «Голос» убирает мелодию вовсе.
+
+   Плюс редкие живые акценты (колокольчики) и мягкий лимитер на
+   мастере. Стриминга и внешних URL по-прежнему нет: звук лежит в
+   репозитории, поэтому лицензий и гео-блокировок можно не бояться.
 
    Движок создаётся один раз на приложение и живёт вне экрана: музыка
    не обрывается, когда человек уходит в дневник или в чат. На других
@@ -2787,7 +2798,7 @@ function soundTeaser() {
       el('b', {}, playing ? `${scene.title} · ${st.paused ? 'на паузе' : left}` : 'Музыка, которая собирается здесь'),
       el('span', {}, playing
         ? 'Играет — нажми, чтобы открыть плеер'
-        : 'Полотна, дождь и волны: приложение играет само. Без загрузок и без интернета.')),
+        : 'Полотна, дождь и волны: приложение играет само. Звук сцены скачивается один раз.')),
     el('span', { class: 'chev' }, '›')
   );
 }
@@ -2823,8 +2834,8 @@ function screenSound() {
     el('button', { class: 'back', onclick: () => go('') }, icon('back'), 'Назад'),
     el('h2', {}, 'Тихая музыка')
   ));
-  scr.append(el('h1', { class: 'ltitle' }, 'Музыка, которой не нужен файл',
-    el('small', {}, 'Полотна, дождь и волны: приложение собирает музыку само — каждый раз немного другую.')));
+  scr.append(el('h1', { class: 'ltitle' }, 'Музыка, которая собирается здесь',
+    el('small', {}, 'Записи природы, тёплые аккорды и мотив, который приложение сочиняет само — каждый раз немного другой.')));
 
   const engine = soundReady();
 
@@ -2832,6 +2843,8 @@ function screenSound() {
   const chordLabel = el('b', { class: 'sound-chord' });
   const chordNotes = el('span', { class: 'sound-notes' });
   const chordBass = el('span', { class: 'sound-bass' });
+  const motifLine = el('span', { class: 'sound-motif' });
+  const airLine = el('span', { class: 'sound-air' });
   const fallbackVoicing = () => chordVoices(sceneById(state.sound.scene), 0);
   const drawNow = () => {
     const st = engine ? engine.state() : null;
@@ -2839,17 +2852,30 @@ function screenSound() {
     chordLabel.textContent = chord.label;
     chordNotes.textContent = (chord.notes || []).map(n => n.name).join(' · ');
     chordBass.textContent = chord.bass ? `бас ${chord.bass.name}` : '';
+    /* v45: экран честно показывает и мотив, и то, чем дышит сцена */
+    const phrase = st && st.phrase && st.phrase.notes.length ? st.phrase : null;
+    motifLine.textContent = phrase
+      ? `мотив ${phrase.notes.map(n => n.name).join(' · ')}`
+      : (st && st.playing ? 'мотив: ждём фразу' : 'мотив сочинится, когда включишь');
+    const air = st ? st.air : null;
+    airLine.textContent = !air || air.source === 'idle'
+      ? 'воздух: запись сцены подгрузится, когда включишь'
+      : air.source === 'file' ? 'воздух: настоящая запись (CC0)'
+        : air.source === 'loading' ? 'воздух: запись в пути — пока играет шум'
+          : 'воздух: запасной шум, запись не загрузилась';
   };
   scr.append(el('div', { class: 'card soft sound-what' },
     el('p', { class: 'eyebrow' }, 'Что это такое'),
-    el('p', {}, 'Это не трек из плейлиста, а полотно, которое собирается прямо в телефоне: несколько тёплых тонов складываются в аккорд, аккорд держится долго — так, что перестаёт быть событием, — и медленно переходит в следующий. Ни мелодии, ни ритма: только полотно и воздух поверх него.'),
-    el('p', {}, 'Порядок аккордов выбирается случайно, но всегда из одной тональности: поэтому музыка никогда не повторяется и не бывает фальшивой. И может идти бесконечно.'),
+    el('p', {}, 'Это не трек из плейлиста: приложение собирает музыку само, слой за слоем. Внизу — настоящая запись сцены (волны, дождь, костёр, утро в лесу; открытые записи CC0). Посередине — тёплые аккорды, которые держатся по минуте и перетекают друг в друга. Поверх — мотив из трёх-пяти нот: он сочиняется один раз на сессию и потом повторяется в разных тональностях, поэтому музыку узнаёшь, а фальши не бывает.'),
+    el('p', {}, 'Порядок аккордов выбирается случайно, но всегда из одной тональности, а фразы приходят не по сетке: поэтому музыка не повторяется и не бывает фальшивой. Раз в 40–180 секунд тихо заходят настоящие колокольчики. Ни ударов, ни ритма. И музыка может идти бесконечно.'),
     el('div', { class: 'sound-now' },
       el('span', { class: 'sound-now-label' }, 'сейчас звучит'),
       chordLabel,
       chordNotes,
-      chordBass),
-    el('p', { class: 'mins' }, 'Ничего не скачивается: всё считается здесь, на устройстве. Поэтому музыка работает без интернета и не занимает места.')
+      chordBass,
+      motifLine,
+      airLine),
+    el('p', { class: 'mins' }, 'Файл сцены скачивается один раз, когда ты её выбираешь (300–550 КБ), и остаётся в памяти телефона; следующая сцена подгружается заранее, поэтому переключение мгновенное. Дальше музыка работает без интернета. А если записи под рукой нет вовсе (первый запуск офлайн), вместо неё звучит синтезированный воздух — чуть более «искусственный», но не тишина.')
   ));
 
   /* ---- сцены ---- */
@@ -2910,6 +2936,13 @@ function screenSound() {
     airLabel.textContent = air.value === '0' ? 'выключен' : air.value + '%';
     applySoundSettings({ texture: Number(air.value) / 100 });
   });
+  const voiceLabel = el('span', { class: 'sound-val' });
+  const voice = el('input', { class: 'sound-range', type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Сколько мелодии: мотив поверх полотна' });
+  voice.value = String(Math.round((state.sound.voice === undefined ? 1 : state.sound.voice) * 100));
+  voice.addEventListener('input', () => {
+    voiceLabel.textContent = voice.value === '0' ? 'выключен' : voice.value + '%';
+    applySoundSettings({ voice: Number(voice.value) / 100 });
+  });
   const spaceBtn = el('button', { class: 'chip sound-space', type: 'button', 'aria-pressed': String(!!state.sound.reverb) });
   const drawSpace = () => {
     spaceBtn.classList.toggle('on', !!state.sound.reverb);
@@ -2922,12 +2955,15 @@ function screenSound() {
     volLabel.textContent = Math.round(state.sound.volume * 100) + '%';
     const t = state.sound.texture === undefined ? 1 : state.sound.texture;
     airLabel.textContent = t === 0 ? 'выключен' : Math.round(t * 100) + '%';
+    const v = state.sound.voice === undefined ? 1 : state.sound.voice;
+    voiceLabel.textContent = v === 0 ? 'выключен' : Math.round(v * 100) + '%';
     /* заполнение дорожки слайдера — webkit не умеет ::-moz-range-progress */
-    for (const node of [vol, air]) node.style.setProperty('--fill', node.value + '%');
+    for (const node of [vol, air, voice]) node.style.setProperty('--fill', node.value + '%');
   };
   scr.append(el('div', { class: 'sound-mixers' },
     el('label', { class: 'sound-mixer' }, el('span', {}, 'Громкость', volLabel), vol),
     el('label', { class: 'sound-mixer' }, el('span', {}, 'Воздух — дождь, волны, ветер', airLabel), air),
+    el('label', { class: 'sound-mixer' }, el('span', {}, 'Голос — мотив поверх полотна', voiceLabel), voice),
     el('div', { class: 'chips' }, spaceBtn)
   ));
 

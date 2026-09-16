@@ -15,7 +15,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ART = path.join(ROOT, 'test-results/ui'); await fs.mkdir(ART, { recursive: true });
 /* Геометрия лица внутри позы: по ней проверяем, что в кадре меняется только лицо. */
 const moodAtlas = JSON.parse(await fs.readFile(path.join(ROOT, 'app/assets/mascot/hero-moods.json'), 'utf8'));
-const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.webp':'image/webp', '.jpg':'image/jpeg' };
+/* v45: записи природы для тихой музыки отдаём audio/mp4 — ровно так же, как бот;
+   с octet-stream decodeAudioData в части вебвью не срабатывает. */
+const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.webp':'image/webp', '.jpg':'image/jpeg', '.m4a':'audio/mp4' };
 const server = http.createServer(async (req,res) => {
   const url = new URL(req.url,'http://x');
   if (url.pathname === '/gif') {
@@ -69,6 +71,8 @@ try {
   const errors=[],missing=[],faceRequests=[],moodAtlasRequests=[];
   page.on('request',r=>{if(r.url().includes('/assets/mascot/faces/'))faceRequests.push(r.url());});
   page.on('request',r=>{if(r.url().includes('/assets/mascot/hero-moods.webp'))moodAtlasRequests.push(r.url());});
+  const ambienceRequests=[];
+  page.on('request',r=>{if(r.url().includes('/assets/ambience/'))ambienceRequests.push(r.url());});
   page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400&&r.url().startsWith(origin))missing.push(`${r.status()} ${r.url()}`);});
   await page.route('https://telegram.org/**',route=>route.abort());
   await page.route('https://media.tenor.com/**',route=>route.fulfill({contentType:'image/gif',body:Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64'),headers:{'Access-Control-Allow-Origin':'*'}}));
@@ -360,11 +364,88 @@ try {
   check('музыка строится в реальном Web Audio: голоса, панорама, свёртка',()=>{
     assert.equal(playing.ctx,1,'аудиоконтекст создан один раз');
     assert.ok(playing.osc>=8,`генераторов ${playing.osc}: два на голос, не меньше четырёх голосов`);
-    assert.ok(playing.osc<=80,`генераторов ${playing.osc} — слишком много для одной сессии`);
+    /* голос — это по четыре частичных тона на ноту и до двух фраз на аккорд,
+       поэтому генераторов заметно больше, чем в версии с одним полотном */
+    assert.ok(playing.osc<=200,`генераторов ${playing.osc} — слишком много для одной сессии`);
     assert.ok(playing.pans>=4,`панорама есть у ${playing.pans} голосов`);
     assert.equal(playing.conv,1,'свёрточное эхо собрано один раз');
     assert.ok(/^(\d+:\d\d|∞)$/.test(playing.clock.trim()),`отсчёт сессии: ${playing.clock}`);
     assert(playing.label.includes('Пауза'),`кнопка стала паузой: ${playing.label}`);
+  });
+  /* v45: записи природы — настоящая сеть, настоящий decodeAudioData.
+     Сначала спрашиваем сам браузер, умеет ли он вообще расшифровать AAC:
+     в сборках Chromium без проприетарных кодеков decodeAudioData честно
+     откажет, и тогда проверять надо не запись, а фолбэк — движок обязан
+     остаться на запасном шуме и написать об этом на экране. */
+  const aacOk = await page.evaluate(async () => {
+    try {
+      const r = await fetch('assets/ambience/chimes.m4a');
+      if (!r.ok) return false;
+      const bytes = await r.arrayBuffer();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      return await new Promise((res) => {
+        let done = false;
+        const fin = (v) => { if (!done) { done = true; try { ctx.close(); } catch (e) {} res(v); } };
+        try { ctx.decodeAudioData(bytes, () => fin(true), () => fin(false)); } catch (e) { fin(false); }
+        setTimeout(() => fin(false), 4000);
+      });
+    } catch (e) { return false; }
+  });
+  if (!aacOk) console.log('  · этот Chromium не расшифровал AAC — проверяю честный фолбэк на запасной шум');
+  await page.waitForTimeout(2500);   // петля сцены успевает доехать и сменить запасной шум
+  const airNow=await page.evaluate(()=>({
+    air:(document.querySelector('.sound-air')||{}).textContent||'',
+    motif:(document.querySelector('.sound-motif')||{}).textContent||'',
+    mixers:document.querySelectorAll('.sound-mixer').length,
+    voiceLabel:(document.querySelector('.sound-mixer:nth-child(3) .sound-val')||{}).textContent||'',
+    label:(document.querySelector('.sound-play')||{}).innerText||''
+  }));
+  check('запись сцены загружается, декодируется и становится воздухом',()=>{
+    assert(ambienceRequests.some(u=>u.endsWith('/assets/ambience/sea.m4a')),'браузер реально запросил петлю моря');
+    if (aacOk) assert(airNow.air.includes('настоящая запись'),`строка воздуха: ${airNow.air}`);
+    else assert(airNow.air.includes('запасной шум'),`браузер не умеет AAC — экран обязан сказать про запасной шум: ${airNow.air}`);
+    /* фраза приходит не сразу (первая нота — через 4–27 с), поэтому экран
+       обязан показывать либо ноты звучащей фразы, либо честное ожидание */
+    assert(/[A-G]\d/.test(airNow.motif)||airNow.motif.includes('ждём фразу'),`строка мотива: ${airNow.motif}`);
+    assert.equal(airNow.mixers,3,'микшера три: громкость, воздух, голос');
+    assert(/%|выключен/.test(airNow.voiceLabel),`значение «Голоса»: ${airNow.voiceLabel}`);
+    assert(airNow.label.includes('Пауза'),'музыка продолжает идти');
+  });
+  await page.evaluate(()=>{const b=[...document.querySelectorAll('.sound-scene')].find(x=>x.textContent.includes('Дождь'));b&&b.click();});
+  await page.waitForTimeout(2500);
+  const switched=await page.evaluate(()=>({
+    air:(document.querySelector('.sound-air')||{}).textContent||'',
+    scene:(document.querySelector('.sound-scene.on')||{}).textContent||'',
+    label:(document.querySelector('.sound-play')||{}).innerText||''
+  }));
+  check('смена сцены на ходу подгружает другую запись и не прерывает музыку',()=>{
+    assert(switched.scene.includes('Дождь'),`выбрана сцена: ${switched.scene}`);
+    if (aacOk) assert(switched.air.includes('настоящая запись'),`воздух после смены: ${switched.air}`);
+    else assert(switched.air.includes('запасной шум'),`воздух после смены (без AAC): ${switched.air}`);
+    assert(ambienceRequests.some(u=>u.endsWith('/assets/ambience/rain.m4a')),'браузер запросил петлю дождя');
+    assert(switched.label.includes('Пауза'),'сессия не прервалась');
+  });
+  const ambienceFiles=await page.evaluate(async()=>{
+    const out=[];
+    for(const n of ['sea','rain','hearth','forest','lullaby','space','chimes']){
+      const r=await fetch('assets/ambience/'+n+'.m4a');
+      const b=await r.arrayBuffer();
+      out.push({name:n,ok:r.ok,type:r.headers.get('content-type'),bytes:b.byteLength});
+    }
+    return out;
+  });
+  check('семь записей отдаются с audio/mp4 и укладываются в 3 МБ',()=>{
+    let total=0;
+    for(const f of ambienceFiles){
+      assert(f.ok,`${f.name}: файл не отдался`);
+      assert.equal(f.type,'audio/mp4',`${f.name}: тип ${f.type} — с ним decodeAudioData работает не везде`);
+      total+=f.bytes;
+    }
+    for(const f of ambienceFiles.filter(x=>x.name!=='chimes')){
+      assert(f.bytes>=250*1024&&f.bytes<=600*1024,`${f.name}: ${Math.round(f.bytes/1024)} КБ вне бюджета 250–600 КБ`);
+    }
+    assert(total<=3*1024*1024,`весь звук ${(total/1048576).toFixed(2)} МБ — бюджет 3 МБ`);
   });
   await page.screenshot({path:path.join(ART,'sound-screen.png'),fullPage:true});
   /* музыка не должна обрываться при переходе на другой экран */
@@ -495,10 +576,17 @@ try {
   }
   console.log(`\nbrowser-smoke: ${checks} checks passed; screenshots in test-results/ui`);
 } catch (e) {
-  // Сценарий оборвался до проверок (например, элемент не появился): в CI
-  // полный лог шага не читается, поэтому причина нужна аннотацией.
-  const message=String(e&&e.message||e).split('\n')[0];
-  console.log('  ✗ сценарий оборвался — '+message);
-  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed::${message.slice(0,800)}`);
+  /* Сценарий оборвался до проверок (например, элемент не появился): в CI
+     полный лог шага не читается, поэтому причина нужна аннотацией.
+     Одной первой строки мало — Playwright объясняет, какой именно элемент
+     не дался и что ему мешало («не стабилен», «перехватывает события»,
+     «не виден»), дальше по строкам. Плюс номер строки сценария: без него
+     непонятно, какой из полутора сотен кликов упал. */
+  const message=String((e&&e.message)||e);
+  const lines=message.split('\n').map((l)=>l.replace(/\s+/g,' ').trim()).filter(Boolean).slice(0,14).join(' | ');
+  const at=/browser-smoke\.mjs:(\d+):(\d+)/.exec(String((e&&e.stack)||''));
+  const where=at?`browser-smoke.mjs:${at[1]}`:'строка сценария неизвестна';
+  console.log('  ✗ сценарий оборвался на '+where+' — '+lines);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed at ${where}::${lines.slice(0,800)}`);
   process.exitCode=1;
 } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
