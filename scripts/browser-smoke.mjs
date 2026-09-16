@@ -576,10 +576,17 @@ try {
   }
   console.log(`\nbrowser-smoke: ${checks} checks passed; screenshots in test-results/ui`);
 } catch (e) {
-  // Сценарий оборвался до проверок (например, элемент не появился): в CI
-  // полный лог шага не читается, поэтому причина нужна аннотацией.
-  const message=String(e&&e.message||e).split('\n')[0];
-  console.log('  ✗ сценарий оборвался — '+message);
-  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed::${message.slice(0,800)}`);
+  /* Сценарий оборвался до проверок (например, элемент не появился): в CI
+     полный лог шага не читается, поэтому причина нужна аннотацией.
+     Одной первой строки мало — Playwright объясняет, какой именно элемент
+     не дался и что ему мешало («не стабилен», «перехватывает события»,
+     «не виден»), дальше по строкам. Плюс номер строки сценария: без него
+     непонятно, какой из полутора сотен кликов упал. */
+  const message=String((e&&e.message)||e);
+  const lines=message.split('\n').map((l)=>l.replace(/\s+/g,' ').trim()).filter(Boolean).slice(0,14).join(' | ');
+  const at=/browser-smoke\.mjs:(\d+):(\d+)/.exec(String((e&&e.stack)||''));
+  const where=at?`browser-smoke.mjs:${at[1]}`:'строка сценария неизвестна';
+  console.log('  ✗ сценарий оборвался на '+where+' — '+lines);
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=browser-smoke crashed at ${where}::${lines.slice(0,800)}`);
   process.exitCode=1;
 } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}
