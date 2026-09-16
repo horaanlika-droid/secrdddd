@@ -13,7 +13,7 @@
     "check": "node bot/src/ensure-deps.js --check && node scripts/check-project.mjs",
     "smoke": "node scripts/smoke.mjs",
     "port": "node scripts/port-clash.mjs",
-    "verify": "npm run check && npm run dom-test && npm run boards-test && npm run sound-test && npm run tribute-test && npm run ai-test && npm run agents-test && npm run smoke && npm run port && npm run workbook-test && npm run stickers-test",
+    "verify": "npm run check && npm run dom-test && npm run boards-test && npm run ambient-test && npm run tribute-test && npm run ai-test && npm run agents-test && npm run smoke && npm run port && npm run workbook-test && npm run stickers-test",
     "ai-check": "node scripts/ai-check.mjs",
     "ai-test": "node scripts/ai-params-check.mjs",
     "agents-test": "node scripts/agents-mock-check.mjs",
@@ -23,7 +23,8 @@
     "browser-test": "node scripts/browser-smoke.mjs",
     "workbook-test": "node scripts/workbook-test.mjs",
     "stickers-test": "node scripts/stickers-test.mjs",
-    "sound-test": "node scripts/sound-test.mjs"
+    "ambient-test": "node scripts/ambient-test.mjs",
+    "ambient-render": "node scripts/ambient-render.mjs"
   },
   "dependencies": {
     "grammy": "^1.30.0",
