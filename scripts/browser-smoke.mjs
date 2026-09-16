@@ -285,10 +285,40 @@ try {
   await page.locator('.board-search').fill('');
   await page.waitForFunction(()=>document.querySelectorAll('.tile-photo img').length===2&&[...document.querySelectorAll('.tile-photo img')].every(img=>img.naturalWidth));
   check('images survive reload and filter redraw',()=>assert.equal(page.url(),boardRoute));
-  await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
+  /* Доска — свободный коллаж (итерация 43): плитки лежат абсолютно и по замыслу
+     наезжают друг на друга. Поэтому «кликни первую плитку» в лоб не работает —
+     Playwright честно ждёт, что клик достанется именно ей, а его перехватывает
+     соседняя плитка, и через 30 с сценарий обрывается. Ищем точку, где нужная
+     плитка действительно сверху: ровно так же её открыл бы человек. Заодно это
+     содержательная проверка — фото, целиком закрытое соседями, не открыть. */
+  const tilePoint=async(sel)=>{
+    await page.locator(sel).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(250);
+    return page.evaluate((s)=>{
+      const tiles=[...document.querySelectorAll(s)];
+      const spots=[[.5,.5],[.5,.3],[.3,.5],[.7,.5],[.5,.7],[.25,.25],[.75,.25],[.25,.75],[.75,.75],[.5,.15],[.5,.85]];
+      for(let i=0;i<tiles.length;i++){
+        const r=tiles[i].getBoundingClientRect();
+        if(r.bottom<0||r.top>innerHeight) continue;
+        for(const [fx,fy] of spots){
+          const x=Math.round(r.left+r.width*fx),y=Math.round(r.top+r.height*fy);
+          const hit=document.elementFromPoint(x,y);
+          if(hit&&tiles[i].contains(hit)) return {index:i,x,y};
+        }
+      }
+      return null;
+    },sel);
+  };
+  const photoTap=await tilePoint('.tile-photo');
+  check('свободный холст: фото открывается касанием, а не спрятано под соседями',()=>assert(photoTap,'ни одна точка фото-плитки не доступна для касания — её не открыть'));
+  await page.mouse.click(photoTap.x,photoTap.y);
+  await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
-  await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
+  const photoTap2=await tilePoint('.tile-photo');
+  check('после перезагрузки фото снова можно открыть касанием',()=>assert(photoTap2,'после перезагрузки плитка фото недоступна для касания'));
+  await page.mouse.click(photoTap2.x,photoTap2.y);
+  await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
   const remainingPhotos=await page.locator('.tile-photo').count();
