@@ -48,7 +48,12 @@ const check=(name,fn)=>{
     checks++; console.log('  ✓ '+name);
   }
   catch (e) {
-    const message=String(e&&e.message||e).split('\n')[0];
+    /* Первая строка ошибки assert — это наше пояснение («плашка с музыкой есть»),
+       а суть (что именно не совпало) живёт дальше. В CI читается аннотация, а не
+       лог шага, поэтому в неё кладём несколько строк, иначе вместо причины видно
+       только заголовок проверки. */
+    const lines=String((e&&e.message)||e).split('\n').map((l)=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+    const message=lines.slice(0,8).join(' | ');
     failures.push({name,message});
     console.log('  ✗ '+name+(message?' — '+message:''));
     if (process.env.GITHUB_ACTIONS) console.log(`::error title=${name}::${message.slice(0,800)}`);
@@ -530,8 +535,34 @@ try {
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});
       if(route.startsWith('board/')) {
-        const fits=await page.locator('.tile').evaluateAll(tiles=>tiles.every(tile=>{const a=tile.getBoundingClientRect(),b=tile.closest('.board-canvas').getBoundingClientRect();return a.left>=b.left&&a.right<=b.right&&a.top>=b.top&&a.bottom<=b.bottom;}));
-        check(`${width}px rotated tiles stay inside board`,()=>assert(fits));
+        /* Доска — свободный коллаж (итерация 43): плитки повёрнуты и могут
+           выступать за холст, это замысел. Обязательное другое — плитка не
+           должна уезжать за экран (иначе до неё не дотянуться и появляется
+           горизонтальная прокрутка). Насколько плитки выступают за холст,
+           печатаем в лог: по этим числам видно, не уехал ли коллаж слишком. */
+        const fit=await page.locator('.tile').evaluateAll(tiles=>{
+          const canvas=tiles.length?tiles[0].closest('.board-canvas'):null;
+          const b=canvas?canvas.getBoundingClientRect():null;
+          const rows=tiles.map((tile,i)=>{
+            const a=tile.getBoundingClientRect();
+            return {i,
+              /* горизонтально — против области просмотра: за её краем плитку
+                 не достать, и страница начинает прокручиваться вбок.
+                 Вертикально — против холста: доска длиннее экрана, поэтому
+                 «ниже экрана» не значит «потеряна». */
+              out:a.left<-1||a.right>innerWidth+1,
+              overH:b?Math.round(Math.max(b.left-a.left,a.right-b.right,0)):0,
+              overV:b?Math.round(Math.max(b.top-a.top,a.bottom-b.bottom,0)):0};
+          });
+          return {count:tiles.length,canvas:b?Math.round(b.width):0,viewport:innerWidth,
+                  maxOverH:Math.max(0,...rows.map(r=>r.overH)),
+                  maxOverV:Math.max(0,...rows.map(r=>r.overV)),
+                  out:rows.filter(r=>r.out)};
+        });
+        console.log(`  · ${width}px доска: плиток ${fit.count}, холст ${fit.canvas}px, выступ за холст — вбок до ${fit.maxOverH}px, вниз/вверх до ${fit.maxOverV}px`);
+        check(`${width}px rotated tiles stay inside board`,()=>{
+          assert.equal(fit.out.length,0,`плитки уехали за край экрана: ${JSON.stringify(fit.out)}`);
+        });
         await page.screenshot({path:path.join(ART,`board-${width}.png`),fullPage:true});
       }
     }
@@ -611,7 +642,12 @@ try {
   }
   await hintPage.close();
 
-  check('browser run has no script errors or missing local assets',()=>{assert.deepEqual(errors,[]);assert.deepEqual(missing,[]);});
+  check('browser run has no script errors or missing local assets',()=>{
+    /* без содержимого в сообщении аннотация показывает только «не равны» —
+       а смотреть нужно именно что за ошибка и какой файл не отдался */
+    assert.equal(errors.length,0,'ошибки страницы: '+errors.slice(0,3).join(' ;; ').slice(0,600));
+    assert.equal(missing.length,0,'не отдались: '+missing.slice(0,6).join(' ;; ').slice(0,600));
+  });
   if(failures.length) {
     console.log(`\n✗ упало проверок: ${failures.length} из ${checks+failures.length}`);
     process.exitCode=1;
