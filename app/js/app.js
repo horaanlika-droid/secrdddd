@@ -943,8 +943,10 @@ function renderTabbar(active) {
 const go = (route) => { location.hash = route ? '#/' + route : '#/'; };
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
-  const [a, b] = h.split('/');
-  return { a: a || '', b: b || '' };
+  /* #/workbook?pay=1 — флаг «пришёл покупать подписку», а не часть маршрута. */
+  const [path, query] = h.split('?');
+  const [a, b] = path.split('/');
+  return { a: a || '', b: b || '', q: new URLSearchParams(query || '') };
 }
 
 /* ---------- screens ---------- */
@@ -1066,6 +1068,21 @@ async function openPay() {
       el('button', { class: 'btn secondary', style: 'margin-top:8px', onclick: () => { close(); toast('Напиши боту /status — он проверит срок доступа.'); } }, 'Я уже поддерживаю')
     );
   });
+}
+
+/* Пришли из тетради по ссылке «купить подписку». Сначала сверяемся с ботом:
+   вдруг подписка уже оплачена — тогда показываем скачивание, а не окно оплаты
+   (пробной недели скачивание не касается, ей окно оплаты как раз нужно).
+   Если оплаты нет — открываем ровно то же окно Tribute, что и кнопка
+   «Минимальный донат» в профиле, без лишних шагов и без похода в чат бота. */
+async function openPayFromLink() {
+  await syncPremium();
+  if ((state.premium_until || 0) > Date.now()) {
+    render();
+    toast('Подписка активна — тетрадь открыта целиком.');
+    return;
+  }
+  openPay();
 }
 
 function screenToday() {
@@ -1211,9 +1228,14 @@ function screenSkills() {
   renderTabbar('skills');
   const scr = el('div', { class: 'screen' });
   scr.append(el('h1', { class: 'ltitle' }, 'Навыки', el('small', {}, 'Пять блоков · проходи в своём порядке')));
-  scr.append(el('div', { class: 'mascot-wrap peeking' },
-    el('img', { class: 'mascot', src: 'assets/mascot/book.png', alt: 'Дибитишка' }),
-    el('div', { class: 'bubble' }, 'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.')
+  /* v42: на «Навыках» Дибитишка сидит в медитации — поза говорит то же, что и
+     подпись: спешить некуда. Фигура стоит целиком над репликой (.mascot-wrap.zen),
+     чтобы лотос не прятался за край; book.png остаётся в паке поз. */
+  scr.append(el('div', { class: 'mascot-wrap zen' },
+    el('img', { class: 'mascot', src: 'assets/mascot/meditate.png', alt: 'Дибитишка медитирует' }),
+    el('div', { class: 'bubble' },
+      'Выбирай любой блок. Можно идти медленно, перепрыгивать и возвращаться.',
+      el('small', {}, 'Сажусь рядом и дышу. Медленно — тоже вперёд.'))
   ));
   /* v25: разделы навыков — милые папки, как иконка папки на компьютере,
      только в нашем стиле: у каждого блока свой цвет и своё лицо на обложке. */
@@ -2068,18 +2090,21 @@ function screenMerch() {
     el('button', { class: 'back', onclick: () => go('workbook') }, icon('back'), 'Назад'),
     el('h2', {}, 'Мерч')
   ));
-  scr.append(mascot('peek', mline('merch')));
+  /* v43: на экране мерча Дибитишка стоит за прилавком — он и есть продавец.
+     Поза «у зеркала в кепке» (mirror.png) остаётся в паке: она про конкретную
+     кепку, а прилавок — про весь магазин. */
+  scr.append(mascot('cashier', mline('merch')));
   const grid = el('div', { class: 'mgrid' });
   CONTENT.merch.forEach(m => {
     const card = el('div', { class: 'mcard' });
     card.append(el('div', { class: 'ph merch-photo' }, el('img', { src: m.image, alt: m.title, loading: 'lazy' })),
       el('div', { class: 'mb' }, el('b', {}, m.title), el('span', {}, m.note),
-        el('p', { class: 'merch-contact' }, 'Цену, наличие и условия доставки уточняй у @vasmedoljno.'),
+        el('p', { class: 'merch-contact' }, 'Цену, наличие и доставку скажет @vasmedoljno — я только лицо.'),
         el('button', { class: 'btn secondary', onclick: () => openLink('https://t.me/vasmedoljno') }, 'Написать @vasmedoljno')));
     grid.append(card);
   });
   scr.append(grid);
-  scr.append(el('p', { class: 'foot' }, 'На изображениях — реалистичные визуализации. Детали готовых изделий уточняй перед заказом.'));
+  scr.append(el('p', { class: 'foot' }, 'Картинки — мокапы: на них я ещё только притворяюсь вещью. Размер, цвет и наличие лучше сверить перед заказом.'));
   return scr;
 }
 
@@ -3165,6 +3190,11 @@ function render() {
     r.a = ''; r.b = '';
     installDeepLink = true;
   }
+  /* v41: «Купить подписку» в печатной тетради (workbook.html) ведёт на
+     #/workbook?pay=1. Экран обычный, но окошко оплаты выпрыгивает сразу —
+     то же, что открывает кнопка «Минимальный донат» в профиле. */
+  const payDeepLink = r.q.get('pay') === '1' && state.onboarded;
+  if (payDeepLink) { try { history.replaceState(null, '', '#/' + (r.a || '')); } catch (e) {} }
   document.documentElement.dataset.screen = r.a || 'today';
   const app = $('#app');
   if (typeof screenCleanup === 'function') { try { screenCleanup(); } catch (e) {} }
@@ -3191,7 +3221,8 @@ function render() {
   if (installDeepLink) installSheet();
   bindMascotFriends(app);
   hydrateMedia(app);          // картинки досок живут в IndexedDB — подставляем ссылки
-  maybeInstallHint();         // v40: один раз всплываем сами, дальше — только из профиля
+  if (!payDeepLink) maybeInstallHint();   // v40: один раз всплываем сами, дальше — только из профиля
+  if (payDeepLink) openPayFromLink();     // v41: окошко оплаты прямо из тетради
   window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);
