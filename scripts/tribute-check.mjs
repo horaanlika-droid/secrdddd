@@ -135,7 +135,9 @@ try {
 
   const contentResponse = await fetch(`http://127.0.0.1:${port}/content.json`);
   const migratedContent = await contentResponse.json();
-  assert.equal(migratedContent.version, 8, 'постоянная копия контента должна мигрировать');
+  assert.equal(migratedContent.version, 9, 'постоянная копия контента должна мигрировать');
+  assert.equal(migratedContent.merch.length, 2);
+  assert.equal(migratedContent.merch[0].id, 'cap');
   assert.match(migratedContent.meta.price_note, /минимальный донат/i, 'старая цена должна исчезнуть из постоянной копии');
 
   const event = { name: 'new_donation', created_at: '2026-09-15T12:00:00Z', payload: monthly };
