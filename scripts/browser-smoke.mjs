@@ -557,27 +557,44 @@ try {
            горизонтальная прокрутка). Насколько плитки выступают за холст,
            печатаем в лог: по этим числам видно, не уехал ли коллаж слишком. */
         const fit=await page.locator('.tile').evaluateAll(tiles=>{
-          const canvas=tiles.length?tiles[0].closest('.board-canvas'):null;
-          const b=canvas?canvas.getBoundingClientRect():null;
-          const rows=tiles.map((tile,i)=>{
-            const a=tile.getBoundingClientRect();
-            return {i,
-              /* горизонтально — против области просмотра: за её краем плитку
-                 не достать, и страница начинает прокручиваться вбок.
-                 Вертикально — против холста: доска длиннее экрана, поэтому
-                 «ниже экрана» не значит «потеряна». */
-              out:a.left<-1||a.right>innerWidth+1,
-              overH:b?Math.round(Math.max(b.left-a.left,a.right-b.right,0)):0,
-              overV:b?Math.round(Math.max(b.top-a.top,a.bottom-b.bottom,0)):0};
+          return tiles.map((tile,i)=>{
+            const canvas=tile.closest('.board-canvas');
+            if(!canvas) return {i,none:true};
+            const a=tile.getBoundingClientRect();                       /* повёрнутая коробка */
+            const w=tile.offsetWidth,h=tile.offsetHeight;               /* коробка до поворота */
+            const rot=parseFloat(getComputedStyle(tile).getPropertyValue('--rot'))||0;
+            const rad=Math.abs(rot*Math.PI/180);
+            /* насколько поворот вообще может расширить коробку — считаем из
+               размеров и угла этой же плитки, а не на глаз */
+            const growH=Math.max(0,(w*Math.abs(Math.cos(rad))+h*Math.abs(Math.sin(rad))-w)/2);
+            const growV=Math.max(0,(w*Math.abs(Math.sin(rad))+h*Math.abs(Math.cos(rad))-h)/2);
+            const b=canvas.getBoundingClientRect();
+            return {i,rot:Math.round(rot*10)/10,w,h,
+              hidden:!w||!h,
+              /* раскладка (left/top/width) — внутри холста: за его краем
+                 плитку не увидеть целиком и не достать пальцем */
+              layoutOver:Math.round(Math.max(-tile.offsetLeft,-tile.offsetTop,
+                tile.offsetLeft+w-canvas.clientWidth,tile.offsetTop+h-canvas.clientHeight,0)),
+              /* повёрнутая коробка против холста и против экрана */
+              overCanvas:Math.round(Math.max(b.left-a.left,a.right-b.right,b.top-a.top,a.bottom-b.bottom,0)),
+              outView:Math.round(Math.max(-a.left,a.right-innerWidth,0)),
+              growH:Math.round(growH),growV:Math.round(growV)};
           });
-          return {count:tiles.length,canvas:b?Math.round(b.width):0,viewport:innerWidth,
-                  maxOverH:Math.max(0,...rows.map(r=>r.overH)),
-                  maxOverV:Math.max(0,...rows.map(r=>r.overV)),
-                  out:rows.filter(r=>r.out)};
         });
-        console.log(`  · ${width}px доска: плиток ${fit.count}, холст ${fit.canvas}px, выступ за холст — вбок до ${fit.maxOverH}px, вниз/вверх до ${fit.maxOverV}px`);
+        const real=fit.filter(t=>!t.none&&!t.hidden);
+        const worst=(k)=>real.length?Math.max(...real.map(t=>t[k])):0;
+        const notice=`${width}px доска: плиток ${real.length}/${fit.length}, поворот до ${worst('rot')}°, раскладка за холстом до ${worst('layoutOver')}px, повёрнутая коробка за холстом до ${worst('overCanvas')}px (поворот объясняет ${worst('growH')}px), за экраном до ${worst('outView')}px`;
+        console.log('  · '+notice);
+        if (process.env.GITHUB_ACTIONS) console.log(`::notice title=доска ${width}px::${notice}`);
         check(`${width}px rotated tiles stay inside board`,()=>{
-          assert.equal(fit.out.length,0,`плитки уехали за край экрана: ${JSON.stringify(fit.out)}`);
+          assert.equal(fit.filter(t=>t.none).length,0,`плитки вне холста: ${JSON.stringify(fit.filter(t=>t.none))}`);
+          const badLayout=real.filter(t=>t.layoutOver>1);
+          assert.equal(badLayout.length,0,`раскладка плитки вылезла за холст (поворот ни при чём): ${JSON.stringify(badLayout.slice(0,3))}`);
+          /* за край экрана плитку может вытолкнуть только её собственный поворот */
+          const badView=real.filter(t=>t.outView>t.growH+1);
+          assert.equal(badView.length,0,`плитка за экраном больше, чем объясняет поворот: ${JSON.stringify(badView.slice(0,3))}`);
+          const badCanvas=real.filter(t=>t.overCanvas>Math.max(t.growH,t.growV)+1);
+          assert.equal(badCanvas.length,0,`повёрнутая коробка дальше от холста, чем объясняет поворот: ${JSON.stringify(badCanvas.slice(0,3))}`);
         });
         await page.screenshot({path:path.join(ART,`board-${width}.png`),fullPage:true});
       }
