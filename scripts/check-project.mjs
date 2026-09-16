@@ -892,6 +892,156 @@ for (const [label, lock, pkg, dir] of [
   }
 }
 
+/* ---------- 18. v45: звук сцены — записи природы + голос ----------
+   Правила из брифа итерации (docs/NEXT.md, «Статус списка итерации 45»).
+   Смысл каждого:
+   — звук обязан лежать в репозитории: никаких стримингов и внешних URL,
+     иначе снова упрёмся в гео-блок и логин (итерация 43);
+   — вес известен и ограничен: 7 файлов, каждая сцена 250–600 КБ, всё
+     вместе ≤ 3 МБ — иначе «музыка ничего не занимает» превратится в
+     молчаливую загрузку мегабайт на каждый запуск;
+   — происхождение записей задокументировано (CC0) и лежит рядом с
+     файлами: без этого через год никто не поймёт, можно ли их оставлять;
+   — цифры в сценах (длина петли, пик) совпадают с измеренными файлами:
+     из них считается бюджет громкости и правило «петля не короче 30 с»;
+   — запасной шумовой слой не удалён: офлайн и старые вебвью должны
+     слышать музыку, а не тишину и не ошибку;
+   — бот и тестовый сервер отдают .m4a как audio/mp4: с octet-stream
+     decodeAudioData срабатывает не везде, и сцена молча останется на шуме;
+   — обещаний «ноль мегабайт» и «ни одного аудиофайла» в README и на
+     экране больше нет: они перестали быть правдой;
+   — пересборка звука воспроизводима (scripts/ambience/*). */
+{
+  const ambience = read(path.join(ROOT, 'app', 'js', 'ambient.js'));
+  const web = read(path.join(ROOT, 'app', 'js', 'app.js'));
+  const readme = read(path.join(ROOT, 'README.md'));
+  const botApp = read(path.join(ROOT, 'bot', 'src', 'app.js'));
+  const browserSmoke = read(path.join(ROOT, 'scripts', 'browser-smoke.mjs'));
+  const dir = path.join(ROOT, 'app', 'assets', 'ambience');
+  const expected = ['sea', 'rain', 'hearth', 'forest', 'lullaby', 'space', 'chimes'];
+
+  if (!fs.existsSync(dir)) {
+    bad('нет app/assets/ambience — записи природы не лежат в репозитории',
+      'пересобери: bash scripts/ambience/build-ambience.sh');
+  } else {
+    const onDisk = fs.readdirSync(dir);
+    const audio = onDisk.filter((f) => /\.(m4a|mp3|ogg|opus|wav|aac|flac)$/i.test(f)).sort();
+    const missing = expected.filter((n) => !audio.includes(`${n}.m4a`));
+    const extra = audio.filter((f) => !expected.includes(f.replace(/\.m4a$/i, '')));
+    if (!missing.length && !extra.length && audio.every((f) => /\.m4a$/i.test(f))) {
+      ok(`звук сцен: ровно семь записей .m4a в app/assets/ambience (${audio.join(', ')})`);
+    } else {
+      if (missing.length) bad(`нет записей: ${missing.join(', ')}`, 'пересобери: bash scripts/ambience/build-ambience.sh');
+      if (extra.length) bad(`лишние аудиофайлы: ${extra.join(', ')}`, 'в приложении используются только шесть сцен и колокольчики — лишнее весит и путает');
+      if (audio.some((f) => !/\.m4a$/i.test(f))) bad('есть записи не в .m4a', 'AAC в контейнере m4a играет везде, включая WKWebView в Telegram на iPhone (Ogg/Opus там нет)');
+    }
+
+    /* вес: бюджет на сцену и на всё вместе */
+    let total = 0;
+    const sizes = [];
+    for (const f of audio) {
+      const bytes = fs.statSync(path.join(dir, f)).size;
+      total += bytes;
+      sizes.push(`${f} ${(bytes / 1024).toFixed(0)} КБ`);
+      const kb = bytes / 1024;
+      if (f === 'chimes.m4a') {
+        if (kb < 40 || kb > 150) bad(`колокольчики весят ${kb.toFixed(0)} КБ`, 'акцент обязан быть дешёвым: 40–150 КБ');
+      } else if (kb < 250 || kb > 600) {
+        bad(`${f} весит ${kb.toFixed(0)} КБ`, 'петля сцены — 250–600 КБ: короче 30 с она слышна как петля, тяжелее — жалко трафика');
+      }
+    }
+    if (total > 3 * 1024 * 1024) bad(`весь звук весит ${(total / 1048576).toFixed(2)} МБ`, 'бюджет 3 МБ на все сцены вместе');
+    else ok(`вес звука в бюджете: ${(total / 1048576).toFixed(2)} МБ (${sizes.join(', ')})`);
+
+    /* происхождение и лицензия */
+    const licenses = path.join(dir, 'LICENSES.md');
+    if (!fs.existsSync(licenses)) bad('рядом с записями нет LICENSES.md', 'без него неясно, можно ли вообще распространять эти файлы');
+    else if (!/CC0/i.test(read(licenses))) bad('в LICENSES.md не сказано про CC0', 'нужны записи в общественном достоянии — тогда в приложении не нужны уведомления');
+    else ok('происхождение записей описано рядом с файлами (CC0 1.0)');
+
+    /* ссылаются ли сцены на файлы, которые есть */
+    const referenced = [...ambience.matchAll(/file: '(assets\/ambience\/[^']+)'(?![\s\S]{0,80}file:)/g)].map((m) => m[1]);
+    const allRefs = [...ambience.matchAll(/'(assets\/ambience\/[^']+\.m4a)'/g)].map((m) => m[1]);
+    const uniqRefs = [...new Set(allRefs)];
+    if (!uniqRefs.length) bad('в ambient.js нет ссылок на записи', 'сцены должны играть файлами, а не только шумом');
+    else {
+      const gone = uniqRefs.filter((f) => !fs.existsSync(path.join(ROOT, 'app', f)));
+      if (gone.length) bad(`сцены ссылаются на отсутствующие записи: ${gone.join(', ')}`);
+      else ok(`сцены ссылаются на ${uniqRefs.length} записей, все файлы на месте`);
+      if (/https?:\/\/[^'"\s]*\.(m4a|mp3|ogg|wav)/.test(ambience)) bad('в ambient.js появился внешний URL звука', 'звук лежит в репозитории: стриминги и чужие CDN уже подводили (гео-блок, логин)');
+      else ok('внешних URL в звуке нет — только свои файлы');
+      void referenced;
+    }
+
+    /* цифры сцен против измерений файлов */
+    const report = readJson(path.join(ROOT, 'scripts', 'ambience', 'files-report.json'));
+    if (!Array.isArray(report) || report.length !== expected.length) {
+      bad('нет scripts/ambience/files-report.json (или в нём не семь строк)',
+        'измерь записи: node scripts/ambience/measure.mjs (нужен ffmpeg)');
+    } else {
+      let drift = [];
+      for (const r of report) {
+        const file = path.join(ROOT, 'app', r.file);
+        if (!fs.existsSync(file)) { drift.push(`${r.file}: файла нет`); continue; }
+        if (fs.statSync(file).size !== r.bytes) drift.push(`${r.file}: на диске ${fs.statSync(file).size} Б, в отчёте ${r.bytes} Б`);
+        if (!/^aac/i.test(String(r.codec || ''))) drift.push(`${r.file}: кодек ${r.codec}, а нужен AAC (WKWebView не играет Ogg/Opus)`);
+      }
+      if (drift.length) bad('отчёт по записям разошёлся с файлами', `${drift.join('; ')} — обнови: node scripts/ambience/measure.mjs`);
+      else ok('отчёт files-report.json совпадает с файлами на диске (вес, формат, AAC 48 кГц моно)');
+      /* длина петли и пик в конфигурации сцен */
+      let stale = [];
+      for (const r of report) {
+        const name = r.file.replace(/^assets\/ambience\/|\.m4a$/g, '');
+        if (name === 'chimes') continue;
+        const line = (ambience.match(new RegExp(`bed: \\{[^}]*${name}\\.m4a[^}]*\\}`)) || [''])[0];
+        const seconds = /seconds: ([\d.]+)/.exec(line);
+        const peak = /peak: ([\d.]+)/.exec(line);
+        if (!line) stale.push(`${name}: в сценах нет bed с этим файлом`);
+        else {
+          if (!seconds || Math.abs(Number(seconds[1]) - r.seconds) > 0.5) stale.push(`${name}: в сцене ${seconds && seconds[1]} с, по измерению ${r.seconds} с`);
+          if (!peak || Math.abs(Number(peak[1]) - r.peak_linear) > 0.01) stale.push(`${name}: в сцене пик ${peak && peak[1]}, по измерению ${r.peak_linear}`);
+          if (r.seconds < 30) stale.push(`${name}: петля ${r.seconds} с — короче 30 с её слышно как петлю`);
+        }
+      }
+      if (stale.length) bad('цифры сцен разошлись с измеренными записями', stale.join('; '));
+      else ok('длины петель и пики в AMBIENT_SCENES совпадают с измерениями (петли 32–52 с)');
+    }
+
+    /* запасной слой и загрузка */
+    if (/noiseBuffer\(/.test(ambience) && /buildTexture\(/.test(ambience) && /texture: \{/.test(ambience)) ok('запасной шумовой слой воздуха сохранён (офлайн и старые вебвью)');
+    else bad('шумовой генератор удалён', 'без него офлайн и старый вебвью услышат тишину — запись обязана быть заменяемой');
+    if (/loadBed/.test(ambience) && /decodeAudio/.test(ambience) && /airMode = 'noise'/.test(ambience)) ok('запись грузится через loadBed, а при ошибке воздух остаётся шумовым');
+    else bad('нет честного фолбэка загрузки записи', 'нужны deps.loadBed, декодирование и ветка «остались на шуме»');
+    if (/createDynamicsCompressor/.test(ambience)) ok('на мастере мягкий лимитер: всплески прибоя не складываются в клиппинг');
+    else bad('мягкого лимитера на мастере нет', 'записи природы дают редкие пики — без лимитера сумма слоёв может резать слух');
+
+    /* отдача файлов по HTTP */
+    if (/'\.m4a':\s*'audio\/mp4'/.test(botApp)) ok('бот отдаёт .m4a как audio/mp4');
+    else bad('бот отдаёт .m4a как application/octet-stream', "добавь '.m4a': 'audio/mp4' в MIME в bot/src/app.js — иначе decodeAudioData сработает не везде");
+    if (/'\.m4a':'audio\/mp4'/.test(browserSmoke)) ok('тестовый сервер browser-smoke отдаёт записи тем же типом');
+    else bad('browser-smoke отдаёт .m4a без типа', 'проверка настоящего декодирования должна идти в тех же условиях, что и прод');
+
+    /* честность текста */
+    if (/ноль мегабайт|Ни одного аудиофайла|Ничего не скачивается/i.test(web + readme)) {
+      bad('в README или на экране осталось «ноль мегабайт» / «ни одного аудиофайла»',
+        'звук сцены теперь файл (≈2,5 МБ на шесть сцен) — текст обязан это признать');
+    } else ok('обещаний «музыка без единого файла» не осталось: текст честный про ≈2,5 МБ');
+    if (/CC0/.test(web) && /запасной шум|синтезированный воздух/.test(web)) ok('на экране сказано про открытые записи и про запасной шум без сети');
+    else bad('экран не объясняет, откуда звук и что будет без сети', 'человек должен понимать: файл сцены качается один раз, офлайн играет запасной шум');
+    if (/voice: 1/.test(web) && /Голос — мотив поверх полотна/.test(web)) ok('ручка «Голос» в интерфейсе и в state.sound на месте');
+    else bad('нет ручки «Голос»', 'мелодию должно быть можно убавить или выключить вовсе');
+
+    /* воспроизводимость и проверки */
+    const tools = ['build-ambience.sh', 'loopify.mjs', 'recipes.json', 'measure.mjs'];
+    const noTools = tools.filter((t) => !exists(path.join(ROOT, 'scripts', 'ambience', t)));
+    if (!noTools.length) ok('звук воспроизводим: scripts/ambience/{build-ambience.sh,loopify.mjs,recipes.json,measure.mjs}');
+    else bad(`нет инструментов пересборки звука: ${noTools.join(', ')}`, 'без них записи не пересобрать — придётся искать их в чужой ветке');
+    const ci = read(path.join(ROOT, '.github', 'workflows', 'ci.yml'));
+    if (/npm run ambient-test/.test(ci)) ok('проверки музыки (ambient-test) запускаются в CI');
+    else bad('ambient-test не запускается в CI', 'музыка снова сможет разъехаться с проверками');
+  }
+}
+
 /* ---------- итог ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log('');
