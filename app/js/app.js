@@ -2090,10 +2090,10 @@ function screenMerch() {
     el('button', { class: 'back', onclick: () => go('workbook') }, icon('back'), 'Назад'),
     el('h2', {}, 'Мерч')
   ));
-  /* v43: на экране мерча Дибитишка стоит за прилавком — он и есть продавец.
-     Поза «у зеркала в кепке» (mirror.png) остаётся в паке: она про конкретную
-     кепку, а прилавок — про весь магазин. */
-  scr.append(mascot('cashier', mline('merch')));
+  /* v44: на экране мерча Дибитишка стоит за прилавком — продавец говорит
+     «Ну-ка, примерь!» и показывает товар. Поза «у зеркала в кепке» (mirror.png)
+     остаётся в паке, а прилавок теперь выше — ноги маскота под ним не видно. */
+  scr.append(mascot('cashier', 'Ну-ка, примерь!'));
   const grid = el('div', { class: 'mgrid' });
   CONTENT.merch.forEach(m => {
     const card = el('div', { class: 'mcard' });

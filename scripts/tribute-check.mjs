@@ -135,12 +135,13 @@ try {
 
   const contentResponse = await fetch(`http://127.0.0.1:${port}/content.json`);
   const migratedContent = await contentResponse.json();
-  assert.equal(migratedContent.version, 10, 'постоянная копия контента должна мигрировать');
+  assert.equal(migratedContent.version, 11, 'постоянная копия контента должна мигрировать');
   assert.equal(migratedContent.merch.length, 2);
   assert.equal(migratedContent.merch[0].id, 'cap');
-  // v10: описания в мерче говорит Дибитишка — старая сухая карточка не должна пережить миграцию
-  assert.match(migratedContent.merch[0].note, /^Спереди — я, капля/, 'описание кепки должно быть живым, от первого лица');
-  assert.match(migratedContent.merch[1].note, /ДПТ дневник/, 'в описании тетради — та надпись, что реально на обложке');
+  // v11: базовые описания мерча и фиксированная реплика «Ну-ка, примерь!»
+  assert.match(migratedContent.merch[0].note, /Пятипанелька|хлопка/, 'описание кепки — базовое про хлопок');
+  assert.match(migratedContent.merch[1].note, /Рабочая тетрадь для тренировки/, 'описание тетради — базовое про тренировку навыков');
+  assert(migratedContent.meta.mascot_lines.merch.includes('Ну-ка, примерь!'), 'реплика мерча — «Ну-ка, примерь!»');
   assert.match(migratedContent.meta.price_note, /минимальный донат/i, 'старая цена должна исчезнуть из постоянной копии');
 
   const event = { name: 'new_donation', created_at: '2026-09-15T12:00:00Z', payload: monthly };

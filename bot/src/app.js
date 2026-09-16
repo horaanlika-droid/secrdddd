@@ -163,6 +163,33 @@ function seedContent() {
         save();
       } catch (e) { console.warn('[merch] copy update failed'); }
     }
+    /* v11: базовые описания мерча и фиксированная реплика за прилавком.
+       Кепка — хлопок 5-панель, голубая washed, белая капля / :(: ;
+       тетрадь — ДПТ дневник для тренировки навыков от Дибитишки.
+       Реплика «Ну-ка, примерь!» теперь ставится прямо в экране мерча (app/js/app.js),
+       а здесь — доливаем её в mascot_lines, чтобы старые базы не потеряли фразу. */
+    if (Number(db.content.version || 0) < 11) {
+      try {
+        const seed = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'seed', 'content.json'), 'utf8'));
+        (seed.merch || []).forEach(item => {
+          const cur = (db.content.merch || []).find(m => m.id === item.id);
+          if (cur) cur.note = item.note;
+        });
+        const lines = db.content.meta?.mascot_lines;
+        if (lines) {
+          const seedLines = seed.meta?.mascot_lines?.merch || [];
+          lines.merch = Array.isArray(lines.merch) ? lines.merch : [];
+          // гарантируем, что фирменная реплика есть и стоит первой
+          const fixed = 'Ну-ка, примерь!';
+          if (!lines.merch.includes(fixed)) lines.merch.unshift(fixed);
+          else { lines.merch = [fixed, ...lines.merch.filter(t => t !== fixed)]; }
+          seedLines.forEach((t) => { if (!lines.merch.includes(t)) lines.merch.push(t); });
+        }
+        db.content.version = 11;
+        db.content.updated = '2026-09-16';
+        save();
+      } catch (e) { console.warn('[merch] v11 update failed'); }
+    }
     return db.content;
   }
   const candidates = [
