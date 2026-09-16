@@ -1437,3 +1437,114 @@ button.scale-card:active,button.stat-pill:active{transform:scale(.98)}
 .mcard .btn{font-size:13px;min-height:44px;padding:10px 8px;overflow-wrap:anywhere}
 .merch-contact{font-size:13px;line-height:1.5;color:var(--ink-2)}
 @media(max-width:380px){.mgrid{grid-template-columns:1fr}.mcard .merch-photo{height:280px}}
+
+/* ============================================================
+   v43 · бинауральные ритмы — тизер на главной, экран #/sound,
+   плашка «сессия идёт»
+   ------------------------------------------------------------
+   Тизер повторяет ритм .board-teaser (арт слева, текст справа,
+   стрелка), но вместо картинки — эквалайзер из пяти полос: он стоит
+   тихо и начинает дышать, когда звук действительно играет.
+   ============================================================ */
+.sound-teaser{display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px 0;
+  transition:transform .14s ease}
+.sound-teaser:active{transform:scale(.99)}
+.sound-teaser-art{flex:none; width:110px; height:96px; display:flex; align-items:center; justify-content:center;
+  gap:7px; border-radius:26px; background:linear-gradient(160deg, rgba(var(--halo-a),.9), rgba(var(--halo-b),.62));
+  box-shadow:var(--shadow-sm); transform:rotate(-1.5deg)}
+.sound-teaser-art .bar{width:9px; border-radius:99px; background:rgba(255,255,255,.92);
+  box-shadow:0 5px 14px rgba(var(--ink-rgb),.12); transition:height .35s ease}
+.sound-teaser-art .b1{height:22px}.sound-teaser-art .b2{height:40px}.sound-teaser-art .b3{height:58px}
+.sound-teaser-art .b4{height:34px}.sound-teaser-art .b5{height:20px}
+.sound-teaser.on .sound-teaser-art .bar{animation:sound-eq 2.4s ease-in-out infinite}
+.sound-teaser.on .sound-teaser-art .b1{animation-delay:-.1s}
+.sound-teaser.on .sound-teaser-art .b2{animation-delay:-.5s}
+.sound-teaser.on .sound-teaser-art .b3{animation-delay:-.9s}
+.sound-teaser.on .sound-teaser-art .b4{animation-delay:-1.3s}
+.sound-teaser.on .sound-teaser-art .b5{animation-delay:-1.7s}
+@keyframes sound-eq{0%,100%{transform:scaleY(.62)}50%{transform:scaleY(1.22)}}
+@media (prefers-reduced-motion: reduce){
+  .sound-teaser.on .sound-teaser-art .bar,
+  .sound-screen.playing .sound-clock{animation:none}
+}
+
+/* ---- экран: объяснение ---- */
+.sound-what{padding:24px 22px}
+.sound-formula{display:flex; align-items:stretch; gap:8px; flex-wrap:wrap; margin:16px 0 14px}
+.sound-formula>span{flex:1 1 92px; display:flex; flex-direction:column; gap:4px; align-items:center;
+  padding:12px 10px; border-radius:18px; background:var(--card-2); border:1px solid var(--line-2)}
+.sound-formula>span small{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:700}
+.sound-formula>span b{font-size:19px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.sound-formula>span.beat{background:var(--accent-soft); border-color:transparent}
+.sound-formula>span.beat b{color:var(--accent-deep)}
+.sound-formula .op{align-self:center; flex:none; font-style:normal; color:var(--ink-3); font-weight:700}
+.sound-headphones{display:flex; gap:12px; align-items:flex-start; margin:16px 0 0; padding:15px 17px;
+  border-radius:22px; background:var(--tint-peony); color:var(--ink-2); font-size:14.5px; line-height:1.55}
+.sound-headphones svg{width:22px; height:22px; flex:none; margin-top:1px; color:var(--cacao)}
+.sound-headphones b{color:var(--ink)}
+.sound-note{margin:12px 2px 0; color:var(--ink-2); font-size:15px; line-height:1.6; display:flex; flex-direction:column; gap:5px}
+.sound-note b{color:var(--ink); font-size:15.5px}
+.sound-presets{margin-top:12px}
+.sound-presets .chip{display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:11px 16px}
+.sound-presets .chip b{font-size:15px; font-weight:800; letter-spacing:-.015em}
+.sound-presets .chip span{font-size:11.5px; color:var(--ink-3)}
+.sound-presets .chip.on span{color:rgba(255,255,255,.82)}
+.sound-times .chip{min-width:66px; justify-content:center}
+
+/* ---- микшеры ---- */
+.sound-mixers{display:flex; flex-direction:column; gap:18px; margin-top:4px}
+.sound-mixer{display:flex; flex-direction:column; gap:9px}
+.sound-mixer>span{display:flex; justify-content:space-between; font-size:13.5px; font-weight:700; color:var(--ink-2)}
+.sound-val{color:var(--ink); font-variant-numeric:tabular-nums}
+.sound-range{-webkit-appearance:none; appearance:none; width:100%; height:34px; background:transparent; padding:0; margin:0}
+.sound-range::-webkit-slider-runnable-track{height:8px; border-radius:99px;
+  background:linear-gradient(90deg, var(--accent-a), var(--accent-b)) no-repeat, var(--card-2);
+  background-size:var(--fill,50%) 100%; border:1px solid var(--line-2)}
+.sound-range::-webkit-slider-thumb{-webkit-appearance:none; appearance:none; width:26px; height:26px; margin-top:-10px;
+  border-radius:50%; background:#fff; border:1px solid var(--line); box-shadow:0 4px 12px rgba(var(--ink-rgb),.2)}
+.sound-range::-moz-range-track{height:8px; border-radius:99px; background:var(--card-2); border:1px solid var(--line-2)}
+.sound-range::-moz-range-progress{height:8px; border-radius:99px; background:linear-gradient(90deg, var(--accent-a), var(--accent-b))}
+.sound-range::-moz-range-thumb{width:24px; height:24px; border-radius:50%; background:#fff; border:1px solid var(--line);
+  box-shadow:0 4px 12px rgba(var(--ink-rgb),.2)}
+.sound-range:focus-visible{outline:3px solid var(--accent); outline-offset:4px; border-radius:99px}
+.sound-noise{min-width:180px}
+.sound-noise b{font-size:14.5px; font-weight:800}
+.sound-noise span{font-size:11.5px; opacity:.75; margin-left:6px}
+
+/* ---- плеер ---- */
+.sound-deck{display:flex; flex-direction:column; align-items:center; gap:14px; padding:26px 22px 22px; text-align:center}
+.sound-clock{font-size:44px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; line-height:1}
+.sound-clock.paused{color:var(--ink-3)}
+.sound-play{min-width:200px}
+.sound-stop{min-width:160px}
+.sound-status{max-width:34ch}
+.sound-screen.playing .sound-clock{animation:sound-breathe 6s ease-in-out infinite}
+@keyframes sound-breathe{0%,100%{opacity:.82}50%{opacity:1}}
+.sound-screen.no-audio .sound-play{opacity:.55}
+
+/* ---- плашка «сессия идёт» на других экранах ---- */
+.sound-pill{position:fixed; left:50%; transform:translateX(-50%); z-index:29;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 96px);
+  width:min(520px, calc(100% - 32px)); display:flex; align-items:center; gap:6px; padding:6px 6px 6px 8px;
+  background:var(--glass); backdrop-filter:blur(28px) saturate(180%); -webkit-backdrop-filter:blur(28px) saturate(180%);
+  border:1px solid var(--glass-line); border-radius:24px; box-shadow:0 16px 44px rgba(var(--ink-rgb),.18)}
+.sound-pill-main{flex:1; min-width:0; display:flex; align-items:center; gap:11px; padding:8px 6px; text-align:left; background:none}
+.sound-pill-wave{flex:none; width:36px; height:36px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  color:#fff; background:linear-gradient(180deg, var(--accent-a), var(--accent-b))}
+.sound-pill-wave svg{width:19px; height:19px}
+.sound-pill-copy{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+.sound-pill-copy b{font-size:14.5px; font-weight:800; letter-spacing:-.015em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.sound-pill-copy span{font-size:12px; color:var(--ink-2)}
+.sound-pill .chev{color:var(--ink-3); font-size:18px; flex:none}
+.sound-pill-stop{flex:none; width:38px; height:38px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  background:var(--card-2); color:var(--ink-2)}
+.sound-pill-stop svg{width:18px; height:18px}
+/* на экране плеера таббар скрыт — плашке не нужно задираться так высоко */
+[data-screen="sound"] .sound-pill{display:none}
+@media(max-width:359px){
+  .sound-teaser-art{width:88px; height:78px; gap:5px}
+  .sound-teaser-art .bar{width:7px}
+  .sound-formula>span{flex:1 1 78px; padding:10px 8px}
+  .sound-formula>span b{font-size:16px}
+  .sound-clock{font-size:38px}
+}
