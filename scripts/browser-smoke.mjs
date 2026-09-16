@@ -366,7 +366,19 @@ try {
       createConvolver(){window.__convolvers++;return super.createConvolver();}
     };
   });
-  await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  /* Переход с «/#/boards/...» на «/#/sound» меняет только якорь: документ не
+     перезагружается, и зонд, поставленный через addInitScript, не появляется.
+     Поэтому грузим страницу по-настоящему — иначе window.__osc нет, и раздел
+     музыки падает на первом же evaluate. */
+  await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});
+  await page.reload({waitUntil:'networkidle'});
+  await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  const probe=await page.evaluate(()=>({ctx:typeof window.__ctxCount,osc:Array.isArray(window.__osc),pan:typeof window.__pans}));
+  check('зонд Web Audio поставлен до загрузки приложения',()=>{
+    assert.equal(probe.ctx,'number','window.__ctxCount не появился: addInitScript не отработал');
+    assert.equal(probe.osc,true,'window.__osc не массив — считать генераторы нечем');
+    assert.equal(probe.pan,'number','window.__pans не появился');
+  });
   const musicCopy=await page.evaluate(()=>({
     explain:(document.querySelector('.sound-what')||{}).innerText||'',
     chord:(document.querySelector('.sound-chord')||{}).innerText||'',
