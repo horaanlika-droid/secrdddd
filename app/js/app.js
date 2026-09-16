@@ -45,7 +45,7 @@ const ICONS = {
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
   drop: svg('<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>'),
   play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
-  chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H6l-3 3v-3a8.5 8.5 0 1 1 18-8.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/>'),
+  chat: svg('<path d="M14 2C12 6 4 7 4 14a8 8 0 0 0 16 0c0-5-4-9-6-12Z"/><ellipse cx="12" cy="14.5" rx="5.5" ry="4.5"/><path d="M9.5 14h.01M14.5 14h.01M10.5 16q1.5 1.5 3 0"/>'),
   chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
   image: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.5-4.5 3.5 3.5 3-3 4 4"/>'),
   gif: svg('<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M7 10v4M7 12h2.5M12 10v4M15.5 14v-4h3M15.5 12h2.5"/>'),
@@ -855,7 +855,7 @@ function scaleBoard(title = 'Шкалы роста') {
   for (const def of SCALE_DEFS) {
     const val = state.game.scales[def.key] || 0;
     const pct = scalePct(def.key) * 100;
-    board.append(el('div', { class: `scale-card ${def.tint}` },
+    board.append(el('button', { type: 'button', class: `scale-card ${def.tint}`, onclick: () => go('skills/' + ({ awareness: 'mind', care: 'base', resilience: 'stress', sensory: 'sense' }[def.key])), 'aria-label': `${def.title} — открыть практики` },
       el('div', { class: 'top' },
         el('div', {}, el('b', {}, def.title), el('span', {}, def.hint)),
         el('b', {}, `${val}/${def.max}`)
@@ -955,7 +955,7 @@ const PRIVACY_NOTE = 'Всё, что ты пишешь и показываешь
 function screenWelcome() {
   renderTabbar(null);
   const slides = [
-    ['hello', 'Привет! Я рядом', 'Я живу рядом, когда чувств слишком много. Будем собирать опору маленькими шагами — без стыда и гонки.'],
+    ['hello', 'Привет! Я рядом', 'Я маленькая слезинка, которая живёт в твоём телефоне и помогает справляться с эмоциями. Вместе будем находить опору маленькими шагами — без стыда и гонки.'],
     ['calm', 'Дневник, задания и чат', 'Отмечай эмоции — соберётся твой график пути. Пиши письменные опоры, а в трудный момент чат напомнит, кто ты и что тебя держит.'],
     ['proud', 'Медленно — тоже вперёд', 'Прогресс отмечаю бережно: за практики, честность с собой и даже за моменты, когда выбираешь путь помягче.']
   ];
@@ -969,7 +969,8 @@ function screenWelcome() {
   const wrap = el('div', { class: 'onboard-mascot-wrap' }, img);
   const dots = el('div', { class: 'dots' });
   const nextBtn = el('button', { class: 'round-btn', 'aria-label': 'Дальше' }, '→');
-  const foot = el('div', { class: 'onboard-foot' }, dots, nextBtn);
+  const prevBtn = el('button', { class: 'round-btn', 'aria-label': 'Назад' }, '←');
+  const foot = el('div', { class: 'onboard-foot' }, prevBtn, dots, nextBtn);
   const cta = el('button', { class: 'btn onboard-cta hidden' }, 'Начать бесплатную неделю', el('span', { class: 'arr' }, '→'));
   const note = el('p', { class: 'onboard-note' },
     `Первая неделя бесплатно, потом ${plansLine()}.`
@@ -989,10 +990,26 @@ function screenWelcome() {
     dots.innerHTML = '';
     slides.forEach((_, k) => dots.append(el('button', { class: 'dot' + (k === i ? ' on' : ''), 'aria-label': 'Слайд ' + (k + 1), onclick: () => { i = k; draw(); } })));
     const last = i === slides.length - 1;
-    foot.classList.toggle('hidden', last);
+    prevBtn.disabled = i === 0;
+    nextBtn.disabled = last;
+    title.setAttribute('aria-live', 'polite');
     cta.classList.toggle('hidden', !last);
   };
   nextBtn.onclick = () => { haptic('medium'); if (i < slides.length - 1) { i++; draw(); } };
+  prevBtn.onclick = () => { if (i > 0) { i--; draw(); } };
+  const move = delta => { i = Math.max(0, Math.min(slides.length - 1, i + delta)); draw(); };
+  let touchStart = null;
+  scr.addEventListener('touchstart', e => { const t = e.touches[0]; touchStart = { x: t.clientX, y: t.clientY }; }, { passive: true });
+  scr.addEventListener('touchend', e => {
+    if (!touchStart) return;
+    const t = e.changedTouches[0], dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+    touchStart = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) move(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  scr.addEventListener('touchcancel', () => { touchStart = null; });
+  scr.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); move(e.key === 'ArrowRight' ? 1 : -1); }
+  });
   cta.onclick = () => { haptic('medium'); finish(); };
   draw();
   scr.append(pill, title, text, wrap, el('div', { class: 'onboard-spacer' }), foot, cta, note, privacy);
@@ -2010,7 +2027,7 @@ function screenWorkbook() {
   renderTabbar('workbook');
   const scr = el('div', { class: 'screen' });
   const w = CONTENT.workbook;
-  const full = isPremium();
+  const full = (state.premium_until || 0) > Date.now();
   scr.append(el('h1', { class: 'ltitle' }, 'Тетрадь', el('small', {}, w.subtitle)));
   // v23: обложка без персонажа — отдельная иллюстрация «DBT diary» в стиле приложения
   scr.append(el('div', { class: 'workbook-art-wrap' },
@@ -2021,10 +2038,10 @@ function screenWorkbook() {
     el('h3', {}, w.title),
     el('p', {}, w.intro),
     full
-      ? el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html?full=1' }, icon('print'), 'Открыть и распечатать')
+      ? el('button', { class: 'btn', style: 'margin-top:10px', onclick: () => location.href = 'workbook.html?full=1' }, icon('print'), 'Скачать / распечатать тетрадь')
       : el('div', { class: 'preview-note' },
-          el('b', {}, 'Превью: 3 страницы бесплатно'),
-          el('span', {}, 'Полная тетрадь открывается с подпиской.')
+          el('b', {}, 'Бесплатно: по одному заданию из каждого блока'),
+          el('span', {}, 'Скачивание полной тетради — по оплаченной подписке. Пробная неделя не включает скачивание.')
         )
   );
   if (!full) {
@@ -2053,23 +2070,16 @@ function screenMerch() {
   ));
   scr.append(mascot('peek', mline('merch')));
   const grid = el('div', { class: 'mgrid' });
-  const tints = ['t-lavender', 't-leaf', 't-sky', 't-peony'];
-  CONTENT.merch.forEach((m, i) => {
-    const noted = state.merch_notify.includes(m.id);
+  CONTENT.merch.forEach(m => {
     const card = el('div', { class: 'mcard' });
-    const ph = el('div', { class: 'ph ' + tints[i % 4] }, m.id === 'workbook_print' ? '📖' : m.id === 'tee' ? '👕' : m.id === 'shopper' ? '👜' : '✨');
-    const notify = el('button', { class: 'btn ghost', style: 'min-height:36px;font-size:14px', onclick: () => {
-      state.merch_notify = noted ? state.merch_notify.filter(x => x !== m.id) : [...state.merch_notify, m.id];
-      save();
-      haptic('light');
-      toast(noted ? 'Убрано из списка ожидания.' : 'Сообщу, когда появится.');
-      render();
-    } }, noted ? '✓ Жду' : 'Сообщить мне');
-    card.append(ph, el('div', { class: 'mb' }, el('b', {}, m.title), el('span', {}, m.note), el('div', { class: 'mp' }, m.price === 'скоро' ? 'Цена скоро' : m.price), notify));
+    card.append(el('div', { class: 'ph merch-photo' }, el('img', { src: m.image, alt: m.title, loading: 'lazy' })),
+      el('div', { class: 'mb' }, el('b', {}, m.title), el('span', {}, m.note),
+        el('p', { class: 'merch-contact' }, 'Цену, наличие и условия доставки уточняй у @vasmedoljno.'),
+        el('button', { class: 'btn secondary', onclick: () => openLink('https://t.me/vasmedoljno') }, 'Написать @vasmedoljno')));
     grid.append(card);
   });
   scr.append(grid);
-  scr.append(el('p', { class: 'foot' }, 'Оплата мерча подключится вместе с Tribute API.'));
+  scr.append(el('p', { class: 'foot' }, 'На изображениях — реалистичные визуализации. Детали готовых изделий уточняй перед заказом.'));
   return scr;
 }
 
@@ -2096,7 +2106,7 @@ function screenProfile() {
   scr.append(el('div', { class: 'stats-grid' },
     el('div', { class: 'stat-pill' }, el('i', {}, '✨'), el('b', {}, String(levelInfo().points)), el('span', {}, 'Очков роста')),
     el('div', { class: 'stat-pill' }, el('i', {}, '🔥'), el('b', {}, String(streakCount())), el('span', {}, plural(streakCount(), 'день', 'дня', 'дней'))),
-    el('div', { class: 'stat-pill' }, el('i', {}, '📔'), el('b', {}, String(moodEntriesCount())), el('span', {}, plural(moodEntriesCount(), 'запись', 'записи', 'записей')))
+    el('button', { type: 'button', class: 'stat-pill', onclick: () => go('diary'), 'aria-label': 'Открыть записи дневника эмоций' }, el('i', {}, '📔'), el('b', {}, String(moodEntriesCount())), el('span', {}, plural(moodEntriesCount(), 'запись', 'записи', 'записей')))
   ));
   scr.append(scaleBoard('Твой прогресс'));
   scr.append(badgeBoard());

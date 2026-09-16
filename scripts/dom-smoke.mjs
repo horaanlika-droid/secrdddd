@@ -390,5 +390,41 @@ try {
     assert(current.q('.privacy-note').textContent.includes('остаётся только на твоём телефоне'));
     assert(current.q('.privacy-note').textContent.includes('Мы ничего не собираем'));
   });
+  check('welcome has brand introduction and both directions on last slide', () => {
+    assert(current.q('.onboard-text').textContent.includes('маленькая слезинка'));
+    current.q('[aria-label="Дальше"]').click(); current.q('[aria-label="Дальше"]').click();
+    assert(!current.q('.onboard-foot').classList.contains('hidden'));
+    assert(!current.q('[aria-label="Назад"]').disabled);
+    current.q('[aria-label="Назад"]').click();
+    assert.equal(current.q('.onboard-title').textContent, 'Дневник, задания и чат');
+    const screen = current.q('.onboard');
+    const start = new current.w.Event('touchstart'); Object.defineProperty(start, 'touches', { value: [{clientX:250,clientY:200}] }); screen.dispatchEvent(start);
+    const end = new current.w.Event('touchend'); Object.defineProperty(end, 'changedTouches', { value: [{clientX:80,clientY:210}] }); screen.dispatchEvent(end);
+    assert.equal(current.q('.onboard-title').textContent, 'Медленно — тоже вперёд');
+    screen.dispatchEvent(new current.w.KeyboardEvent('keydown', {key:'ArrowLeft'}));
+    assert.equal(current.q('.onboard-title').textContent, 'Дневник, задания и чат');
+  });
+  current.dom.window.close(); current = await app();
+  await current.go('profile');
+  current.q('button.stat-pill').click(); await sleep(40);
+  check('record count links to emotion diary', () => assert.equal(current.w.location.hash, '#/diary'));
+  for (const route of ['mind','base','stress','sense']) {
+    await current.go('profile');
+    const index = ['mind','base','stress','sense'].indexOf(route);
+    current.qa('button.scale-card')[index].click(); await sleep(40);
+    check('progress links to skills/' + route, () => assert.equal(current.w.location.hash, '#/skills/' + route));
+  }
+  await current.go('workbook');
+  check('trial does not offer full workbook download', () => {
+    assert(!current.textButton('Скачать / распечатать тетрадь'));
+    assert(current.q('#app').textContent.includes('по одному заданию'));
+  });
+  await current.go('merch');
+  check('two real product mockups and contact buttons', () => {
+    assert.equal(current.qa('.merch-photo img').length, 2);
+    assert(current.q('.merch-photo img').src.endsWith('/cap.webp'));
+    assert.equal(current.qa('.mcard button').length, 2);
+    assert(current.q('#app').textContent.includes('@vasmedoljno'));
+  });
   console.log(`\ndom-smoke: ${checks} checks passed`);
 } finally { current?.dom.window.close(); }

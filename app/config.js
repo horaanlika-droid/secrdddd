@@ -42,7 +42,7 @@ window.DIBI_CONFIG = {
 
   // Соцсети (заглушки — замени на свои)
   social: {
-    telegram: "https://t.me/your_channel",
+    telegram: "https://t.me/dbtishka",
     email: "hello@dibitishka.app"
   }
 };

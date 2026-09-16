@@ -117,6 +117,10 @@
   footer .mk{display:block; margin:0 auto 10px; width:54px; opacity:.9}
 
   /* ---------- печать ---------- */
+  [hidden]{display:none!important}
+  .locked-practice{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:20px;margin:18px 0;min-height:180px}
+  .locked-skeleton{filter:blur(7px);user-select:none;pointer-events:none;padding:22px;opacity:.45}
+  .locked-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--ink);font-weight:700;background:#ffffff70;text-decoration:none}
   @page{ margin:14mm }
   @media print{
     body{background:#fff}
@@ -134,11 +138,13 @@
 </head>
 <body>
 <div class="bar">
-  <button onclick="window.print()">Печать / сохранить в PDF</button>
+  <button id="download" hidden onclick="window.print()">Печать / сохранить в PDF</button>
   <button class="sec" onclick="location.href='index.html'">← В приложение</button>
   <span>Дибитишка · печатная тетрадь</span>
 </div>
 <div class="page" id="page">Загружаю тетрадь…</div>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="config.js"></script>
 <script>
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -167,23 +173,29 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
     try { const r = await fetch(u, { cache: 'no-cache' }); C = await r.json(); if (C.blocks) break; } catch (e) {}
   }
   if (!C) { document.getElementById('page').textContent = 'Не удалось загрузить контент'; return; }
+
+
+  // Server-verified paid access only. Neither ?full=1 nor localStorage unlocks export.
+  let allowFull = false;
+  const requestedFull = new URLSearchParams(location.search).get('full') === '1';
+  let accessMessage = '';
+  if (requestedFull) {
+    try {
+      const raw = JSON.parse(localStorage.getItem('dibitishka.v1') || '{}');
+      const initData = window.Telegram?.WebApp?.initData;
+      const headers = initData ? { Authorization: 'tma ' + initData }
+        : raw.web_user?.session ? { Authorization: 'Bearer ' + raw.web_user.session } : {};
+      const base = (window.DIBI_CONFIG?.bot_public_url || '').replace(/\/$/, '');
+      const response = await fetch(base + '/workbook/content', { headers, cache: 'no-store', signal: AbortSignal.timeout(12000) });
+      const result = await response.json();
+      if (response.ok && result.ok && result.content?.blocks) { C = result.content; allowFull = true; }
+      else accessMessage = response.status === 401 ? 'Войди в приложении через Telegram или по коду из бота, затем открой тетрадь снова.' : 'Для скачивания нужна действующая оплаченная подписка.';
+    } catch { accessMessage = 'Не получилось проверить подписку. Вернись в приложение и попробуй ещё раз.'; }
+  }
+  document.getElementById('download').hidden = !allowFull;
   const W = C.workbook;
-
-  // режим превью (3 страницы) — если не передан full=1 или подписка не подтверждена.
-  // Подписка хранится в localStorage приложения: premium_until / trial_started_at.
-  const params = new URLSearchParams(location.search);
-  const full = params.get('full') === '1';
-  let premium = false;
-  try {
-    const raw = JSON.parse(localStorage.getItem('dibitishka.v1') || '{}');
-    const TRIAL = (raw.trial_started_at && Date.now() - raw.trial_started_at < 7 * 86400000);
-    premium = (raw.premium_until || 0) > Date.now() || !!TRIAL;
-  } catch (e) {}
-  const allowFull = full || premium;
   const isPreview = !allowFull;
-
-  // для превью показываем обложку + по одной практике на блок (3 блока)
-  const blocks = isPreview ? C.blocks.slice(0, 3).map(b => ({ ...b, practices: b.practices.slice(0, 1) })) : C.blocks;
+  const blocks = C.blocks;
 
   // плашки разделов — те же тона, что и «Твой прогресс» в приложении
   const tints = {
@@ -203,7 +215,7 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
     <p class="sub">${esc(W.subtitle)}</p>
     <p class="intro">${esc(W.intro)}</p>`;
   if (isPreview) {
-    h += `<div class="preview-bar"><b>Это превью — 3 страницы.</b> Полная тетрадь открывается с подпиской. Оформи её в приложении → Тетрадь, или по ссылке на подписку в боте.</div>`;
+    h += `<div class="preview-bar"><b>Бесплатно — по одному заданию из каждого блока.</b> Остальные задания и скачивание доступны по оплаченной подписке; пробная неделя не включает скачивание. <a href="index.html#/workbook">Оформить подписку →</a> ${esc(accessMessage)}</div>`;
   }
   h += `<div class="credit">${esc(C.meta.credits)}</div></header>`;
 
@@ -212,7 +224,12 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
       <h2><span class="dot" style="background:${tintOf(b)}"></span>${esc(b.title)}
         <span class="num">${esc(b.subtitle)}</span></h2>
       <p class="intro">${esc(b.intro)}</p>`;
-    for (const p of b.practices) {
+    for (const [index, p] of b.practices.entries()) {
+      if (isPreview && index > 0) {
+        // Never put the locked exercise text in the preview DOM.
+        h += `<div class="locked-practice"><div class="locked-skeleton" aria-hidden="true"><h3>Практика и письменная опора</h3><p>Маленькие шаги, место для мыслей и заботы о себе.</p><div class="lines"></div></div><a class="locked-label" href="index.html#/workbook">🔒 Задание ${index + 1} · доступно по подписке</a></div>`;
+        continue;
+      }
       h += `<div class="practice" style="background:linear-gradient(180deg, ${bgOf(b)} 0%, #fff 46%)">
         <h3>${esc(p.title)}</h3>
         <span class="mins">≈ ${p.minutes} мин</span>

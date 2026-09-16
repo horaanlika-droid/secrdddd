@@ -87,6 +87,10 @@ jobs:
         run: npm run dom-test
       - name: приватные доски — авторизация, конфликты, очередь и EXIF
         run: npm run boards-test
+      - name: тетрадь — оплаченный доступ и превью
+        run: npm run workbook-test
+      - name: стикеры — публикация и права
+        run: npm run stickers-test
       - name: Chromium
         run: npx playwright install --with-deps chromium
       - name: мобильная вёрстка, реальные фото и экспорт
