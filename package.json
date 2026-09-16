@@ -21,6 +21,7 @@
     "dom-test": "node --experimental-vm-modules scripts/dom-smoke.mjs",
     "boards-test": "node scripts/boards-test.mjs",
     "browser-test": "node scripts/browser-smoke.mjs",
+    "ui-overview": "node scripts/ui-overview.mjs",
     "workbook-test": "node scripts/workbook-test.mjs",
     "stickers-test": "node scripts/stickers-test.mjs"
   },
