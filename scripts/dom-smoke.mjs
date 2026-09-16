@@ -445,11 +445,12 @@ try {
     assert(current.q('.mascot-wrap .mascot').src.includes('/cashier.png'),
       'на экране мерча Дибитишка должен стоять за прилавком, а не просто выглядывать');
   });
-  check('merch speaks in the first person and stays honest about the mockups', () => {
+  check('merch has honest base descriptions and mockup disclaimer', () => {
     const notes = current.qa('.mcard .mb span').map(n => n.textContent);
     assert.equal(notes.length, 2);
-    notes.forEach(t => assert(/^Спереди — я|^Та же я/.test(t), 'описание товара ведёт Дибитишка от первого лица: ' + t));
-    assert(notes.join(' ').includes('«ДПТ дневник»'), 'в описании тетради — та надпись, что реально на обложке');
+    assert(notes.some(t => t.includes('Рабочая тетрадь для тренировки')), 'в описании тетради — базовое «Рабочая тетрадь для тренировки когнитивно-поведенческих навыков»');
+    assert(notes.some(t => t.includes('Пятипанелька') || t.includes('хлопка')), 'в описании кепки — базовый хлопок 5-панель');
+    assert(current.q('.mascot-wrap .bubble').textContent.includes('Ну-ка, примерь!'), 'на экране мерча реплика «Ну-ка, примерь!»');
     assert(!/уточняй у @vasmedoljno\.$/.test(current.q('.merch-contact').textContent));
     assert(current.q('.foot').textContent.includes('мокапы'), 'честно про то, что картинки — визуализации');
   });
