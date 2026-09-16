@@ -87,6 +87,9 @@ jobs:
         run: npm run dom-test
       - name: приватные доски — авторизация, конфликты, очередь и EXIF
         run: npm run boards-test
+      # Бинауральные ритмы: математика тонов и движок Web Audio на моке.
+      - name: бинауральные ритмы — частоты, каналы, таймер и затухание
+        run: npm run sound-test
       - name: тетрадь — оплаченный доступ и превью
         run: npm run workbook-test
       - name: стикеры — публикация и права

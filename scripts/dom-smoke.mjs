@@ -20,7 +20,7 @@ async function until(fn, description = 'condition') {
   const end = Date.now() + 5000;
   while (!fn()) { if (Date.now() > end) throw new Error('Timed out: ' + description); await sleep(15); }
 }
-async function app(seed = {}, { boardSeed, privateMode = false, apiContent = null, config = null } = {}) {
+async function app(seed = {}, { boardSeed, privateMode = false, apiContent = null, config = null, audio = null } = {}) {
   const dom = new JSDOM(html, { url: 'https://dibi.test/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   const objectUrls = new Map(); let objectId = 0;
@@ -38,6 +38,9 @@ async function app(seed = {}, { boardSeed, privateMode = false, apiContent = nul
       : href.includes('content') ? CONTENT : { ok: true, ai: false, enabled: false, items: [] };
     return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
   };
+  /* v43: Web Audio подставляется записывающим моком — иначе jsdom честно
+     говорит «AudioContext не умею» и плеер бинауральных ритмов не проверить. */
+  if (audio) w.AudioContext = audio.Ctx;
   w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder;
   w.AbortController = AbortController; w.Blob = Blob; w.File = File; w.structuredClone = structuredClone;
   w.indexedDB = privateMode ? { open() { throw new Error('SecurityError'); } } : new IDBFactory(); w.IDBKeyRange = IDBKeyRange;
@@ -462,5 +465,112 @@ try {
     assert(!current.q('.mascot-wrap.peeking'), 'позу нельзя прятать за край реплики — в лотосе видны ноги');
     assert(current.q('.mascot-wrap.zen .bubble small').textContent.includes('дышу'), 'реплика поддерживает позу');
   });
+
+  /* ---------- v43: бинауральные ритмы ---------- */
+  const audio = { contexts: [] };
+  class MockParam {
+    constructor(v = 0) { this.value = v; this.events = []; }
+    setValueAtTime(v, t) { this.events.push(['set', v, t]); this.value = v; return this; }
+    linearRampToValueAtTime(v, t) { this.events.push(['ramp', v, t]); this.value = v; return this; }
+    setTargetAtTime(v, t, c) { this.events.push(['target', v, t, c]); this.value = v; return this; }
+    cancelScheduledValues() { return this; }
+  }
+  class MockNode {
+    constructor(kind) { this.kind = kind; this.outs = []; this.disconnected = false; }
+    connect(dest, outChannel = 0, inChannel = 0) { this.outs.push({ dest, outChannel, inChannel }); return dest; }
+    disconnect() { this.disconnected = true; this.outs = []; }
+  }
+  audio.Ctx = class MockAudioContext {
+    constructor() {
+      this.sampleRate = 44100; this.state = 'running'; this.closed = false; this.nodes = [];
+      this.destination = new MockNode('destination');
+      audio.contexts.push(this);
+    }
+    get currentTime() { return 0; }
+    createGain() { const n = new MockNode('gain'); n.gain = new MockParam(1); this.nodes.push(n); return n; }
+    createChannelMerger(channels) { const n = new MockNode('merger'); n.channels = channels; this.nodes.push(n); return n; }
+    createOscillator() {
+      const n = new MockNode('osc'); n.type = 'sine'; n.frequency = new MockParam(440);
+      n.start = () => {}; n.stop = () => { n.stoppedAt = 0; };
+      this.nodes.push(n); return n;
+    }
+    createBufferSource() {
+      const n = new MockNode('buffer'); n.loop = false; n.buffer = null;
+      n.start = () => {}; n.stop = () => {};
+      this.nodes.push(n); return n;
+    }
+    createBiquadFilter() { const n = new MockNode('biquad'); n.type = 'lowpass'; n.frequency = new MockParam(350); this.nodes.push(n); return n; }
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { numberOfChannels: channels, length, sampleRate, getChannelData: () => data };
+    }
+    suspend() { this.state = 'suspended'; }
+    resume() { this.state = 'running'; }
+    close() { this.closed = true; this.state = 'closed'; }
+  };
+
+  current.dom.window.close();
+  current = await app({}, { audio });
+  check('home: бинауральные ритмы стоят между доской впечатлений и «Пережить вместе»', () => {
+    const sects = current.qa('.sect').map(n => n.textContent.trim());
+    const boards = sects.indexOf('Доска впечатлений');
+    const sound = sects.indexOf('Бинауральные ритмы');
+    const chat = sects.indexOf('Чат поддержки');
+    assert.ok(boards >= 0 && sound > boards && chat > sound, `порядок секций: ${sects.join(' → ')}`);
+    assert(current.q('.sound-teaser'), 'тизер плеера на главной есть');
+    assert(!current.q('.sound-pill'), 'пока звук выключен, плашки нет');
+  });
+  await current.go('sound');
+  check('экран объясняет эффект и предупреждает про наушники', () => {
+    const txt = current.q('#app').textContent;
+    assert(current.q('.sound-formula').textContent.includes('Гц'), 'схема показывает частоты');
+    assert(txt.includes('Нужны наушники'), 'про наушники сказано прямо');
+    assert(txt.includes('не заменяет'), 'честно: терапию ритмы не заменяют');
+    assert.equal(current.qa('.sound-preset').length, 4, 'четыре пресета');
+    assert.equal(current.qa('.sound-time').length, 5, 'пять длительностей');
+  });
+  check('числа в схеме — настоящие частоты выбранного пресета', () => {
+    const [left, right, beat] = current.qa('.sound-formula b').map(n => parseFloat(n.textContent));
+    assert.ok(left > 0 && right > left, `левое ${left} < правого ${right}`);
+    assert.equal(Math.round((right - left) * 10) / 10, beat, 'разница равна пульсу');
+  });
+  current.click('Включить');
+  check('по нажатию звук строится: два синуса в разные уши', () => {
+    assert.equal(audio.contexts.length, 1, 'аудиоконтекст один');
+    const ctx = audio.contexts[0];
+    const osc = ctx.nodes.filter(n => n.kind === 'osc');
+    assert.equal(osc.length, 2, 'два осциллятора');
+    assert.equal(osc[0].type, 'sine');
+    const merger = ctx.nodes.find(n => n.kind === 'merger');
+    const channels = [...osc[0].outs, ...osc[1].outs].filter(o => o.dest === merger).map(o => o.inChannel).sort();
+    assert.deepEqual(channels, [0, 1], 'каждый тон — в свой канал');
+    assert(current.q('.sound-play').textContent.includes('Пауза'), 'кнопка стала паузой');
+    assert(!current.q('.sound-stop').classList.contains('hidden'), 'стоп виден');
+    assert(current.q('.sound-screen').classList.contains('playing'), 'экран в состоянии «играет»');
+  });
+  await current.go('');
+  check('на другом экране сессию держит плашка', () => {
+    assert(current.q('.sound-pill'), 'плашка появилась');
+    assert(current.q('.sound-teaser').classList.contains('on'), 'тизер показывает идущую сессию');
+    assert(/Тета|Дельта|Альфа|Бета/.test(current.q('.sound-teaser').textContent), 'в тизере назван пресет');
+  });
+  current.q('.sound-pill-stop').click();
+  await sleep(750);   // полсекунды звук затухает, потом граф разбирается
+  check('звук останавливается из плашки', () => {
+    assert(!current.q('.sound-pill'), 'плашка ушла сразу, не дожидаясь затухания');
+    assert.equal(audio.contexts[0].closed, true, 'контекст закрыт — батарея не тратится');
+  });
+  await current.go('sound');
+  check('выбор пресета и длительности сохраняется в памяти телефона', () => {
+    current.qa('.sound-preset')[3].click();
+    current.qa('.sound-time')[0].click();
+    const st = current.state().sound;
+    assert.equal(st.preset, 'beta');
+    assert.equal(st.minutes, 5);
+    const [left, right, beat] = current.qa('.sound-formula b').map(n => parseFloat(n.textContent));
+    assert.equal(Math.round((right - left) * 10) / 10, beat);
+    assert.equal(current.qa('.sound-preset')[3].getAttribute('aria-pressed'), 'true');
+  });
+
   console.log(`\ndom-smoke: ${checks} checks passed`);
 } finally { current?.dom.window.close(); }

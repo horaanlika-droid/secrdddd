@@ -2,6 +2,9 @@
 import { compressImage } from './image-tools.js';
 import { BoardSync } from './board-sync.js';
 import { renderBoardPages, boardPdf, boardPageBlob, downloadBlob, printBoardPages } from './board-export.js';
+import {
+  BINAURAL_PRESETS, presetById, tonePair, formatClock, audioSupported, createBinauralEngine
+} from './sound.js';
 
 const CFG = window.DIBI_CONFIG || {};
 const $ = (s, r = document) => r.querySelector(s);
@@ -45,6 +48,8 @@ const ICONS = {
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
   drop: svg('<path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/>'),
   play: svg('<path d="M8 6.5v11l9-5.5z"/>'),
+  pause: svg('<path d="M9.5 5v14M14.5 5v14"/>'),
+  headphones: svg('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.6" y="13.4" width="4.2" height="6.4" rx="2.1"/><rect x="17.2" y="13.4" width="4.2" height="6.4" rx="2.1"/>'),
   chat: svg('<path d="M14 2C12 6 4 7 4 14a8 8 0 0 0 16 0c0-5-4-9-6-12Z"/><ellipse cx="12" cy="14.5" rx="5.5" ry="4.5"/><path d="M9.5 14h.01M14.5 14h.01M10.5 16q1.5 1.5 3 0"/>'),
   chart: svg('<path d="M4 20V5"/><path d="M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/>'),
   image: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.5-4.5 3.5 3.5 3-3 4 4"/>'),
@@ -92,6 +97,9 @@ const defaultState = {
   install_done: false,       // v39: иконку на экран «Домой» поставили — не напоминаем
   install_snoozed: 0,        // v39: до этого момента подсказку про иконку не показываем
   install_hint_seen: false,  // v40: подсказка уже всплывала — сама больше не лезет
+  sound: {                   // v43: бинауральные ритмы — что человек выбрал в плеере
+    preset: 'theta', carrier: 0, volume: 0.35, minutes: 20, noise: true
+  },
   picked: {},                // примеры из практик, которые человек отметил своими: "practiceId:extrasKey" → [тексты]
   practice_notes: {},        // v28: свой вариант ответа для практик Опоры (affirm, crisis) — текст, который держит
   game: {
@@ -114,6 +122,7 @@ const state = Object.assign({}, defaultState, persisted, {
   deeds_rewarded: Object.assign({}, defaultState.deeds_rewarded, persisted.deeds_rewarded || {}),
   picked: Object.assign({}, defaultState.picked, persisted.picked || {}),
   practice_notes: Object.assign({}, defaultState.practice_notes, persisted.practice_notes || {}),
+  sound: Object.assign({}, defaultState.sound, persisted.sound || {}),
   game: Object.assign({}, defaultState.game, persisted.game || {}, {
     scales: Object.assign({}, defaultState.game.scales, persisted.game?.scales || {}),
     badges: Object.assign({}, defaultState.game.badges, persisted.game?.badges || {})
@@ -1200,6 +1209,12 @@ function screenToday() {
     ),
     el('span', { class: 'chev' }, '›')
   ));
+
+  /* v43: бинауральные ритмы стоят между доской впечатлений и «Пережить
+     вместе» — ровно там, где человек уже сделал творческое и ещё не ушёл
+     в разговор. Тизер показывает живое состояние сессии, если звук идёт. */
+  scr.append(el('div', { class: 'sect' }, 'Бинауральные ритмы'));
+  scr.append(soundTeaser());
 
   scr.append(el('div', { class: 'sect' }, 'Чат поддержки'));
   scr.append(el('div', { class: 'card poster-mini soft' },
@@ -2697,6 +2712,271 @@ function boardBgSheet(b) {
 }
 
 /* --- экран со списком досок --- */
+/* ============================================================
+   v43 · Бинауральные ритмы — плеер на Web Audio
+   ------------------------------------------------------------
+   Звук здесь не запись и не файл: два синуса с разницей меньше 30 Гц
+   раскладываются по ушам, и мозг достраивает третий звук — мягкий
+   пульс. Поэтому плеер ничего не качает, работает офлайн и весит ноль
+   мегабайт (математика тонов и движок — в sound.js).
+
+   Движок создаётся один раз на приложение и живёт вне экрана: звук не
+   обрывается, когда человек уходит в дневник или в чат. Там сессию
+   держит плашка .sound-pill — из неё же звук останавливается.
+   ============================================================ */
+let soundEngine = null;
+const soundReady = () => {
+  if (!soundEngine && audioSupported()) {
+    soundEngine = createBinauralEngine();
+    soundEngine.configure(state.sound);
+    /* Сессия может закончиться на другом экране — плашка обязана уйти сама. */
+    soundEngine.subscribe(() => renderSoundPill());
+  }
+  return soundEngine;
+};
+/** Настройки человека: в состояние, в память телефона и сразу в движок. */
+function applySoundSettings(patch) {
+  state.sound = Object.assign({}, state.sound, patch);
+  save();
+  const engine = soundReady();
+  if (engine) engine.configure(state.sound);
+}
+
+/** Тизер на «Сегодня»: между доской впечатлений и «Пережить вместе». */
+function soundTeaser() {
+  const engine = soundReady();
+  const st = engine ? engine.state() : null;
+  const playing = !!(st && st.playing);
+  const p = presetById(state.sound.preset);
+  return el('button', {
+    class: 'sound-teaser' + (playing ? ' on' : ''),
+    onclick: () => go('sound'),
+    'aria-label': playing ? `Бинауральные ритмы: идёт сессия «${p.title}», открыть плеер` : 'Бинауральные ритмы: открыть плеер'
+  },
+    el('span', { class: 'sound-teaser-art', 'aria-hidden': 'true' },
+      el('i', { class: 'bar b1' }), el('i', { class: 'bar b2' }), el('i', { class: 'bar b3' }),
+      el('i', { class: 'bar b4' }), el('i', { class: 'bar b5' })),
+    el('span', { class: 'board-teaser-copy' },
+      el('b', {}, playing
+        ? `${p.title} · ${st.paused ? 'на паузе' : formatClock(st.secondsLeft)}`
+        : 'Звук, который собирается в голове'),
+      el('span', {}, playing
+        ? 'Сессия идёт — нажми, чтобы открыть плеер'
+        : 'Два тихих тона в наушниках: мозг слышит разницу как мягкий пульс. Работает без интернета.')),
+    el('span', { class: 'chev' }, '›')
+  );
+}
+
+/** Плашка «сессия идёт» — видна на всех экранах, кроме самого плеера. */
+function renderSoundPill() {
+  const engine = soundEngine;
+  const old = $('.sound-pill');
+  const st = engine && engine.playing ? engine.state() : null;
+  if (!st || route().a === 'sound') { if (old) old.remove(); return; }
+  const p = presetById(st.preset);
+  const pill = old || el('div', { class: 'sound-pill' });
+  pill.innerHTML = '';
+  pill.append(
+    el('button', { class: 'sound-pill-main', onclick: () => go('sound') },
+      el('span', { class: 'sound-pill-wave' }, icon('wave')),
+      el('span', { class: 'sound-pill-copy' },
+        el('b', {}, `${p.title} · ${p.tag}`),
+        el('span', {}, st.paused ? 'на паузе' : `ещё ${formatClock(st.secondsLeft)}`)),
+      el('span', { class: 'chev' }, '›')),
+    el('button', {
+      class: 'sound-pill-stop', 'aria-label': 'Остановить звук',
+      onclick: () => { engine.stop(); haptic('light'); renderSoundPill(); }
+    }, icon('x'))
+  );
+  if (!old) document.body.append(pill);
+}
+
+function screenSound() {
+  renderTabbar(null);
+  const scr = el('div', { class: 'screen sub sound-screen' });
+  scr.append(el('div', { class: 'navbar' },
+    el('button', { class: 'back', onclick: () => go('') }, icon('back'), 'Назад'),
+    el('h2', {}, 'Бинауральные ритмы')
+  ));
+  scr.append(el('h1', { class: 'ltitle' }, 'Звук, который собирается в голове',
+    el('small', {}, 'Два тихих тона — по одному в каждое ухо. Разницу между ними мозг слышит как мягкий пульс.')));
+
+  const engine = soundReady();
+
+  /* ---- объяснение: числа в схеме живые, они меняются вместе с пресетом ---- */
+  const hzL = el('b', {}), hzR = el('b', {}), hzBeat = el('b', {});
+  const drawTones = () => {
+    const t = tonePair(presetById(state.sound.preset), state.sound);
+    hzL.textContent = `${t.left} Гц`;
+    hzR.textContent = `${t.right} Гц`;
+    hzBeat.textContent = `${t.beat} Гц`;
+  };
+  scr.append(el('div', { class: 'card soft sound-what' },
+    el('p', { class: 'eyebrow' }, 'Что это такое'),
+    el('p', {}, 'В левое ухо идёт один ровный тон, в правое — почти такой же, но чуть выше. По отдельности они скучные. Вместе слуховой тракт достраивает третий звук — мягкий пульс на частоте разницы. Его и называют бинауральным ритмом: в воздухе его нет, он собирается внутри головы.'),
+    el('div', { class: 'sound-formula' },
+      el('span', {}, el('small', {}, 'левое ухо'), hzL),
+      el('i', { class: 'op' }, '+'),
+      el('span', {}, el('small', {}, 'правое ухо'), hzR),
+      el('i', { class: 'op' }, '='),
+      el('span', { class: 'beat' }, el('small', {}, 'слышно пульс'), hzBeat)),
+    el('p', { class: 'mins' }, 'Файл и интернет не нужны: тон строится прямо в телефоне. Поэтому плеер работает офлайн и не занимает места.')
+  ));
+
+  scr.append(el('p', { class: 'sound-headphones' },
+    icon('headphones'),
+    el('span', {}, el('b', {}, 'Нужны наушники. '),
+      'На колонках оба тона смешиваются в воздухе — и пульса просто не будет. Громкость держи невысокой.'))
+  );
+
+  /* ---- пресеты ---- */
+  scr.append(el('div', { class: 'sect tight' }, 'Какой ритм'));
+  const presetNote = el('p', { class: 'sound-note' });
+  const chips = el('div', { class: 'chips sound-presets' });
+  const drawPreset = () => {
+    const p = presetById(state.sound.preset);
+    chips.querySelectorAll('.sound-preset').forEach(btn => {
+      const on = btn.dataset.id === p.id;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    presetNote.innerHTML = '';
+    presetNote.append(
+      el('b', {}, `${p.title} · ${p.band} — ${p.tag}`),
+      el('span', {}, `${p.text}`),
+      el('span', { class: 'mins' }, `Обычно берут: ${p.when}.`));
+    drawTones();
+  };
+  for (const p of BINAURAL_PRESETS) {
+    chips.append(el('button', {
+      class: 'chip sound-preset', type: 'button', 'data-id': p.id, 'aria-pressed': 'false',
+      onclick: () => { haptic('light'); applySoundSettings({ preset: p.id }); drawPreset(); drawPlayer(); }
+    }, el('b', {}, p.title), el('span', {}, p.tag)));
+  }
+  scr.append(chips, presetNote);
+
+  /* ---- длительность ---- */
+  scr.append(el('div', { class: 'sect tight' }, 'Сколько минут'));
+  const timers = el('div', { class: 'chips sound-times' });
+  const drawTimes = () => timers.querySelectorAll('.sound-time').forEach(btn => {
+    const on = Number(btn.dataset.min) === state.sound.minutes;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+  });
+  for (const m of [5, 10, 20, 30, 60]) {
+    timers.append(el('button', {
+      class: 'chip sound-time', type: 'button', 'data-min': String(m), 'aria-pressed': 'false',
+      onclick: () => { applySoundSettings({ minutes: m }); drawTimes(); drawPlayer(); }
+    }, `${m} мин`));
+  }
+  scr.append(timers);
+
+  /* ---- громкость, тон, подложка ---- */
+  scr.append(el('div', { class: 'sect tight' }, 'Как звучит'));
+  const volLabel = el('span', { class: 'sound-val' });
+  const vol = el('input', { class: 'sound-range', type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Громкость' });
+  vol.value = String(Math.round(state.sound.volume * 100));
+  vol.addEventListener('input', () => {
+    const v = Number(vol.value) / 100;
+    volLabel.textContent = vol.value + '%';
+    applySoundSettings({ volume: v });
+  });
+  const toneLabel = el('span', { class: 'sound-val' });
+  const tone = el('input', {
+    class: 'sound-range', type: 'range', min: '110', max: '420', step: '2',
+    'aria-label': 'Высота основного тона'
+  });
+  tone.value = String(state.sound.carrier || presetById(state.sound.preset).carrier);
+  tone.addEventListener('input', () => {
+    toneLabel.textContent = tone.value + ' Гц';
+    applySoundSettings({ carrier: Number(tone.value) });
+    drawTones();
+  });
+  const noiseBtn = el('button', { class: 'chip sound-noise', type: 'button', 'aria-pressed': String(!!state.sound.noise) });
+  const drawNoise = () => {
+    noiseBtn.classList.toggle('on', !!state.sound.noise);
+    noiseBtn.setAttribute('aria-pressed', String(!!state.sound.noise));
+    noiseBtn.innerHTML = '';
+    noiseBtn.append(el('b', {}, 'Мягкая подложка'), el('span', {}, state.sound.noise ? 'включена' : 'выключена'));
+  };
+  noiseBtn.onclick = () => { applySoundSettings({ noise: !state.sound.noise }); drawNoise(); };
+  const drawSoundValues = () => {
+    volLabel.textContent = Math.round(state.sound.volume * 100) + '%';
+    toneLabel.textContent = (state.sound.carrier || presetById(state.sound.preset).carrier) + ' Гц';
+    /* заполнение дорожки слайдера — webkit не умеет ::-moz-range-progress */
+    vol.style.setProperty('--fill', vol.value + '%');
+    const span = Number(tone.max) - Number(tone.min);
+    tone.style.setProperty('--fill', Math.round(((Number(tone.value) - Number(tone.min)) / span) * 100) + '%');
+  };
+  scr.append(el('div', { class: 'sound-mixers' },
+    el('label', { class: 'sound-mixer' }, el('span', {}, 'Громкость', volLabel), vol),
+    el('label', { class: 'sound-mixer' }, el('span', {}, 'Высота тона', toneLabel), tone),
+    el('div', { class: 'chips' }, noiseBtn)
+  ));
+
+  /* ---- плеер ---- */
+  scr.append(el('div', { class: 'sect tight' }, 'Плеер'));
+  const clock = el('div', { class: 'sound-clock' });
+  const playBtn = el('button', { class: 'btn sound-play', type: 'button' });
+  const stopBtn = el('button', { class: 'btn ghost sound-stop', type: 'button' }, 'Остановить');
+  const statusLine = el('p', { class: 'mins sound-status', role: 'status' });
+  const drawPlayer = () => {
+    const st = engine ? engine.state() : { playing: false, paused: false, secondsLeft: 0 };
+    const running = !!st.playing;
+    scr.classList.toggle('playing', running);
+    playBtn.innerHTML = '';
+    playBtn.append(
+      icon(running && !st.paused ? 'pause' : 'play'),
+      running ? (st.paused ? 'Продолжить' : 'Пауза') : 'Включить');
+    stopBtn.classList.toggle('hidden', !running);
+    clock.textContent = formatClock(running ? st.secondsLeft : state.sound.minutes * 60);
+    clock.classList.toggle('paused', !!st.paused);
+    statusLine.textContent = !engine
+      ? 'Этот браузер не умеет строить звук. Открой приложение в Chrome или Safari — плеер заработает.'
+      : running
+        ? (st.paused ? 'Пауза. Звук ждёт, отсчёт стоит.' : 'Идёт. Можно закрыть экран телефона — сессия доиграет.')
+        : 'Нажми «Включить», когда наушники уже в ушах.';
+    drawSoundValues();
+  };
+  playBtn.onclick = () => {
+    if (!engine) { toast('Этот браузер не умеет строить звук. Попробуй Chrome или Safari.'); return; }
+    haptic('medium');
+    try {
+      const st = engine.state();
+      if (!st.playing) { applySoundSettings({}); engine.start(); }
+      else if (st.paused) engine.resume();
+      else engine.pause();
+    } catch (e) {
+      toast('Не получилось включить звук. Проверь, не выключен ли звук в браузере.');
+    }
+    drawPlayer();
+  };
+  stopBtn.onclick = () => { engine && engine.stop(); haptic('light'); drawPlayer(); };
+  scr.append(el('div', { class: 'sound-deck card' }, clock, playBtn, stopBtn, statusLine));
+
+  /* ---- честно: чего от ритмов ждать, а чего нет ---- */
+  scr.append(el('div', { class: 'card soft sound-honest' },
+    el('p', { class: 'eyebrow' }, 'Честно'),
+    el('p', {}, 'Бинауральные ритмы помогают части людей успокоиться: в обзорах исследований эффект есть, но он умеренный, и не все работы его подтверждают. Это способ полежать в тишине и подышать, а не лечение — терапии и лекарства он не заменяет.'),
+    el('p', { class: 'mins' }, 'Если у тебя эпилепсия, кардиостимулятор или от ритмов кружится голова — сначала поговори с врачом и убавь громкость. Не слушай за рулём.')
+  ));
+
+  drawPreset();
+  drawTimes();
+  drawNoise();
+  drawPlayer();
+  if (!engine) scr.classList.add('no-audio');
+
+  /* Отсчёт на экране: раз в секунду, пока открыт плеер. */
+  const ticker = setInterval(() => { if (engine) drawPlayer(); }, 1000);
+  const unsubscribe = engine ? engine.subscribe(() => drawPlayer()) : null;
+  screenCleanup = () => {
+    clearInterval(ticker);
+    if (unsubscribe) unsubscribe();
+  };
+  return scr;
+}
+
 function screenBoards() {
   renderTabbar(null);
   const scr = el('div', { class: 'screen sub' });
@@ -3207,6 +3487,7 @@ function render() {
     case 'skills': scr = r.b ? screenBlock(r.b) : screenSkills(); break;
     case 'p': scr = screenPractice(r.b); break;
     case 'chat': scr = screenChat(); break;
+    case 'sound': scr = screenSound(); break;
     case 'boards': scr = screenBoards(); break;
     case 'board': scr = screenBoard(r.b); break;
     case 'diary': scr = screenDiary(); break;
@@ -3218,6 +3499,7 @@ function render() {
     default: scr = screenToday();
   }
   app.append(scr);
+  renderSoundPill();          // v43: плашка «сессия идёт» живёт между экранами
   if (installDeepLink) installSheet();
   bindMascotFriends(app);
   hydrateMedia(app);          // картинки досок живут в IndexedDB — подставляем ссылки

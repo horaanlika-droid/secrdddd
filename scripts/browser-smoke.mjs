@@ -311,10 +311,67 @@ try {
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   const longText=await page.locator('.tile-note-copy').innerText();
   check('maximum-tilt test really uses the long saved note',()=>assert(longText.length>2500));
+  /* ---------- v43: бинауральные ритмы в настоящем Web Audio ----------
+     jsdom Web Audio не умеет, поэтому каналы и частоты проверяются только
+     здесь. Зонд ставится до навигации: движок запоминает AudioContext
+     в момент создания, подменять его задним числом бесполезно. */
+  await page.addInitScript(()=>{
+    window.__ctxCount=0;window.__tones=[];
+    const Real=window.AudioContext||window.webkitAudioContext;
+    if(!Real)return;
+    window.AudioContext=class extends Real{
+      constructor(opts){super(opts);window.__ctxCount++;}
+      createOscillator(){
+        const node=super.createOscillator();
+        node.connect=(dest,outChannel=0,inChannel=0)=>{window.__tones.push({freq:node.frequency.value,inChannel});return dest;};
+        return node;
+      }
+    };
+  });
+  await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  const soundCopy=await page.evaluate(()=>({
+    headphones:(document.querySelector('.sound-headphones')||{}).innerText||'',
+    formula:(document.querySelector('.sound-formula')||{}).innerText||'',
+    presets:document.querySelectorAll('.sound-preset').length,
+    times:document.querySelectorAll('.sound-time').length
+  }));
+  check('бинауральные ритмы объясняют эффект и требуют наушники',()=>{
+    assert(soundCopy.headphones.includes('Нужны наушники'),'про наушники сказано прямо');
+    assert(soundCopy.formula.includes('Гц'),'схема показывает частоты');
+    assert.equal(soundCopy.presets,4,'четыре пресета');
+    assert.equal(soundCopy.times,5,'пять длительностей');
+  });
+  await page.getByRole('button',{name:'Включить',exact:true}).click();
+  await page.waitForTimeout(600);
+  const audio=await page.evaluate(()=>({ctx:window.__ctxCount,tones:window.__tones,clock:(document.querySelector('.sound-clock')||{}).textContent}));
+  check('звук строится в реальном Web Audio: два тона в разные каналы',()=>{
+    assert.equal(audio.ctx,1,'аудиоконтекст создан один раз');
+    assert.equal(audio.tones.length,2,JSON.stringify(audio.tones));
+    const [a,b]=audio.tones.map(t=>t.freq).sort((x,y)=>x-y);
+    assert.ok(b>a&&b-a<30,`разница ${b-a} Гц — вне окна бинаурального эффекта`);
+    assert.deepEqual(audio.tones.map(t=>t.inChannel).sort(),[0,1],'каждый тон идёт в свой канал');
+    assert.ok(/^\d+:\d\d$/.test((audio.clock||'').trim()),`отсчёт сессии: ${audio.clock}`);
+  });
+  await page.screenshot({path:path.join(ART,'sound-screen.png'),fullPage:true});
+  await page.evaluate(()=>{
+    const btn=document.querySelector('.sound-stop:not(.hidden)')||document.querySelector('.sound-pill-stop');
+    btn&&btn.click();
+  });
+  await page.waitForTimeout(900);
+  const afterStop=await page.evaluate(()=>({
+    pill:document.querySelectorAll('.sound-pill').length,
+    label:(document.querySelector('.sound-play')||{}).innerText||''
+  }));
+  check('звук выключается и сессия не остаётся висеть',()=>{
+    assert.equal(afterStop.pill,0,'плашки сессии нет');
+    assert(afterStop.label.includes('Включить'),`кнопка вернулась в «Включить»: ${afterStop.label}`);
+  });
+  await page.evaluate(()=>{window.__ctxCount=0;window.__tones=[];});
+
   for(const width of [320,390,768]) {
     await page.setViewportSize({width,height:900});
     // 'install' последним: в v40 это не экран, а лист поверх «Сегодня» — пусть он откроется в самом конце прогона
-    for(const route of ['', 'skills','profile','boards',boardRoute.split('#/')[1],'install']) {
+    for(const route of ['', 'sound','skills','profile','boards',boardRoute.split('#/')[1],'install']) {
       await page.goto(origin+'/#/'+route,{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});
