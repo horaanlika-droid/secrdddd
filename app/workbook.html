@@ -139,6 +139,7 @@
 <body>
 <div class="bar">
   <button id="download" hidden onclick="window.print()">Печать / сохранить в PDF</button>
+  <button id="topay" hidden onclick="location.href='index.html#/workbook?pay=1'">Купить подписку · минимальный донат</button>
   <button class="sec" onclick="location.href='index.html'">← В приложение</button>
   <span>Дибитишка · печатная тетрадь</span>
 </div>
@@ -193,6 +194,8 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
     } catch { accessMessage = 'Не получилось проверить подписку. Вернись в приложение и попробуй ещё раз.'; }
   }
   document.getElementById('download').hidden = !allowFull;
+  // в превью показываем ту же оплату, что и в подписке: ссылка ведёт на #/workbook?pay=1
+  document.getElementById('topay').hidden = allowFull;
   const W = C.workbook;
   const isPreview = !allowFull;
   const blocks = C.blocks;
@@ -215,7 +218,7 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
     <p class="sub">${esc(W.subtitle)}</p>
     <p class="intro">${esc(W.intro)}</p>`;
   if (isPreview) {
-    h += `<div class="preview-bar"><b>Бесплатно — по одному заданию из каждого блока.</b> Остальные задания и скачивание доступны по оплаченной подписке; пробная неделя не включает скачивание. <a href="index.html#/workbook">Оформить подписку →</a> ${esc(accessMessage)}</div>`;
+    h += `<div class="preview-bar"><b>Бесплатно — по одному заданию из каждого блока.</b> Остальные задания и скачивание доступны по оплаченной подписке; пробная неделя не включает скачивание. <a href="index.html#/workbook?pay=1">Купить подписку · минимальный донат →</a> ${esc(accessMessage)}</div>`;
   }
   h += `<div class="credit">${esc(C.meta.credits)}</div></header>`;
 
@@ -227,7 +230,7 @@ const extrasHtml = (p) => Object.entries(p.extras || {}).map(([key, val]) => {
     for (const [index, p] of b.practices.entries()) {
       if (isPreview && index > 0) {
         // Never put the locked exercise text in the preview DOM.
-        h += `<div class="locked-practice"><div class="locked-skeleton" aria-hidden="true"><h3>Практика и письменная опора</h3><p>Маленькие шаги, место для мыслей и заботы о себе.</p><div class="lines"></div></div><a class="locked-label" href="index.html#/workbook">🔒 Задание ${index + 1} · доступно по подписке</a></div>`;
+        h += `<div class="locked-practice"><div class="locked-skeleton" aria-hidden="true"><h3>Практика и письменная опора</h3><p>Маленькие шаги, место для мыслей и заботы о себе.</p><div class="lines"></div></div><a class="locked-label" href="index.html#/workbook?pay=1">🔒 Задание ${index + 1} · купить подписку за минимальный донат</a></div>`;
         continue;
       }
       h += `<div class="practice" style="background:linear-gradient(180deg, ${bgOf(b)} 0%, #fff 46%)">

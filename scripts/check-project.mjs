@@ -708,6 +708,32 @@ for (const [label, lock, pkg, dir] of [
     else bad('маскот: лицо не связано с отметками дневника', 'нужна heroMood() из последней подтверждённой записи');
     if (/has-mood/.test(css) && /mood \? `Дибитишка рядом · настроение: \$\{MOODS\[mood - 1\]\}`/.test(web)) ok('маскот: без отметок спокойное лицо, с отметкой — озвучено словами');
     else bad('маскот: нет состояния без отметок или потерялось описание для скринридера');
+
+    /* v42: позы двух экранов — медитация на «Навыках» и кепка у зеркала в мерче.
+       Ассеты должны лежать и в вебе, и в зеркале бота, и собираться скриптом,
+       иначе «новая картинка» живёт только в одной сборке. */
+    {
+      const poses = ['meditate', 'mirror', 'cashier'];
+      const missing = poses.filter((n) => !exists(path.join(ROOT, 'app', 'assets', 'mascot', `${n}.png`)) ||
+                                         !exists(path.join(BOT, 'assets', 'mascot', `${n}.png`)));
+      if (!missing.length) ok('маскот: позы v42 лежат и в вебе, и в зеркале бота (meditate, mirror)');
+      else bad(`маскот: нет поз ${missing.join(', ')}`, 'пересобери: python3 scripts/postprocess-mascot.py meditate mirror');
+      if (/assets\/mascot\/meditate\.png/.test(web) && /mascot\('cashier'/.test(web)) ok('маскот: «Навыки» показывают медитацию, мерч — кассира за прилавком');
+      else bad('маскот: экраны не перешли на новые позы', "screenSkills → meditate.png, screenMerch → mascot('cashier', …)");
+      if (/\.mascot-wrap\.zen\{/.test(css) && !/\.mascot-wrap\.peeking\{/.test(css)) ok('стили: «Навыки» на .mascot-wrap.zen, мёртвый .peeking убран');
+      else bad('стили: нет .mascot-wrap.zen или остался .mascot-wrap.peeking', 'медитирующую позу нельзя прятать за край реплики — у неё ноги в лотосе');
+      if (exists(path.join(ROOT, 'app', 'assets', 'mascot', 'mirror.png'))) ok('маскот: примерка кепки у зеркала осталась в паке поз');
+      else bad('маскот: пропала поза mirror.png', 'она в паке, даже когда экран мерча показывает кассира');
+      const webLines = (readJson(path.join(ROOT, 'app', 'content', 'content.json'))?.meta?.mascot_lines?.merch || []).length;
+      const seedLines = (readJson(path.join(BOT, 'seed', 'content.json'))?.meta?.mascot_lines?.merch || []).length;
+      if (webLines && webLines === seedLines) ok(`маскот: реплик мерча одинаково в вебе и в сиде бота (${webLines})`);
+      else bad('маскот: реплики мерча в вебе и в сиде разошлись', `веб ${webLines}, сид ${seedLines} — бот без app/ отдаст свой текст`);
+      const post = read(path.join(ROOT, 'scripts', 'postprocess-mascot.py'));
+      const posesLine = (post.match(/POSES = \(([^)]*)\)/) || [])[1] || '';
+      const known = poses.filter((n) => posesLine.includes(`"${n}"`));
+      if (known.length === poses.length && /sys\.argv\[1:\]/.test(post)) ok(`postprocess-mascot.py знает позы ${known.join(', ')} и собирается поимённо`);
+      else bad('scripts/postprocess-mascot.py не умеет новые позы', `POSES должен включать ${poses.join(', ')}; запуск — с аргументами-именами`);
+    }
     const moodFrames = readJson(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-moods.json'));
     if (moodFrames?.frames >= 10 && moodFrames?.neutral === 0 && Array.isArray(moodFrames?.cell) && moodFrames.cell.every((n) => n > 0) &&
         exists(path.join(ROOT, 'app', 'assets', 'mascot', 'hero-moods.webp')) &&

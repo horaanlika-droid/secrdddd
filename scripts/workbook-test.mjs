@@ -16,6 +16,13 @@ for(const [headers,status] of [[{},401],[{authorization:'Bearer fake'},401],[{au
   api({method:'GET',headers},{},url); assert.equal(result.status,status);
 }
 const html=fs.readFileSync(new URL('../app/workbook.html',import.meta.url),'utf8');
+/* The preview has to land the reader straight in the payment window — the same
+   one the subscription button opens — so every paywall link carries ?pay=1. */
+assert.match(html, /id="topay"[^>]*location\.href='index\.html#\/workbook\?pay=1'/);
+for (const link of html.match(/href="index\.html#\/workbook[^"]*"/g) || []) {
+  assert.equal(link, 'href="index.html#/workbook?pay=1"', 'workbook paywall link must open the pay window: ' + link);
+}
+assert((html.match(/href="index\.html#\/workbook\?pay=1"/g) || []).length >= 2);
 const script=html.match(/<script>\s*const esc[\s\S]*?<\/script>/)[0].replace(/^<script>|<\/script>$/g,'');
 for(const status of [401,403,200,503]) {
   const dom=new JSDOM(html.replace(/<script[\s\S]*?<\/script>/g,''),{url:'https://test/workbook.html?full=1',runScripts:'outside-only'});

@@ -142,6 +142,27 @@ function seedContent() {
         save();
       } catch (e) { console.warn('[merch] catalog update failed'); }
     }
+    /* v10: описания мерча говорит Дибитишка — берём формулировки из сида,
+       не трогая то, что админ мог поменять сам (названия, картинки, цены).
+       Реплики маскота про мерч только доливаются: старые строки не затираем. */
+    if (Number(db.content.version || 0) < 10) {
+      try {
+        const seed = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'seed', 'content.json'), 'utf8'));
+        (seed.merch || []).forEach(item => {
+          const cur = (db.content.merch || []).find(m => m.id === item.id);
+          if (cur) cur.note = item.note;
+        });
+        const lines = db.content.meta?.mascot_lines;
+        if (lines) {
+          const seedLines = seed.meta?.mascot_lines?.merch || [];
+          lines.merch = Array.isArray(lines.merch) ? lines.merch : [];
+          seedLines.forEach((t) => { if (!lines.merch.includes(t)) lines.merch.push(t); });
+        }
+        db.content.version = 10;
+        db.content.updated = '2026-09-16';
+        save();
+      } catch (e) { console.warn('[merch] copy update failed'); }
+    }
     return db.content;
   }
   const candidates = [

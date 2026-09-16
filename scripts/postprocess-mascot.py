@@ -2,18 +2,28 @@
 """Build the mascot pack (original IMG_0966 style: matte droplet-hood, white face).
 
 Sources: app/assets/mascot/_gen/{hello,calm,hug,proud,peek}.png
+         + app/assets/mascot/_gen/{meditate,mirror,cashier}.png — новые позы:
+           «Навыки» (Дибитишка медитирует) и мерч (стоит за прилавком кассиром;
+           mirror — та же примерка нашей кепки у зеркала, лежит в паке);
+           это генерация в тот же материал и палитру, исходник лежит в _gen/,
+           чтобы пересборка была повторимой.
 Outputs: 1024×1024 PNGs in app/assets/mascot and mirrored bot/assets/mascot.
 Requires ImageMagick (`convert`). Generated sources stay untouched for easy reruns.
+
+Запуск:
+  python3 scripts/postprocess-mascot.py                  # все позы + icon/splash
+  python3 scripts/postprocess-mascot.py meditate mirror  # только новые позы
 """
-from pathlib import Path
+import sys
 import shutil
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/assets/mascot/_gen"
 OUT = ROOT / "app/assets/mascot"
 BOT = ROOT / "bot/assets/mascot"
-POSES = ("hello", "calm", "hug", "proud", "peek")
+POSES = ("hello", "calm", "hug", "proud", "peek", "meditate", "mirror", "cashier")
 
 
 def run(*args: str) -> None:
@@ -45,10 +55,21 @@ def build_pose(name: str) -> Path:
     return target
 
 
-def main() -> None:
+def main(argv: list[str]) -> None:
+    names = tuple(argv) or POSES
+    unknown = [n for n in names if n not in POSES]
+    if unknown:
+        raise SystemExit(f"Неизвестная поза: {unknown}. Доступны: {', '.join(POSES)}")
     OUT.mkdir(parents=True, exist_ok=True)
     BOT.mkdir(parents=True, exist_ok=True)
-    built = [build_pose(name) for name in POSES]
+    built = [build_pose(name) for name in names]
+
+    if "hello" not in names:
+        # иконка и splash собираются из hello — на выборочной сборке их не трогаем
+        for path in built:
+            shutil.copy2(path, BOT / path.name)
+        print(f"Built {len(built)} поз (icon/splash пропущены) и синхронизированы с bot/assets/mascot")
+        return
 
     # App icon: character only, no byline. Rounded clipping is handled by each platform.
     icon = OUT / "icon.png"
@@ -68,4 +89,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

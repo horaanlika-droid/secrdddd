@@ -254,6 +254,21 @@ try {
     assert(!payApp.q('.sheet.on'), 'no intermediate sheet between the click and the payment window');
   });
   payApp.dom.window.close();
+  /* v41: «Купить подписку» внутри печатной тетради ведёт на #/workbook?pay=1
+     и должна открывать то же окно, а не просить ещё один клик на экране. */
+  const wbApp = await app({}, { apiContent: structuredClone(CONTENT) });
+  const wbOpened = [];
+  wbApp.w.open = (u) => wbOpened.push(u);
+  await wbApp.go('workbook?pay=1');
+  await sleep(140);
+  check('the workbook paywall CTA opens the same payment window without a second click', () => {
+    assert.equal(wbOpened.length, 1);
+    assert(wbOpened[0].includes('t.me/tribute/app?startapp=dSmoke'));
+    assert(!wbApp.q('.sheet.on'), 'no intermediate sheet between the click and the payment window');
+    assert.equal(wbApp.w.location.hash, '#/workbook', 'the ?pay=1 flag is stripped, so a refresh does not reopen it');
+    assert(wbApp.q('#app').textContent.includes('Тетрадь'), 'lands on the workbook screen, not somewhere else');
+  });
+  wbApp.dom.window.close();
   await go('profile');
   check('profile keeps the privacy disclaimer: everything stays in local memory',()=>{
     assert(q('#app').textContent.includes('остаётся только на твоём телефоне'));
@@ -425,6 +440,26 @@ try {
     assert(current.q('.merch-photo img').src.endsWith('/cap.webp'));
     assert.equal(current.qa('.mcard button').length, 2);
     assert(current.q('#app').textContent.includes('@vasmedoljno'));
+  });
+  check('merch mascot stands behind the counter as the shopkeeper', () => {
+    assert(current.q('.mascot-wrap .mascot').src.includes('/cashier.png'),
+      'на экране мерча Дибитишка должен стоять за прилавком, а не просто выглядывать');
+  });
+  check('merch speaks in the first person and stays honest about the mockups', () => {
+    const notes = current.qa('.mcard .mb span').map(n => n.textContent);
+    assert.equal(notes.length, 2);
+    notes.forEach(t => assert(/^Спереди — я|^Та же я/.test(t), 'описание товара ведёт Дибитишка от первого лица: ' + t));
+    assert(notes.join(' ').includes('«ДПТ дневник»'), 'в описании тетради — та надпись, что реально на обложке');
+    assert(!/уточняй у @vasmedoljno\.$/.test(current.q('.merch-contact').textContent));
+    assert(current.q('.foot').textContent.includes('мокапы'), 'честно про то, что картинки — визуализации');
+  });
+  await current.go('skills');
+  check('skills screen sits with the mascot in meditation, whole pose visible', () => {
+    const img = current.q('.mascot-wrap.zen .mascot');
+    assert(img && img.src.includes('/meditate.png'), '«Навыки» показывают медитирующую позу');
+    assert(img.alt === 'Дибитишка медитирует', 'альт описывает позу, а не просто имя');
+    assert(!current.q('.mascot-wrap.peeking'), 'позу нельзя прятать за край реплики — в лотосе видны ноги');
+    assert(current.q('.mascot-wrap.zen .bubble small').textContent.includes('дышу'), 'реплика поддерживает позу');
   });
   console.log(`\ndom-smoke: ${checks} checks passed`);
 } finally { current?.dom.window.close(); }
