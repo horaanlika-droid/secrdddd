@@ -311,62 +311,93 @@ try {
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   const longText=await page.locator('.tile-note-copy').innerText();
   check('maximum-tilt test really uses the long saved note',()=>assert(longText.length>2500));
-  /* ---------- v43: бинауральные ритмы в настоящем Web Audio ----------
-     jsdom Web Audio не умеет, поэтому каналы и частоты проверяются только
-     здесь. Зонд ставится до навигации: движок запоминает AudioContext
-     в момент создания, подменять его задним числом бесполезно. */
+  /* ---------- v44: тихая музыка в настоящем Web Audio ----------
+     jsdom Web Audio не умеет, поэтому генераторы, панораму и свёртку
+     проверяем только здесь. Зонд ставится до навигации: движок
+     запоминает AudioContext в момент создания, подменять его задним
+     числом бесполезно. */
   await page.addInitScript(()=>{
-    window.__ctxCount=0;window.__tones=[];
+    window.__ctxCount=0;window.__osc=[];window.__pans=0;window.__convolvers=0;
     const Real=window.AudioContext||window.webkitAudioContext;
     if(!Real)return;
     window.AudioContext=class extends Real{
       constructor(opts){super(opts);window.__ctxCount++;}
       createOscillator(){
         const node=super.createOscillator();
-        node.connect=(dest,outChannel=0,inChannel=0)=>{window.__tones.push({freq:node.frequency.value,inChannel});return dest;};
+        const inner=node.start.bind(node);
+        node.start=(...args)=>{window.__osc.push({type:node.type,freq:node.frequency.value});return inner(...args);};
         return node;
       }
+      createStereoPanner(){window.__pans++;return super.createStereoPanner();}
+      createConvolver(){window.__convolvers++;return super.createConvolver();}
     };
   });
   await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
-  const soundCopy=await page.evaluate(()=>({
-    headphones:(document.querySelector('.sound-headphones')||{}).innerText||'',
-    formula:(document.querySelector('.sound-formula')||{}).innerText||'',
-    presets:document.querySelectorAll('.sound-preset').length,
-    times:document.querySelectorAll('.sound-time').length
+  const musicCopy=await page.evaluate(()=>({
+    explain:(document.querySelector('.sound-what')||{}).innerText||'',
+    chord:(document.querySelector('.sound-chord')||{}).innerText||'',
+    notes:(document.querySelector('.sound-notes')||{}).innerText||'',
+    scenes:document.querySelectorAll('.sound-scene').length,
+    times:document.querySelectorAll('.sound-time').length,
+    headphones:document.querySelectorAll('.sound-headphones,.sound-formula').length
   }));
-  check('бинауральные ритмы объясняют эффект и требуют наушники',()=>{
-    assert(soundCopy.headphones.includes('Нужны наушники'),'про наушники сказано прямо');
-    assert(soundCopy.formula.includes('Гц'),'схема показывает частоты');
-    assert.equal(soundCopy.presets,4,'четыре пресета');
-    assert.equal(soundCopy.times,5,'пять длительностей');
+  check('экран тихой музыки объясняет генерацию, а не бинауральные ритмы',()=>{
+    assert(musicCopy.explain.includes('не повторяется'),'сказано, что музыка каждый раз другая');
+    assert(musicCopy.explain.includes('без интернета'),'сказано, что интернет не нужен');
+    assert(/[A-G]/.test(musicCopy.chord),`показан живой аккорд: ${musicCopy.chord}`);
+    assert(/[A-G]\d/.test(musicCopy.notes),`перечислены ноты: ${musicCopy.notes}`);
+    assert.equal(musicCopy.scenes,6,'шесть сцен');
+    assert.equal(musicCopy.times,5,'пять длительностей');
+    assert.equal(musicCopy.headphones,0,'механики ритмов на экране больше нет');
   });
   await page.getByRole('button',{name:'Включить',exact:true}).click();
-  await page.waitForTimeout(600);
-  const audio=await page.evaluate(()=>({ctx:window.__ctxCount,tones:window.__tones,clock:(document.querySelector('.sound-clock')||{}).textContent}));
-  check('звук строится в реальном Web Audio: два тона в разные каналы',()=>{
-    assert.equal(audio.ctx,1,'аудиоконтекст создан один раз');
-    assert.equal(audio.tones.length,2,JSON.stringify(audio.tones));
-    const [a,b]=audio.tones.map(t=>t.freq).sort((x,y)=>x-y);
-    assert.ok(b>a&&b-a<30,`разница ${b-a} Гц — вне окна бинаурального эффекта`);
-    assert.deepEqual(audio.tones.map(t=>t.inChannel).sort(),[0,1],'каждый тон идёт в свой канал');
-    assert.ok(/^\d+:\d\d$/.test((audio.clock||'').trim()),`отсчёт сессии: ${audio.clock}`);
+  await page.waitForTimeout(700);
+  const playing=await page.evaluate(()=>({
+    ctx:window.__ctxCount,osc:window.__osc.length,pans:window.__pans,conv:window.__convolvers,
+    clock:(document.querySelector('.sound-clock')||{}).textContent||'',
+    label:(document.querySelector('.sound-play')||{}).innerText||''
+  }));
+  check('музыка строится в реальном Web Audio: голоса, панорама, свёртка',()=>{
+    assert.equal(playing.ctx,1,'аудиоконтекст создан один раз');
+    assert.ok(playing.osc>=8,`генераторов ${playing.osc}: два на голос, не меньше четырёх голосов`);
+    assert.ok(playing.osc<=80,`генераторов ${playing.osc} — слишком много для одной сессии`);
+    assert.ok(playing.pans>=4,`панорама есть у ${playing.pans} голосов`);
+    assert.equal(playing.conv,1,'свёрточное эхо собрано один раз');
+    assert.ok(/^(\d+:\d\d|∞)$/.test(playing.clock.trim()),`отсчёт сессии: ${playing.clock}`);
+    assert(playing.label.includes('Пауза'),`кнопка стала паузой: ${playing.label}`);
   });
   await page.screenshot({path:path.join(ART,'sound-screen.png'),fullPage:true});
+  /* музыка не должна обрываться при переходе на другой экран */
+  await page.goto(origin+'/',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
+  const onHome=await page.evaluate(()=>({
+    pill:document.querySelectorAll('.sound-pill').length,
+    teaser:(document.querySelector('.sound-teaser')||{}).className||''
+  }));
+  check('музыка переживает переход на главную: плашка и живой тизер',()=>{
+    assert.equal(onHome.pill,1,'плашка с музыкой есть');
+    assert(onHome.teaser.includes('on'),`тизер показывает идущую сессию: ${onHome.teaser}`);
+  });
   await page.evaluate(()=>{
     const btn=document.querySelector('.sound-stop:not(.hidden)')||document.querySelector('.sound-pill-stop');
     btn&&btn.click();
   });
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1100);
   const afterStop=await page.evaluate(()=>({
-    pill:document.querySelectorAll('.sound-pill').length,
+    pill:document.querySelectorAll('.sound-pill').length
+  }));
+  check('музыка выключается и сессия не остаётся висеть',()=>assert.equal(afterStop.pill,0,'плашки сессии нет'));
+  await page.goto(origin+'/#/music',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  const musicRoute=await page.evaluate(()=>({
+    title:(document.querySelector('.navbar h2')||{}).innerText||'',
     label:(document.querySelector('.sound-play')||{}).innerText||''
   }));
-  check('звук выключается и сессия не остаётся висеть',()=>{
-    assert.equal(afterStop.pill,0,'плашки сессии нет');
-    assert(afterStop.label.includes('Включить'),`кнопка вернулась в «Включить»: ${afterStop.label}`);
+  check('адрес #/music — тот же экран, и после остановки плеер снова предлагает включить',()=>{
+    assert(musicRoute.title.includes('Тихая музыка'),`заголовок экрана: ${musicRoute.title}`);
+    assert(musicRoute.label.includes('Включить'),`кнопка вернулась в «Включить»: ${musicRoute.label}`);
   });
-  await page.evaluate(()=>{window.__ctxCount=0;window.__tones=[];});
+  await page.evaluate(()=>{window.__ctxCount=0;window.__osc=[];window.__pans=0;window.__convolvers=0;});
+
+
 
   for(const width of [320,390,768]) {
     await page.setViewportSize({width,height:900});
