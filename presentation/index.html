@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дибитишка — Презентация</title>
+<style>
+:root{
+  --bg:#E9EFFE;
+  --ink:#0C204D;
+  --ink2:#5A6B8E;
+  --accent:#2E70E8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{
+  position:sticky;top:0;z-index:10;
+  backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);
+  background:rgba(233,239,254,.82);border-bottom:1px solid rgba(11,32,77,.08);
+  display:flex;align-items:center;gap:16px;padding:14px 20px;
+}
+header h1{margin:0;font-size:16px;letter-spacing:-.01em}
+header small{color:var(--ink2);font-weight:500}
+header .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.btn{
+  appearance:none;border:0;border-radius:999px;padding:10px 16px;font-weight:700;cursor:pointer;
+  background:var(--accent);color:#fff;box-shadow:0 10px 24px rgba(46,112,232,.32)
+}
+.btn.ghost{background:#fff;color:var(--accent);border:1px solid rgba(11,32,77,.08);box-shadow:0 4px 16px rgba(11,32,77,.08)}
+main{max-width:1120px;margin:0 auto;padding:28px 20px 40px}
+.hero{ text-align:center; padding:18px 0 8px }
+.hero h2{margin:0;font-size:26px;letter-spacing:-.02em}
+.hero p{margin:8px auto 0;max-width:640px;color:var(--ink2)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{
+  background:#fff;border:1px solid rgba(11,32,77,.08);border-radius:20px;overflow:hidden;
+  box-shadow:0 8px 32px rgba(11,32,77,.06);display:flex;flex-direction:column
+}
+.card img{width:100%;height:auto;display:block;aspect-ratio:16/9;object-fit:cover;background:#EEF3FE}
+.card .meta{padding:12px 14px;display:flex;align-items:center;gap:10px}
+.card .meta b{font-size:13px}
+.card .meta span{color:var(--ink2);font-size:12px}
+.card .meta a{margin-left:auto;font-size:13px;color:var(--accent);text-decoration:none;font-weight:700}
+.note{
+  margin-top:22px;padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.9);border:1px solid rgba(11,32,77,.08);
+  color:var(--ink2);font-size:13px;line-height:1.6
+}
+.viewer{
+  position:fixed;inset:0;z-index:50;background:rgba(12,32,77,.76);backdrop-filter:blur(8px);
+  display:none;align-items:center;justify-content:center;padding:24px
+}
+.viewer.on{display:flex}
+.viewer img{max-width:min(92vw,1640px);max-height:86vh;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.42);background:#fff}
+.viewer .nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none;padding:0 12px}
+.viewer .nav button{
+  pointer-events:auto;width:46px;height:46px;border-radius:999px;border:0;background:rgba(255,255,255,.92);
+  box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:20px;cursor:pointer
+}
+.viewer .close{position:absolute;top:16px;right:16px;width:40px;height:40px;border-radius:999px;border:0;background:rgba(255,255,255,.92);cursor:pointer}
+.pill{display:inline-flex;gap:8px;align-items:center;background:#fff;border:1px solid rgba(11,32,77,.08);border-radius:999px;padding:8px 12px;font-size:13px;color:var(--ink2)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Дибитишка <small>· презентация 8 слайдов</small></h1>
+  <div class="right">
+    <button class="btn ghost" onclick="downloadAll()">Скачать ZIP</button>
+    <button class="btn" onclick="startShow()">Смотреть</button>
+  </div>
+</header>
+<main>
+  <div class="hero">
+    <h2>В стиле лендинга — воздушно, с облаками и Дибитишкой</h2>
+    <p>8 слайдов про приложение + отдельный слайд про ДБТ. Без технических деталей и ссылок на репозиторий. Кратко — что меняется, если практиковать.</p>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <span class="pill">1920×1080 · PNG</span>
+      <span class="pill">фон + <b>проза (прозрачный фон)</b></span>
+      <span class="pill">можно вставить в Keynote / PPT / Figma</span>
+    </div>
+  </div>
+
+  <div class="grid" id="grid">
+    <!-- cards injected by JS -->
+  </div>
+
+  <div class="note">
+    <b>Состав:</b> 01 — Титульный · 02 — Что такое ДБТ · 03 — Для кого · 04 — Пять блоков · 05 — Как устроена практика · 06 — Что ещё внутри · 07 — Что меняется (результаты) · 08 — Маленький шаг<br>
+    <span style="color:#8EA0C6">В каждой папке — 8 файлов: <code>slides/*.png</code> с небесным фоном и облаками, и <code>transparent/*.png</code> — те же слайды на прозрачном фоне (только карточки, пилюли и маскот). Прозрачный вариант удобно класть на любой фон в презентации.</span>
+  </div>
+</main>
+
+<div class="viewer" id="viewer" onclick="if(event.target===this) closeShow()">
+  <button class="close" onclick="closeShow()">✕</button>
+  <div class="nav">
+    <button onclick="step(-1)">‹</button>
+    <button onclick="step(1)">›</button>
+  </div>
+  <img id="viewImg" alt="">
+</div>
+
+<script>
+const slides = [
+  {f:"01-cover.png", n:"01 — Титульный", d:"Навыки ДПТ и осознанности — бережно, по шагам"},
+  {f:"02-dbt.png", n:"02 — Что такое ДБТ", d:"Диалектико-поведенческая терапия простыми словами + диалектика принятия и изменения"},
+  {f:"03-forwhom.png", n:"03 — Для кого", d:"Кого накрывает, чувствительность, нейроотличность"},
+  {f:"04-modules.png", n:"04 — Пять блоков", d:"29 практик в 5 блоках с XP"},
+  {f:"05-practice.png", n:"05 — Как устроена практика", d:"4 шага + пример «Четыре корзины» и мини-версия"},
+  {f:"06-inside.png", n:"06 — Что ещё внутри", d:"Дневник, чат, эмбиент, доски, тетрадь"},
+  {f:"07-results.png", n:"07 — Что меняется", d:"6 результатов + дисклеймер"},
+  {f:"08-start.png", n:"08 — Маленький шаг", d:"Начни с 5 минут, Дибитишка рядом"},
+];
+
+const grid = document.getElementById('grid');
+slides.forEach((s,i)=>{
+  const el = document.createElement('div');
+  el.className='card';
+  el.innerHTML = `
+    <img src="slides/${s.f}" alt="${s.n}" loading="lazy" onclick="openShow(${i})">
+    <div class="meta">
+      <b>${s.n}</b><span>· ${s.d}</span>
+      <a href="slides/${s.f}" download>фон</a>
+      <a href="transparent/${s.f}" download style="color:#7A8EB6">проза</a>
+    </div>`;
+  grid.appendChild(el);
+});
+
+let idx=0;
+const viewer=document.getElementById('viewer');
+const img=document.getElementById('viewImg');
+function openShow(i){ idx=i; img.src='slides/'+slides[idx].f; viewer.classList.add('on');}
+function closeShow(){ viewer.classList.remove('on');}
+function step(d){ idx=(idx+d+slides.length)%slides.length; img.src='slides/'+slides[idx].f; }
+function startShow(){ openShow(0); }
+document.addEventListener('keydown',e=>{
+  if(!viewer.classList.contains('on')) return;
+  if(e.key==='Escape') closeShow();
+  if(e.key==='ArrowLeft') step(-1);
+  if(e.key==='ArrowRight') step(1);
+});
+function downloadAll(){ window.location.href='../presentation.zip'; }
+</script>
+</body>
+</html>
