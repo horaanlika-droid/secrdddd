@@ -48,7 +48,12 @@ const check=(name,fn)=>{
     checks++; console.log('  ✓ '+name);
   }
   catch (e) {
-    const message=String(e&&e.message||e).split('\n')[0];
+    /* Первая строка ошибки assert — это наше пояснение («плашка с музыкой есть»),
+       а суть (что именно не совпало) живёт дальше. В CI читается аннотация, а не
+       лог шага, поэтому в неё кладём несколько строк, иначе вместо причины видно
+       только заголовок проверки. */
+    const lines=String((e&&e.message)||e).split('\n').map((l)=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+    const message=lines.slice(0,8).join(' | ');
     failures.push({name,message});
     console.log('  ✗ '+name+(message?' — '+message:''));
     if (process.env.GITHUB_ACTIONS) console.log(`::error title=${name}::${message.slice(0,800)}`);
@@ -285,10 +290,40 @@ try {
   await page.locator('.board-search').fill('');
   await page.waitForFunction(()=>document.querySelectorAll('.tile-photo img').length===2&&[...document.querySelectorAll('.tile-photo img')].every(img=>img.naturalWidth));
   check('images survive reload and filter redraw',()=>assert.equal(page.url(),boardRoute));
-  await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
+  /* Доска — свободный коллаж (итерация 43): плитки лежат абсолютно и по замыслу
+     наезжают друг на друга. Поэтому «кликни первую плитку» в лоб не работает —
+     Playwright честно ждёт, что клик достанется именно ей, а его перехватывает
+     соседняя плитка, и через 30 с сценарий обрывается. Ищем точку, где нужная
+     плитка действительно сверху: ровно так же её открыл бы человек. Заодно это
+     содержательная проверка — фото, целиком закрытое соседями, не открыть. */
+  const tilePoint=async(sel)=>{
+    await page.locator(sel).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(250);
+    return page.evaluate((s)=>{
+      const tiles=[...document.querySelectorAll(s)];
+      const spots=[[.5,.5],[.5,.3],[.3,.5],[.7,.5],[.5,.7],[.25,.25],[.75,.25],[.25,.75],[.75,.75],[.5,.15],[.5,.85]];
+      for(let i=0;i<tiles.length;i++){
+        const r=tiles[i].getBoundingClientRect();
+        if(r.bottom<0||r.top>innerHeight) continue;
+        for(const [fx,fy] of spots){
+          const x=Math.round(r.left+r.width*fx),y=Math.round(r.top+r.height*fy);
+          const hit=document.elementFromPoint(x,y);
+          if(hit&&tiles[i].contains(hit)) return {index:i,x,y};
+        }
+      }
+      return null;
+    },sel);
+  };
+  const photoTap=await tilePoint('.tile-photo');
+  check('свободный холст: фото открывается касанием, а не спрятано под соседями',()=>assert(photoTap,'ни одна точка фото-плитки не доступна для касания — её не открыть'));
+  await page.mouse.click(photoTap.x,photoTap.y);
+  await page.getByRole('button',{name:'Поставить фоном доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
-  await page.locator('.tile-photo').first().click();await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
+  const photoTap2=await tilePoint('.tile-photo');
+  check('после перезагрузки фото снова можно открыть касанием',()=>assert(photoTap2,'после перезагрузки плитка фото недоступна для касания'));
+  await page.mouse.click(photoTap2.x,photoTap2.y);
+  await page.getByRole('button',{name:'Убрать с доски',exact:true}).click();
   await page.reload({waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
   await page.waitForFunction(()=>document.querySelector('.board-space-bg').style.backgroundImage.includes('blob:'));
   const remainingPhotos=await page.locator('.tile-photo').count();
@@ -336,7 +371,19 @@ try {
       createConvolver(){window.__convolvers++;return super.createConvolver();}
     };
   });
-  await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  /* Переход с «/#/boards/...» на «/#/sound» меняет только якорь: документ не
+     перезагружается, и зонд, поставленный через addInitScript, не появляется.
+     Поэтому грузим страницу по-настоящему — иначе window.__osc нет, и раздел
+     музыки падает на первом же evaluate. */
+  await page.goto(origin+'/#/sound',{waitUntil:'networkidle'});
+  await page.reload({waitUntil:'networkidle'});
+  await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(400);
+  const probe=await page.evaluate(()=>({ctx:typeof window.__ctxCount,osc:Array.isArray(window.__osc),pan:typeof window.__pans}));
+  check('зонд Web Audio поставлен до загрузки приложения',()=>{
+    assert.equal(probe.ctx,'number','window.__ctxCount не появился: addInitScript не отработал');
+    assert.equal(probe.osc,true,'window.__osc не массив — считать генераторы нечем');
+    assert.equal(probe.pan,'number','window.__pans не появился');
+  });
   const musicCopy=await page.evaluate(()=>({
     explain:(document.querySelector('.sound-what')||{}).innerText||'',
     chord:(document.querySelector('.sound-chord')||{}).innerText||'',
@@ -387,7 +434,13 @@ try {
       return await new Promise((res) => {
         let done = false;
         const fin = (v) => { if (!done) { done = true; try { ctx.close(); } catch (e) {} res(v); } };
-        try { ctx.decodeAudioData(bytes, () => fin(true), () => fin(false)); } catch (e) { fin(false); }
+        let p;
+        try { p = ctx.decodeAudioData(bytes, () => fin(true), () => fin(false)); } catch (e) { fin(false); }
+        /* Chromium возвращает промис, даже когда переданы обратные вызовы.
+           Отказ надо забрать: иначе «Unable to decode audio data» всплывает
+           ошибкой страницы и валит проверку «нет ошибок страницы», хотя
+           приложение этот отказ обрабатывает (app/js/ambient.js, decodeAudio). */
+        if (p && typeof p.then === 'function') p.then(() => {}, () => {});
         setTimeout(() => fin(false), 4000);
       });
     } catch (e) { return false; }
@@ -448,14 +501,24 @@ try {
     assert(total<=3*1024*1024,`весь звук ${(total/1048576).toFixed(2)} МБ — бюджет 3 МБ`);
   });
   await page.screenshot({path:path.join(ART,'sound-screen.png'),fullPage:true});
-  /* музыка не должна обрываться при переходе на другой экран */
-  await page.goto(origin+'/',{waitUntil:'networkidle'});await page.locator('#splash.gone').waitFor({state:'attached'});await page.waitForTimeout(500);
+  /* Музыка не должна обрываться при переходе на другой экран. Переходим так,
+     как это делает человек, — тапом по вкладке, то есть сменой якоря внутри
+     приложения: page.goto(origin+'/') может перезагрузить документ, и тогда
+     проверка измерит не «музыка пережила переход», а «страница перезагрузилась»
+     (вместе с ней обнуляется и зонд, и движок). */
+  await page.evaluate(()=>{location.hash='';});
+  await page.waitForTimeout(600);
   const onHome=await page.evaluate(()=>({
     pill:document.querySelectorAll('.sound-pill').length,
-    teaser:(document.querySelector('.sound-teaser')||{}).className||''
+    teaser:(document.querySelector('.sound-teaser')||{}).className||'',
+    hash:location.hash,
+    ctxCount:window.__ctxCount,
+    osc:(window.__osc||[]).length,
+    pillText:(document.querySelector('.sound-pill-copy')||{}).textContent||''
   }));
   check('музыка переживает переход на главную: плашка и живой тизер',()=>{
-    assert.equal(onHome.pill,1,'плашка с музыкой есть');
+    assert(onHome.ctxCount>=1,`документ перезагрузился, зонд обнулился: ${JSON.stringify(onHome)}`);
+    assert.equal(onHome.pill,1,`плашка с музыкой: ${JSON.stringify(onHome)}`);
     assert(onHome.teaser.includes('on'),`тизер показывает идущую сессию: ${onHome.teaser}`);
   });
   await page.evaluate(()=>{
@@ -488,8 +551,51 @@ try {
       const layout=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,bar:document.querySelector('#tabbar').hidden?getComputedStyle(document.querySelector('#tabbar')).display:'visible',nav:(()=>{const back=document.querySelector('.navbar .back'),title=document.querySelector('.navbar h2');return back&&title?back.getBoundingClientRect().right<=title.getBoundingClientRect().left:true;})()}));
       check(`${width}px ${route||'home'}: no horizontal overflow or navbar collision`,()=>{assert(layout.scroll<=layout.viewport,JSON.stringify(layout));assert(layout.nav);if(['boards','board'].includes(route.split('/')[0]))assert.equal(layout.bar,'none');});
       if(route.startsWith('board/')) {
-        const fits=await page.locator('.tile').evaluateAll(tiles=>tiles.every(tile=>{const a=tile.getBoundingClientRect(),b=tile.closest('.board-canvas').getBoundingClientRect();return a.left>=b.left&&a.right<=b.right&&a.top>=b.top&&a.bottom<=b.bottom;}));
-        check(`${width}px rotated tiles stay inside board`,()=>assert(fits));
+        /* Доска — свободный коллаж (итерация 43): плитки повёрнуты и могут
+           выступать за холст, это замысел. Обязательное другое — плитка не
+           должна уезжать за экран (иначе до неё не дотянуться и появляется
+           горизонтальная прокрутка). Насколько плитки выступают за холст,
+           печатаем в лог: по этим числам видно, не уехал ли коллаж слишком. */
+        const fit=await page.locator('.tile').evaluateAll(tiles=>{
+          return tiles.map((tile,i)=>{
+            const canvas=tile.closest('.board-canvas');
+            if(!canvas) return {i,none:true};
+            const a=tile.getBoundingClientRect();                       /* повёрнутая коробка */
+            const w=tile.offsetWidth,h=tile.offsetHeight;               /* коробка до поворота */
+            const rot=parseFloat(getComputedStyle(tile).getPropertyValue('--rot'))||0;
+            const rad=Math.abs(rot*Math.PI/180);
+            /* насколько поворот вообще может расширить коробку — считаем из
+               размеров и угла этой же плитки, а не на глаз */
+            const growH=Math.max(0,(w*Math.abs(Math.cos(rad))+h*Math.abs(Math.sin(rad))-w)/2);
+            const growV=Math.max(0,(w*Math.abs(Math.sin(rad))+h*Math.abs(Math.cos(rad))-h)/2);
+            const b=canvas.getBoundingClientRect();
+            return {i,rot:Math.round(rot*10)/10,w,h,
+              hidden:!w||!h,
+              /* раскладка (left/top/width) — внутри холста: за его краем
+                 плитку не увидеть целиком и не достать пальцем */
+              layoutOver:Math.round(Math.max(-tile.offsetLeft,-tile.offsetTop,
+                tile.offsetLeft+w-canvas.clientWidth,tile.offsetTop+h-canvas.clientHeight,0)),
+              /* повёрнутая коробка против холста и против экрана */
+              overCanvas:Math.round(Math.max(b.left-a.left,a.right-b.right,b.top-a.top,a.bottom-b.bottom,0)),
+              outView:Math.round(Math.max(-a.left,a.right-innerWidth,0)),
+              growH:Math.round(growH),growV:Math.round(growV)};
+          });
+        });
+        const real=fit.filter(t=>!t.none&&!t.hidden);
+        const worst=(k)=>real.length?Math.max(...real.map(t=>t[k])):0;
+        const notice=`${width}px доска: плиток ${real.length}/${fit.length}, поворот до ${worst('rot')}°, раскладка за холстом до ${worst('layoutOver')}px, повёрнутая коробка за холстом до ${worst('overCanvas')}px (поворот объясняет ${worst('growH')}px), за экраном до ${worst('outView')}px`;
+        console.log('  · '+notice);
+        if (process.env.GITHUB_ACTIONS) console.log(`::notice title=доска ${width}px::${notice}`);
+        check(`${width}px rotated tiles stay inside board`,()=>{
+          assert.equal(fit.filter(t=>t.none).length,0,`плитки вне холста: ${JSON.stringify(fit.filter(t=>t.none))}`);
+          const badLayout=real.filter(t=>t.layoutOver>1);
+          assert.equal(badLayout.length,0,`раскладка плитки вылезла за холст (поворот ни при чём): ${JSON.stringify(badLayout.slice(0,3))}`);
+          /* за край экрана плитку может вытолкнуть только её собственный поворот */
+          const badView=real.filter(t=>t.outView>t.growH+1);
+          assert.equal(badView.length,0,`плитка за экраном больше, чем объясняет поворот: ${JSON.stringify(badView.slice(0,3))}`);
+          const badCanvas=real.filter(t=>t.overCanvas>Math.max(t.growH,t.growV)+1);
+          assert.equal(badCanvas.length,0,`повёрнутая коробка дальше от холста, чем объясняет поворот: ${JSON.stringify(badCanvas.slice(0,3))}`);
+        });
         await page.screenshot({path:path.join(ART,`board-${width}.png`),fullPage:true});
       }
     }
@@ -569,7 +675,12 @@ try {
   }
   await hintPage.close();
 
-  check('browser run has no script errors or missing local assets',()=>{assert.deepEqual(errors,[]);assert.deepEqual(missing,[]);});
+  check('browser run has no script errors or missing local assets',()=>{
+    /* без содержимого в сообщении аннотация показывает только «не равны» —
+       а смотреть нужно именно что за ошибка и какой файл не отдался */
+    assert.equal(errors.length,0,'ошибки страницы: '+errors.slice(0,3).join(' ;; ').slice(0,600));
+    assert.equal(missing.length,0,'не отдались: '+missing.slice(0,6).join(' ;; ').slice(0,600));
+  });
   if(failures.length) {
     console.log(`\n✗ упало проверок: ${failures.length} из ${checks+failures.length}`);
     process.exitCode=1;
