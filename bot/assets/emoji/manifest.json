@@ -1,0 +1,208 @@
+{
+  "title": "Дибитишка · эмоции",
+  "short_name_prefix": "dibitishka_faces_v1",
+  "size": 100,
+  "max_bytes": 65536,
+  "emoji": [
+    {
+      "id": "hello",
+      "label": "привет",
+      "emoji": [
+        "👋"
+      ],
+      "file": "hello.png",
+      "source": "bot/assets/mascot/hello.png",
+      "webp": "hello.webp"
+    },
+    {
+      "id": "joy",
+      "label": "радостно",
+      "emoji": [
+        "😄"
+      ],
+      "file": "joy.png",
+      "source": "bot/assets/mascot/faces/joy.png",
+      "webp": "joy.webp"
+    },
+    {
+      "id": "fun",
+      "label": "весело",
+      "emoji": [
+        "😜"
+      ],
+      "file": "fun.png",
+      "source": "bot/assets/mascot/faces/fun.png",
+      "webp": "fun.webp"
+    },
+    {
+      "id": "warm",
+      "label": "тепло",
+      "emoji": [
+        "🥰"
+      ],
+      "file": "warm.png",
+      "source": "bot/assets/mascot/faces/warm.png",
+      "webp": "warm.webp"
+    },
+    {
+      "id": "love",
+      "label": "с любовью",
+      "emoji": [
+        "❤️"
+      ],
+      "file": "love.png",
+      "source": "bot/assets/mascot/faces/love.png",
+      "webp": "love.webp"
+    },
+    {
+      "id": "proud_face",
+      "label": "горжусь",
+      "emoji": [
+        "😌"
+      ],
+      "file": "proud_face.png",
+      "source": "bot/assets/mascot/faces/proud.png",
+      "webp": "proud_face.webp"
+    },
+    {
+      "id": "calm",
+      "label": "спокойно",
+      "emoji": [
+        "😌"
+      ],
+      "file": "calm.png",
+      "source": "bot/assets/mascot/faces/calm.png",
+      "webp": "calm.webp"
+    },
+    {
+      "id": "even",
+      "label": "ровно",
+      "emoji": [
+        "🙂"
+      ],
+      "file": "even.png",
+      "source": "bot/assets/mascot/faces/even.png",
+      "webp": "even.webp"
+    },
+    {
+      "id": "curious",
+      "label": "любопытно",
+      "emoji": [
+        "🤔"
+      ],
+      "file": "curious.png",
+      "source": "bot/assets/mascot/faces/curious.png",
+      "webp": "curious.webp"
+    },
+    {
+      "id": "surprised",
+      "label": "удивлённо",
+      "emoji": [
+        "😮"
+      ],
+      "file": "surprised.png",
+      "source": "bot/assets/mascot/faces/surprised.png",
+      "webp": "surprised.webp"
+    },
+    {
+      "id": "unclear",
+      "label": "непонятно",
+      "emoji": [
+        "😕"
+      ],
+      "file": "unclear.png",
+      "source": "bot/assets/mascot/faces/unclear.png",
+      "webp": "unclear.webp"
+    },
+    {
+      "id": "mixed",
+      "label": "смешанно",
+      "emoji": [
+        "🌀"
+      ],
+      "file": "mixed.png",
+      "source": "bot/assets/mascot/faces/mixed.png",
+      "webp": "mixed.webp"
+    },
+    {
+      "id": "hard",
+      "label": "тяжело",
+      "emoji": [
+        "😖"
+      ],
+      "file": "hard.png",
+      "source": "bot/assets/mascot/faces/hard.png",
+      "webp": "hard.webp"
+    },
+    {
+      "id": "sad",
+      "label": "грустно",
+      "emoji": [
+        "😢"
+      ],
+      "file": "sad.png",
+      "source": "bot/assets/mascot/faces/sad.png",
+      "webp": "sad.webp"
+    },
+    {
+      "id": "anxious",
+      "label": "тревожно",
+      "emoji": [
+        "😰"
+      ],
+      "file": "anxious.png",
+      "source": "bot/assets/mascot/faces/anxious.png",
+      "webp": "anxious.webp"
+    },
+    {
+      "id": "angry",
+      "label": "сердито",
+      "emoji": [
+        "😠"
+      ],
+      "file": "angry.png",
+      "source": "bot/assets/mascot/faces/angry.png",
+      "webp": "angry.webp"
+    },
+    {
+      "id": "sleepy",
+      "label": "сонно",
+      "emoji": [
+        "😴"
+      ],
+      "file": "sleepy.png",
+      "source": "bot/assets/mascot/faces/sleepy.png",
+      "webp": "sleepy.webp"
+    },
+    {
+      "id": "hug",
+      "label": "обнимаю",
+      "emoji": [
+        "🫂"
+      ],
+      "file": "hug.png",
+      "source": "bot/assets/mascot/hug.png",
+      "webp": "hug.webp"
+    },
+    {
+      "id": "proud",
+      "label": "справился",
+      "emoji": [
+        "🌟"
+      ],
+      "file": "proud.png",
+      "source": "bot/assets/mascot/proud.png",
+      "webp": "proud.webp"
+    },
+    {
+      "id": "meditate",
+      "label": "дышу",
+      "emoji": [
+        "🧘"
+      ],
+      "file": "meditate.png",
+      "source": "bot/assets/mascot/meditate.png",
+      "webp": "meditate.webp"
+    }
+  ]
+}

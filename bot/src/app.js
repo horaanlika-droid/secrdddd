@@ -27,6 +27,7 @@ import { createWebAuth, loginCode, readJson } from './web-auth.js';
 import { createBoardApi } from './boards.js';
 import { createGifApi } from './gif.js';
 import { registerStickers } from './stickers.js';
+import { registerEmoji } from './emoji.js';
 import { createWorkbookApi } from './workbook.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -261,6 +262,7 @@ const getPath = (obj, p) => p.split('.').reduce((a, k) => a === undefined ? a : 
 
 /* ---------- пользовательские команды ---------- */
 const showStickers = registerStickers(bot, { db, save, isAdmin });
+const showEmoji = registerEmoji(bot, { db, save, isAdmin });
 bot.command('start', async (ctx) => {
   const u = getUser(ctx);
   if (!u.trial_start) u.trial_start = Date.now();
@@ -269,10 +271,12 @@ bot.command('start', async (ctx) => {
   // Старые pay_m3/pay_m6 тоже мягко приводим к единственному месячному варианту.
   const payload = String(ctx.match || '').trim();
   if (payload === 'stickers') return showStickers(ctx);
+  if (payload === 'emoji') return showEmoji(ctx);
   if (payload.startsWith('pay_')) return payFlow(ctx, planById());
   const img = MASCOT('hello');
   const text = `Привет, ${u.name}! Я Дибитишка — слезинка, которая помогает дружить с чувствами.\n\nВо мне: пять блоков практик осознанности и ДПТ, практика дня, мягкие альтернативы, дневник эмоций, письменные задания, чат поддержки и печатная тетрадь.\n\nПервая неделя бесплатно, потом ${plansLine()}. Оплата — командой /pay.\n\nВеб-версия: открой мини-приложение или зайди по коду — команда /code.`;
-  const reply_markup = new InlineKeyboard().text('💜 Стикеры Дибитишки', 'show_stickers');
+  const reply_markup = new InlineKeyboard().text('💜 Стикеры Дибитишки', 'show_stickers').row()
+    .text('💧 Эмодзи для Premium', 'show_emoji');
   if (img) await ctx.replyWithPhoto(img, { caption: text, reply_markup });
   else await ctx.reply(text, { reply_markup });
 });
@@ -282,17 +286,23 @@ bot.callbackQuery('show_stickers', async ctx => {
   return showStickers(ctx);
 });
 
+bot.callbackQuery('show_emoji', async ctx => {
+  await ctx.answerCallbackQuery();
+  return showEmoji(ctx);
+});
+
 bot.command('help', (ctx) => ctx.reply(
   'Я Дибитишка. Команды:\n' +
   '/today — практика дня с комментарием\n' +
   '/stickers — стикеры Дибитишки\n' +
+  '/emoji — эмодзи Дибитишки (пак для Telegram Premium)\n' +
   '/code — одноразовый код для входа в веб-версию\n' +
   '/reminder 09:00 — ежедневный пуш (off — выключить)\n' +
   '/pay — оформить подписку (Tribute)\n' +
   '/status — моя подписка и прогресс\n' +
   '/reset — начать разговор со мной с чистого листа\n' +
   '\nА ещё можно просто написать мне, что сейчас происходит, — я отвечу.\n' +
-  (isAdmin(ctx) ? '\nАдмин: /admin · /publish_stickers — опубликовать стикерпак' : '')
+  (isAdmin(ctx) ? '\nАдмин: /admin · /publish_stickers — опубликовать стикерпак · /publish_emoji — опубликовать эмодзи-пак' : '')
 ));
 
 /* Примеры к практике (p.extras) — те же, что показывает веб. Без них шаги вроде

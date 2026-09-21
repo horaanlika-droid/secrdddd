@@ -94,6 +94,8 @@ jobs:
         run: npm run workbook-test
       - name: стикеры — публикация и права
         run: npm run stickers-test
+      - name: эмодзи-пак — формат 100×100 и публикация custom_emoji
+        run: npm run emoji-test
       - name: Chromium
         run: npx playwright install --with-deps chromium
       - name: мобильная вёрстка, реальные фото и экспорт
