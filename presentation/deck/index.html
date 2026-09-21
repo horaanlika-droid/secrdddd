@@ -4,571 +4,540 @@
 <meta charset="utf-8">
 <title>Yo Kit — презентация концепта мини-приложения</title>
 <style>
-@font-face{font-family:'Manrope';font-style:normal;font-weight:200 800;font-display:block;
-  src:url('assets/manrope-cyrillic-wght-normal.woff2') format('woff2');
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:block;
+  src:url('assets/inter-cyrillic-wght-normal.woff2') format('woff2');
   unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;}
-@font-face{font-family:'Manrope';font-style:normal;font-weight:200 800;font-display:block;
-  src:url('assets/manrope-latin-wght-normal.woff2') format('woff2');
-  unicode-range:U+0000-00FF,U+2000-206F,U+FEFF,U+FFFD;}
-@font-face{font-family:'JBM';font-style:normal;font-weight:100 800;font-display:block;
-  src:url('assets/jetbrains-mono-cyrillic-wght-normal.woff2') format('woff2');
-  unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;}
-@font-face{font-family:'JBM';font-style:normal;font-weight:100 800;font-display:block;
-  src:url('assets/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
-  unicode-range:U+0000-00FF,U+2000-206F,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:block;
+  src:url('assets/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122,U+FEFF,U+FFFD;}
 :root{
-  --paper:#f4f0e4; --sheet:rgba(252,250,243,.9); --ink:#1d3350; --ink2:#41597a; --pencil:#6d6a60; --hint:#71808f;
-  --line:rgba(29,51,80,.32); --line2:rgba(29,51,80,.16); --grid:rgba(29,51,80,.06); --grid2:rgba(29,51,80,.10);
-  --red:#c2452d; --coffee:rgba(146,96,44,.10);
+  --bg:#f4f1e8; --card:#fdfbf5; --ink:#1d3350; --hint:#8d97a5; --pencil:#5f6b7a;
+  --sep:rgba(29,51,80,.14); --sep2:rgba(29,51,80,.08);
+  --acc:#b3762f; --acc2:#c98d4b; --acct:rgba(179,118,47,.12);
+  --red:#c2452d; --green:#5d8a54;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#c9c2b0;font-family:'Manrope',system-ui,sans-serif;color:var(--ink)}
-.slide{width:1920px;height:1080px;position:relative;overflow:hidden;page-break-after:always;break-after:page;background:
-  radial-gradient(circle at 88% 12%, transparent 0 60px, var(--coffee) 61px 64px, rgba(146,96,44,.04) 65px 68px, transparent 70px),
-  radial-gradient(circle at 7% 82%, transparent 0 40px, rgba(146,96,44,.08) 41px 43px, transparent 45px),
-  radial-gradient(ellipse at 60% 40%, rgba(120,100,70,.045), transparent 60%),
-  repeating-linear-gradient(101deg, transparent 0 260px, rgba(70,60,45,.045) 260px 261px, transparent 261px 520px),
-  repeating-linear-gradient(0deg, var(--grid2) 0 1px, transparent 1px 80px),
-  repeating-linear-gradient(90deg, var(--grid2) 0 1px, transparent 1px 80px),
-  repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 16px),
-  repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 16px),
-  var(--paper);}
+body{background:#e6e1d3;font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}
+.slide{width:1920px;height:1080px;position:relative;overflow:hidden;page-break-after:always;break-after:page;background:var(--bg)}
 .slide:last-child{page-break-after:auto;break-after:auto}
-/* рамка листа */
-.frame{position:absolute;inset:26px;border:1.5px solid var(--line);pointer-events:none}
-.frame::before{content:"";position:absolute;inset:5px;border:1px solid var(--line2)}
-.frame .tick{position:absolute;width:18px;height:18px}
-.frame .tick.tl{left:-9px;top:-9px;border-left:2px solid var(--red);border-top:2px solid var(--red)}
-.frame .tick.br{right:-9px;bottom:-9px;border-right:2px solid var(--red);border-bottom:2px solid var(--red)}
-/* штамп листа внизу */
-.tb{position:absolute;left:26px;right:26px;bottom:26px;height:46px;border-top:1.5px solid var(--line);display:flex;background:rgba(250,247,238,.65)}
-.tb div{padding:7px 16px;font-family:'JBM';font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);border-right:1px solid var(--line2);display:flex;align-items:center;gap:8px}
-.tb div b{color:var(--ink);font-weight:700}
-.tb div:last-child{border-right:0;margin-left:auto}
-/* шапка слайда */
-.sh{position:absolute;left:70px;right:70px;top:56px;display:flex;align-items:flex-end;gap:22px}
-.sh .kick{font-family:'JBM';font-size:12px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--red);padding-bottom:8px}
-.sh h2{font-size:44px;font-weight:800;letter-spacing:-.5px;line-height:1.05}
-.sh .rule{flex:1;height:1px;background:var(--line);margin-bottom:14px;position:relative}
-.sh .rule::after{content:"";position:absolute;right:0;top:-3px;width:7px;height:7px;background:var(--red);transform:rotate(45deg)}
-.sh .no{font-family:'JBM';font-size:12px;font-weight:700;letter-spacing:.16em;color:var(--ink2);padding-bottom:9px}
-.body{position:absolute;left:70px;right:70px;top:150px;bottom:96px}
+/* системный хедер слайда: как список-шапка в TG */
+.top{position:absolute;left:96px;right:96px;top:74px;display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--sep);padding-bottom:22px}
+.top .kick{font-size:14px;font-weight:650;letter-spacing:.14em;text-transform:uppercase;color:var(--acc)}
+.top h2{font-size:42px;font-weight:700;letter-spacing:-.6px;flex:1}
+.top .pg{font-size:14px;color:var(--hint);font-weight:550}
+.bot{position:absolute;left:96px;right:96px;bottom:52px;border-top:1px solid var(--sep);padding-top:16px;display:flex;gap:40px;font-size:13.5px;color:var(--hint)}
+.bot b{color:var(--pencil);font-weight:600}
+.body{position:absolute;left:96px;right:96px;top:172px;bottom:118px}
+/* карточки как группированные списки */
+.card{background:var(--card);border-radius:14px;position:relative;box-shadow:0 1px 2px rgba(29,51,80,.06)}
+.card .in{padding:26px 30px}
+h3.bl{font-size:13px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--hint);margin-bottom:14px}
+.red{color:var(--red)} .acc{color:var(--acc)}
 /* телефон */
-.ph{width:322px;height:696px;border:1.6px solid var(--ink);border-radius:24px;overflow:hidden;position:relative;background:var(--paper);box-shadow:7px 7px 0 rgba(29,51,80,.13);flex:0 0 322px}
+.ph{width:318px;height:688px;border:9px solid #10161d;border-radius:38px;overflow:hidden;position:relative;background:var(--bg);flex:0 0 318px;box-shadow:0 18px 44px rgba(29,51,80,.22)}
 .ph img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
-.ph .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(29,51,80,.92);color:var(--paper);font-family:'JBM';font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;padding:6px 4px}
-.phs{display:flex;gap:34px;align-items:flex-start}
+.ph .cap{position:absolute;left:0;right:0;bottom:0;background:rgba(16,22,29,.88);color:#f4f1e8;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;text-align:center;padding:7px 4px}
+.phs{display:flex;gap:36px}
 /* аннотации */
-.ann{flex:1;display:flex;flex-direction:column;gap:15px;min-width:0;justify-content:center}
-.ann .a{display:flex;gap:14px;align-items:flex-start;border-bottom:1px dashed var(--line2);padding-bottom:14px}
-.ann .a:last-child{border-bottom:0}
-.ann .n{font-family:'JBM';font-size:12px;font-weight:700;color:var(--red);border:1.4px solid rgba(194,69,45,.6);width:26px;height:26px;flex:0 0 26px;display:flex;align-items:center;justify-content:center;border-radius:50%;transform:rotate(-4deg)}
-.ann b{font-size:17px;font-weight:800;display:block;line-height:1.25}
-.ann span{font-size:14px;color:var(--pencil);line-height:1.5;display:block;margin-top:4px}
-.ann .mono{font-family:'JBM';font-size:11px;color:var(--ink2);letter-spacing:.06em}
-/* карточки/таблицы */
-.card{background:var(--sheet);border:1px solid var(--line);border-radius:6px;position:relative;box-shadow:0 1px 0 rgba(29,51,80,.05),0 10px 26px rgba(90,70,40,.07)}
-.card::before{content:"";position:absolute;inset:6px;pointer-events:none;opacity:.4;background:
-  linear-gradient(var(--ink2),var(--ink2)) left top/10px 1px,linear-gradient(var(--ink2),var(--ink2)) left top/1px 10px,
-  linear-gradient(var(--ink2),var(--ink2)) right top/10px 1px,linear-gradient(var(--ink2),var(--ink2)) right top/1px 10px,
-  linear-gradient(var(--ink2),var(--ink2)) left bottom/10px 1px,linear-gradient(var(--ink2),var(--ink2)) left bottom/1px 10px,
-  linear-gradient(var(--ink2),var(--ink2)) right bottom/10px 1px,linear-gradient(var(--ink2),var(--ink2)) right bottom/1px 10px;
-  background-repeat:no-repeat}
-.stamp{display:inline-block;border:2px solid rgba(194,69,45,.72);color:rgba(194,69,45,.9);font-family:'JBM';font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;padding:10px 16px;border-radius:6px;background:rgba(194,69,45,.05);text-align:center;line-height:1.6}
-.tape{position:absolute;width:110px;height:30px;background:rgba(213,196,152,.6);box-shadow:0 1px 3px rgba(60,45,20,.12)}
-h3.bl{font-family:'JBM';font-size:12px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--ink2);margin-bottom:14px;display:flex;align-items:center;gap:10px}
-h3.bl::after{content:"";flex:1;height:1px;background:var(--line2)}
-.mono{font-family:'JBM'}
-.red{color:var(--red)}
-/* обзорная сетка */
-.grid9{display:grid;grid-template-columns:repeat(5,1fr);gap:22px}
-.grid9 .cell{position:relative}
-.grid9 .ph{width:100%;height:auto;aspect-ratio:390/844;box-shadow:4px 4px 0 rgba(29,51,80,.12)}
-.grid9 .lb{font-family:'JBM';font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);margin-top:8px;display:flex;gap:8px;align-items:center}
-.grid9 .lb i{font-style:normal;color:var(--red);font-weight:700}
-/* диаграммы */
-.flow{display:flex;align-items:stretch;gap:0}
-.flow .nd{flex:1;position:relative;padding:16px 18px 14px;border:1.4px solid var(--ink);background:var(--sheet);margin-right:34px;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
+.ann{flex:1;display:flex;flex-direction:column;gap:18px;justify-content:center;min-width:0}
+.ann .a{display:flex;gap:16px;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid var(--sep2)}
+.ann .a:last-child{border-bottom:0;padding-bottom:0}
+.ann .n{width:28px;height:28px;flex:0 0 28px;border-radius:8px;background:var(--acct);color:var(--acc);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ann b{font-size:18px;font-weight:650;display:block;letter-spacing:-.2px}
+.ann span{font-size:15px;color:var(--pencil);line-height:1.55;display:block;margin-top:4px}
+/* flow */
+.flow{display:flex;gap:0;align-items:stretch}
+.flow .nd{flex:1;background:var(--card);border-radius:14px;padding:18px 20px;margin-right:44px;position:relative;box-shadow:0 1px 2px rgba(29,51,80,.06)}
 .flow .nd:last-child{margin-right:0}
-.flow .nd b{font-size:15.5px;font-weight:800;display:block}
-.flow .nd span{font-family:'JBM';font-size:10px;color:var(--ink2);letter-spacing:.08em;display:block;margin-top:5px;line-height:1.6;text-transform:uppercase}
-.flow .nd::after{content:"";position:absolute;right:-27px;top:50%;width:20px;height:1.6px;background:var(--ink)}
-.flow .nd::before{content:"";position:absolute;right:-31px;top:50%;width:8px;height:8px;border-top:1.6px solid var(--ink);border-right:1.6px solid var(--ink);transform:translateY(-50%) rotate(45deg);z-index:1}
+.flow .nd b{font-size:17px;font-weight:650;display:block}
+.flow .nd span{font-size:12.5px;color:var(--hint);display:block;margin-top:6px;line-height:1.5}
+.flow .nd::after{content:"";position:absolute;right:-33px;top:50%;width:22px;height:2px;background:var(--acc)}
+.flow .nd::before{content:"";position:absolute;right:-37px;top:50%;width:9px;height:9px;border-top:2px solid var(--acc);border-right:2px solid var(--acc);transform:translateY(-50%) rotate(45deg)}
 .flow .nd:last-child::after,.flow .nd:last-child::before{display:none}
-table.spec{width:100%;border-collapse:collapse;background:var(--sheet);border:1px solid var(--line)}
-table.spec td,table.spec th{border:1px solid var(--line2);padding:12px 14px;font-size:14.5px;text-align:left;vertical-align:top}
-table.spec th{font-family:'JBM';font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink2);background:rgba(29,51,80,.05)}
-table.spec .sw{width:26px;height:26px;display:inline-block;border:1px solid var(--line);vertical-align:middle;margin-right:10px}
-table.spec td b{font-weight:800}
-table.spec td .mono{font-size:10.5px;color:var(--hint);display:block;margin-top:3px;letter-spacing:.05em}
+.flow .nd.hi{background:var(--acct)}
+/* таблица */
+table.spec{width:100%;border-collapse:collapse;background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(29,51,80,.06)}
+table.spec td,table.spec th{padding:13px 18px;font-size:15px;text-align:left;border-bottom:1px solid var(--sep2)}
+table.spec tr:last-child td{border-bottom:0}
+table.spec th{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--hint);font-weight:650;background:rgba(29,51,80,.03)}
+table.spec .dot{width:24px;height:24px;border-radius:7px;display:inline-block;vertical-align:middle;border:1px solid var(--sep)}
+table.spec td b{font-weight:600}
+table.spec td .s{font-size:12.5px;color:var(--hint);display:block;margin-top:2px}
+/* палитра */
+.pal{display:flex;gap:14px}
+.pal div{flex:1;border-radius:12px;overflow:hidden;background:var(--card);box-shadow:0 1px 2px rgba(29,51,80,.06)}
+.pal i{display:block;height:74px}
+.pal span{display:block;font-size:11.5px;font-weight:600;padding:9px 12px;color:var(--pencil)}
+.pal em{display:block;font-style:normal;font-size:10.5px;color:var(--hint);padding:0 12px 10px}
 </style>
 </head>
 <body>
 
-<!-- 01 ТИТУЛ -->
+<!-- 01 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div style="position:absolute;left:110px;top:150px;width:1180px">
-    <div style="display:flex;gap:26px;align-items:flex-start">
-      <div style="width:132px;height:132px;border:2.5px solid var(--ink);background:var(--sheet);display:flex;align-items:center;justify-content:center;box-shadow:8px 8px 0 rgba(29,51,80,.15);position:relative;flex:0 0 132px">
-        <span style="font-size:58px;font-weight:800;letter-spacing:-2px">Yo</span>
-        <span style="position:absolute;inset:8px;border:1px dashed var(--line)"></span>
-      </div>
-      <div style="padding-top:10px">
-        <div class="mono" style="font-size:14px;letter-spacing:.3em;color:var(--red);font-weight:700">КОНЦЕПТ · МИНИ-ПРИЛОЖЕНИЕ TELEGRAM</div>
-        <h1 style="font-size:96px;font-weight:800;letter-spacing:-2px;line-height:1.02;margin-top:14px">Yo Kit —<br>мебель как<br>конструктор</h1>
+  <div style="position:absolute;left:120px;top:190px;width:1120px">
+    <div style="display:flex;gap:30px;align-items:center">
+      <div style="width:112px;height:112px;border-radius:26px;background:linear-gradient(140deg,#c98d4b,#b3762f);display:flex;align-items:center;justify-content:center;color:#fff;font-size:44px;font-weight:750;flex:0 0 112px;box-shadow:0 14px 34px rgba(179,118,47,.35)">Yo</div>
+      <div>
+        <div style="font-size:15px;font-weight:650;letter-spacing:.16em;text-transform:uppercase;color:var(--acc)">Концепт · мини-приложение Telegram</div>
+        <h1 style="font-size:88px;font-weight:750;letter-spacing:-2.4px;line-height:1.03;margin-top:12px">Yo Kit — мебель<br>как конструктор</h1>
       </div>
     </div>
-    <p style="font-size:22px;color:var(--pencil);line-height:1.55;margin-top:34px;max-width:860px">
-      Мини-приложение для мастерской <b style="color:var(--ink)">«Столярочка Yo»</b>, Санкт-Петербург:
-      клиент собирает изделие из листов-заготовок портфолио, подбирает материалы и модули —
-      а в цех уходит чертёж, спецификация и эскиз.</p>
-    <div style="margin-top:40px;display:flex;gap:18px;align-items:center">
-      <span class="stamp" style="transform:rotate(-3deg)">чертёж » цех » ваш дом</span>
-      <span class="mono" style="font-size:13px;letter-spacing:.18em;color:var(--ink2)">МОКАП · 9 ЭКРАНОВ · 21.09.2026</span>
+    <p style="font-size:22px;line-height:1.55;color:var(--pencil);margin-top:36px;max-width:900px">Мини-приложение мастерской <b style="color:var(--ink)">«Столярочка Yo»</b>, Санкт-Петербург.
+    Интерфейс собран по паттернам официального клиента Telegram — списки, шторки, чат, —
+    но в цветах мастерской: тёплая бумага, чернильный, дерево и красный карандаш.</p>
+    <div style="margin-top:44px;display:flex;gap:14px;flex-wrap:wrap">
+      <span style="background:var(--acct);color:var(--acc);font-size:14px;font-weight:650;padding:9px 16px;border-radius:999px">9 экранов · кликабельный мокап</span>
+      <span style="background:var(--card);color:var(--pencil);font-size:14px;font-weight:600;padding:9px 16px;border-radius:999px;box-shadow:0 1px 2px rgba(29,51,80,.08)">конструктор из блоков, без шаблонов</span>
+      <span style="background:var(--card);color:var(--pencil);font-size:14px;font-weight:600;padding:9px 16px;border-radius:999px;box-shadow:0 1px 2px rgba(29,51,80,.08)">расчёт и договор — от мастера</span>
     </div>
   </div>
-  <div style="position:absolute;right:120px;top:170px;transform:rotate(8deg)" class="stamp">столярочка yo<br>спб · матисов 4<br>лист 01 / 18</div>
-  <div class="mono" style="position:absolute;right:120px;bottom:120px;text-align:right;font-size:12px;letter-spacing:.14em;color:var(--hint);line-height:2">МОКАП КЛИКАБЕЛЕН: 9 ЭКРАНОВ В БРАУЗЕРЕ<br>СКРИНШОТЫ: HEADLESS CHROMIUM · 390×844 @2X<br>ЯЗЫК: ВАТМАН · МЛММЕТРОВКА · СЛЕДЫ КОФЕ</div>
-  <div class="tb">
-    <div>yo kit · <b>титул</b></div><div>заказчик <b>столярочка yo</b></div><div>стадия <b>концепт-мокап</b></div><div><b>21.09.26</b></div>
-  </div>
+  <div style="position:absolute;right:120px;top:210px;width:340px" class="card"><div class="in">
+    <h3 class="bl">Лист 01 · титул</h3>
+    <div style="font-size:16px;line-height:1.7;color:var(--pencil)">Заказчик: столярная мастерская «Столярочка Yo»<br>Стадия: концепт-мокап<br>Дата: 21.09.2026<br>Состав: 18 листов</div>
+  </div></div>
+  <div class="bot"><span><b>yo kit</b> · титул</span><span>заказчик <b>столярочка yo · спб</b></span><span>стадия <b>концепт-мокап</b></span><span style="margin-left:auto"><b>21.09.26</b></span></div>
 </section>
 
-<!-- 02 КОНТЕКСТ -->
+<!-- 02 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">контекст</span><h2>Мастерская сегодня</h2><div class="rule"></div><span class="no">лист 02</span></div>
-  <div class="body" style="display:flex;gap:56px">
-    <div style="flex:1.05;display:flex;flex-direction:column;gap:20px">
-      <div class="card" style="padding:26px 28px"><span class="tape" style="left:-30px;top:16px;transform:rotate(-38deg)"></span>
-        <h3 style="font-size:24px;font-weight:800">Столярочка Yo · Санкт-Петербург</h3>
-        <p style="font-size:16.5px;line-height:1.6;color:var(--pencil);margin-top:10px">Мастерская проектирует и делает мебель по индивидуальным параметрам:
-        берёзовая фанера, массив дуба, ясеня, ореха, бука, карагача, слэбы, шпон, HPL-пластик.
-        Работает с частными заказчиками, дизайнерами и архитектурными бюро, по договору с физ- и юрлицами.</p>
-      </div>
-      <div class="card" style="padding:22px 28px">
-        <h3 class="bl">Каналы заявки сейчас</h3>
-        <div style="display:flex;flex-direction:column;gap:10px;font-size:16px;font-weight:600">
-          <div>Форма на сайте designyo.ru <span class="mono" style="color:var(--hint);font-size:12px">· имя, телефон, описание, эскиз до 10 файлов</span></div>
-          <div>WhatsApp, Telegram, VK, почта и звонок <span class="mono" style="color:var(--hint);font-size:12px">· +7 921 992-10-77</span></div>
-        </div>
-      </div>
-      <div class="card" style="padding:22px 28px;border-color:rgba(194,69,45,.5);background:rgba(194,69,45,.05)">
-        <h3 class="bl" style="color:var(--red)">Боль</h3>
-        <p style="font-size:16.5px;line-height:1.6">Клиент приходит с картинкой и словами «хочу похожее, только шире».
-        Размеры, модули и материалы выясняются перепиской и звонками — заявка собирается днями, а часть клиентов отваливается до первого расчёта.</p>
-      </div>
+  <div class="top"><span class="kick">контекст</span><h2>Мастерская сегодня</h2><span class="pg">лист 02</span></div>
+  <div class="body" style="display:flex;gap:48px">
+    <div style="flex:1.05;display:flex;flex-direction:column;gap:18px">
+      <div class="card"><div class="in">
+        <h3 class="bl">кто они</h3>
+        <p style="font-size:17px;line-height:1.6;color:var(--pencil)">Столярочка Yo проектирует и делает мебель по индивидуальным параметрам: берёзовая фанера,
+        массив дуба, ясеня, ореха, бука, карагача, слэбы, шпон, HPL. Работают с частными заказчиками,
+        дизайнерами и архитектурными бюро, по договору с физ- и юрлицами.</p>
+      </div></div>
+      <div class="card"><div class="in">
+        <h3 class="bl">каналы заявки сейчас</h3>
+        <div style="font-size:16.5px;font-weight:550;line-height:1.9">Форма на сайте designyo.ru <span style="color:var(--hint);font-size:13.5px;font-weight:450">· имя, телефон, описание, эскиз до 10 файлов</span><br>
+        WhatsApp, Telegram, VK, почта, звонок <span style="color:var(--hint);font-size:13.5px;font-weight:450">· +7 921 992-10-77</span></div>
+      </div></div>
+      <div class="card" style="background:rgba(194,69,45,.06)"><div class="in">
+        <h3 class="bl red">боль</h3>
+        <p style="font-size:17px;line-height:1.6">Клиент приходит с картинкой и словами «хочу похожее, только шире».
+        Размеры, модули и материалы выясняются перепиской и звонками: заявка собирается днями,
+        часть клиентов отваливается до первого расчёта.</p>
+      </div></div>
     </div>
-    <div style="flex:1;display:flex;flex-direction:column;gap:16px;justify-content:center">
-      <h3 class="bl">Путь заявки сейчас</h3>
-      <div class="flow" style="flex-direction:column;gap:26px">
-        <div class="nd" style="margin:0"><b>Увидел фото в соцсетях</b><span>лента · сарафан</span></div>
-        <div class="nd" style="margin:0"><b>Пишет «хочу такое»</b><span>whatsapp / tg / форма сайта</span></div>
-        <div class="nd" style="margin:0;border-color:var(--red)"><b>Уточнения днями</b><span>размеры? материал? модули? эскиз?</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:20px;justify-content:center">
+      <h3 class="bl">путь заявки сейчас</h3>
+      <div class="flow" style="flex-direction:column;gap:22px">
+        <div class="nd" style="margin:0"><b>Увидел фото в соцсетях</b><span>лента · сарафанное радио</span></div>
+        <div class="nd" style="margin:0"><b>Пишет «хочу такое»</b><span>whatsapp · telegram · форма сайта</span></div>
+        <div class="nd hi" style="margin:0"><b>Уточнения днями</b><span>размеры? модули? порода? эскиз?</span></div>
         <div class="nd" style="margin:0"><b>Расчёт и договор</b><span>вручную, по переписке</span></div>
       </div>
-      <p class="mono" style="font-size:12px;color:var(--red);letter-spacing:.1em">↑ ПЕРЕД ЗАКАЗОМ НЕТ НИ ОДНОЙ ЦИФРЫ И НИ ОДНОГО ЧЕРТЕЖА</p>
+      <p style="font-size:13.5px;font-weight:650;letter-spacing:.08em;color:var(--red)">ДО ЗАЯВКИ НЕТ НИ ОДНОЙ ЦИФРЫ И НИ ОДНОГО ЧЕРТЕЖА</p>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>контекст</b></div><div>источник <b>designyo.ru</b></div><div><b>лист 02 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · контекст</span><span>источник <b>designyo.ru</b></span><span style="margin-left:auto"><b>лист 02 / 18</b></span></div>
 </section>
 
-<!-- 03 ПРОБЛЕМА/РЕШЕНИЕ -->
+<!-- 03 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">идея</span><h2>Чертёж в кармане</h2><div class="rule"></div><span class="no">лист 03</span></div>
-  <div class="body" style="display:flex;gap:44px">
-    <div class="card" style="flex:1;padding:30px 32px">
-      <h3 class="bl" style="color:var(--red)">Что мешает заявке</h3>
-      <div style="display:flex;flex-direction:column;gap:16px;font-size:17px;line-height:1.5">
-        <div><b>Слова вместо размеров.</b> <span style="color:var(--pencil)">«Ну, как на фото, только под наш подоконник» — мастеру нечего считать.</span></div>
-        <div><b>Материалы на словах.</b> <span style="color:var(--pencil)">«фанера или дуб?» решается в пятом сообщении, а не в первом.</span></div>
-        <div><b>Эскиз теряется.</b> <span style="color:var(--pencil)">фото из чата не связано с размерами и материалом.</span></div>
-        <div><b>Статус производства — в голове.</b> <span style="color:var(--pencil)">«когда готово?» — отдельный поток сообщений.</span></div>
+  <div class="top"><span class="kick">идея</span><h2>Официальный клиент, ремесленные цвета</h2><span class="pg">лист 03</span></div>
+  <div class="body" style="display:flex;gap:36px">
+    <div class="card" style="flex:1"><div class="in">
+      <h3 class="bl">интерфейс — как родной telegram</h3>
+      <div style="font-size:16.5px;line-height:1.75;color:var(--pencil)">
+        Группированные списки с волосяными разделителями, навбар с центральной шапкой,
+        action sheet для добавления, свитчи и сегменты iOS, чат с бабблами и галочками,
+        нижний таб-бар, главная кнопка мини-аппа. Ничего авторского в паттернах —
+        пользователь попадает в привычную систему.</div>
+      <div class="pal" style="margin-top:22px">
+        <div><i style="background:#f1ede2"></i><span>бумага</span><em>фон вместо #efeff4</em></div>
+        <div><i style="background:#fdfbf5"></i><span>карточка</span><em>вместо #ffffff</em></div>
+        <div><i style="background:#1d3350"></i><span>чернильный</span><em>вместо #000000</em></div>
       </div>
-    </div>
-    <div class="card" style="flex:1;padding:30px 32px;border-width:2px">
-      <span class="tape" style="right:-30px;top:16px;transform:rotate(38deg)"></span>
-      <h3 class="bl">Что даёт Yo Kit</h3>
-      <div style="display:flex;flex-direction:column;gap:16px;font-size:17px;line-height:1.5">
-        <div><b>Сборка как конструктор.</b> <span style="color:var(--pencil)">габариты степперами, модули счётчиками — чертёж пересобирается на глазах.</span></div>
-        <div><b>Материалы мастерской.</b> <span style="color:var(--pencil)">тот же список, что в цехе: от фанеры до слэбов и смолы.</span></div>
-        <div><b>Заявка = спецификация.</b> <span style="color:var(--pencil)">в чат уходят лист, размеры, модули, материал и эскиз одним пакетом.</span></div>
-        <div><b>Производство видно.</b> <span style="color:var(--pencil)">раскрой, присадка, сборка, отделка и доставка.</span></div>
+    </div></div>
+    <div class="card" style="flex:1"><div class="in">
+      <h3 class="bl acc">цвета — из цеха, а не из телеграма</h3>
+      <div style="font-size:16.5px;line-height:1.75;color:var(--pencil)">
+        Системный синий заменён на дерево мастерской: кнопки, ссылки, активная вкладка,
+        свитчи и выделение блока в чертеже. Разрушающее действие — красный карандаш,
+        «готово» — шалфей. Исходящий баббл чата — тёплый тон масла по дереву.</div>
+      <div class="pal" style="margin-top:22px">
+        <div><i style="background:#b3762f"></i><span>дерево</span><em>вместо #3390ec</em></div>
+        <div><i style="background:#c2452d"></i><span>карандаш</span><em>вместо #ff3b30</em></div>
+        <div><i style="background:#f4e6c9"></i><span>баббл</span><em>вместо #e3fee0</em></div>
       </div>
-      <div style="margin-top:22px"><span class="stamp" style="transform:rotate(-2deg)">без онлайн-оплаты:<br>считает человек</span></div>
-    </div>
+    </div></div>
+    <div class="card" style="flex:1"><div class="in">
+      <h3 class="bl">конструктор — из блоков, без шаблонов</h3>
+      <div style="font-size:16.5px;line-height:1.75;color:var(--pencil)">
+        Никаких пресетов «кухня/шкаф»: сборка начинается с пустого списка и растёт блоками —
+        основание, секции с наполнением, столешница. Каждый блок правится, двигается и удаляется;
+        аксонометрия сверху пересобирается на каждое изменение.</div>
+      <div style="margin-top:22px;display:flex;flex-direction:column;gap:8px;font-size:15px;font-weight:550">
+        <div style="background:var(--acct);border-radius:10px;padding:10px 14px">основание · цоколь или ножки</div>
+        <div style="background:var(--acct);border-radius:10px;padding:10px 14px">секция · полки / ящики / фасады / открытая</div>
+        <div style="background:var(--acct);border-radius:10px;padding:10px 14px">столешница · корпус / слэб / бетон</div>
+      </div>
+    </div></div>
   </div>
-  <div class="tb"><div>yo kit · <b>идея</b></div><div>принцип <b>честная работа руками + точность чертежа</b></div><div><b>лист 03 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · идея</span><span>паттерны <b>telegram ios</b> · палитра <b>мастерской</b></span><span style="margin-left:auto"><b>лист 03 / 18</b></span></div>
 </section>
 
-<!-- 04 ПРИНЦИПЫ -->
+<!-- 04 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">принципы</span><h2>Четыре опоры продукта</h2><div class="rule"></div><span class="no">лист 04</span></div>
-  <div class="body" style="display:grid;grid-template-columns:1fr 1fr;gap:30px">
-    <div class="card" style="padding:28px 30px"><div class="mono red" style="font-size:13px;font-weight:700;letter-spacing:.2em">01</div>
-      <h3 style="font-size:24px;font-weight:800;margin-top:8px">Листы-заготовки из портфолио</h3>
-      <p style="font-size:16px;line-height:1.6;color:var(--pencil);margin-top:10px">Кухня «Карагач», топчан-помост, тумба «Рустик», лофт-перегородка, модульные сиденья — реальные проекты мастерской становятся стартовыми наборами сборки. Трон «Свирепая мебель» честно помечен: такое — только с мастером.</p></div>
-    <div class="card" style="padding:28px 30px"><div class="mono red" style="font-size:13px;font-weight:700;letter-spacing:.2em">02</div>
-      <h3 style="font-size:24px;font-weight:800;margin-top:8px">Честные материалы и технологии</h3>
-      <p style="font-size:16px;line-height:1.6;color:var(--pencil);margin-top:10px">Девять материалов сайта без приукрас: фанера, дуб, ясень, орех, бук, карагач, слэб, шпон, HPL. Отделки — масловоск, лак, браширование, синяя смола. Столешницы — дерево, слэб или бетон, как в проектах.</p></div>
-    <div class="card" style="padding:28px 30px"><div class="mono red" style="font-size:13px;font-weight:700;letter-spacing:.2em">03</div>
-      <h3 style="font-size:24px;font-weight:800;margin-top:8px">Расчёт и договор — от мастера</h3>
-      <p style="font-size:16px;line-height:1.6;color:var(--pencil);margin-top:10px">Никакой корзины и онлайн-оплаты: приложение показывает трудоёмкость (м² материала, деталей, недели), а точную смету и договор физ- или юрлицу присылает мастер в чат.</p></div>
-    <div class="card" style="padding:28px 30px"><div class="mono red" style="font-size:13px;font-weight:700;letter-spacing:.2em">04</div>
-      <h3 style="font-size:24px;font-weight:800;margin-top:8px">Производство прозрачно</h3>
-      <p style="font-size:16px;line-height:1.6;color:var(--pencil);margin-top:10px">Пять этапов цеха видны в заказах и в чате, с фотографиями со стола мастера. Клиент не спрашивает «когда?» — он видит, на каком листе его изделие.</p></div>
+  <div class="top"><span class="kick">принципы</span><h2>Четыре опоры продукта</h2><span class="pg">лист 04</span></div>
+  <div class="body" style="display:grid;grid-template-columns:1fr 1fr;gap:26px">
+    <div class="card"><div class="in"><div class="acc" style="font-size:14px;font-weight:700;letter-spacing:.14em">01</div>
+      <h3 style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.3px">Системный интерфейс</h3>
+      <p style="font-size:16px;line-height:1.65;color:var(--pencil);margin-top:10px">Компоненты официального клиента: списки, шторки, сегменты, свитчи, чат, таб-бар и MainButton. Пользователю не нужно учиться — он уже жил в этих экранах.</p></div></div>
+    <div class="card"><div class="in"><div class="acc" style="font-size:14px;font-weight:700;letter-spacing:.14em">02</div>
+      <h3 style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.3px">Свободная сборка блоками</h3>
+      <p style="font-size:16px;line-height:1.65;color:var(--pencil);margin-top:10px">Стек блоков снизу вверх: основание, секции с наполнением и перегородками, столешница. Порядок, параметры и удаление — у каждого блока свои, в отдельном экране.</p></div></div>
+    <div class="card"><div class="in"><div class="acc" style="font-size:14px;font-weight:700;letter-spacing:.14em">03</div>
+      <h3 style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.3px">Расчёт и договор — от мастера</h3>
+      <p style="font-size:16px;line-height:1.65;color:var(--pencil);margin-top:10px">Приложение показывает трудоёмкость: м² материала, детали, вилку срока. Точную смету, срок и договор физ- или юрлицу присылает мастер в чат. Онлайн-оплаты нет осознанно.</p></div></div>
+    <div class="card"><div class="in"><div class="acc" style="font-size:14px;font-weight:700;letter-spacing:.14em">04</div>
+      <h3 style="font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.3px">Производство прозрачно</h3>
+      <p style="font-size:16px;line-height:1.65;color:var(--pencil);margin-top:10px">Пять этапов цеха — раскрой, присадка, сборка, отделка, доставка — видны в заказах с прогрессом и в чате с фотографиями со стола мастера.</p></div></div>
   </div>
-  <div class="tb"><div>yo kit · <b>принципы</b></div><div><b>лист 04 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · принципы</span><span style="margin-left:auto"><b>лист 04 / 18</b></span></div>
 </section>
 
-<!-- 05 ОБЗОР -->
+<!-- 05 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">обзор</span><h2>Девять экранов мини-аппа</h2><div class="rule"></div><span class="no">лист 05</span></div>
-  <div class="body" style="top:140px;display:flex;flex-direction:column;justify-content:center;gap:40px">
-    <div class="grid9" style="grid-template-columns:repeat(9,1fr);gap:16px">
-      <div class="cell"><div class="ph"><img src="../screenshots/01-splash.png"><span class="cap">старт</span></div><div class="lb"><i>01</i> заставка</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/02-catalog.png"><span class="cap">каталог</span></div><div class="lb"><i>02</i> листы-заготовки</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/03-build.png"><span class="cap">конструктор</span></div><div class="lb"><i>03</i> сборка и чертёж</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/04-materials.png"><span class="cap">материалы</span></div><div class="lb"><i>04</i> выкраски и отделки</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/05-sketch.png"><span class="cap">эскиз</span></div><div class="lb"><i>05</i> файлы и замер</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/06-summary.png"><span class="cap">заявка</span></div><div class="lb"><i>06</i> спецификация</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/07-chat.png"><span class="cap">чат</span></div><div class="lb"><i>07</i> мастер на связи</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/08-orders.png"><span class="cap">заказы</span></div><div class="lb"><i>08</i> этапы цеха</div></div>
-      <div class="cell"><div class="ph"><img src="../screenshots/09-profile.png"><span class="cap">профиль</span></div><div class="lb"><i>09</i> контакты и справки</div></div>
+  <div class="top"><span class="kick">обзор</span><h2>Девять экранов мини-аппа</h2><span class="pg">лист 05</span></div>
+  <div class="body" style="top:158px;bottom:104px;display:flex;flex-direction:column;justify-content:center;gap:34px">
+    <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:14px">
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/01-build.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">01</span> конструктор</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/02-addsheet.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">02</span> добавить блок</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/03-block.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">03</span> правка блока</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/04-project.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">04</span> проект</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/05-materials.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">05</span> материал</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/06-summary.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">06</span> заявка</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/07-chat.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">07</span> чат</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/08-orders.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">08</span> заказы</div></div>
+      <div><div class="ph" style="width:100%;height:auto;aspect-ratio:390/844;border-width:6px;border-radius:26px;box-shadow:0 10px 26px rgba(29,51,80,.18)"><img src="../screenshots/09-profile.png"></div><div style="font-size:11px;font-weight:600;color:var(--hint);margin-top:8px;letter-spacing:.06em"><span class="acc">09</span> ещё</div></div>
     </div>
     <div style="display:flex;gap:26px">
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Язык — ватман, а не тёмная тема</h3>
-        <p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Миллиметровка, кольца кофе, скребки, штампы и малярный скотч поверх точной сетки Telegram Mini App: футуризм чертежа плюс честная работа руками.</p></div>
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Скриншоты — настоящего прототипа</h3>
-        <p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Мокап кликабелен в браузере; кадры сняты headless Chromium 390×844 @2x. Чертежи изделий — параметрическая SVG-изометрия, не картинки.</p></div>
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Навигация — вкладки и листы</h3>
-        <p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Четыре вкладки: каталог, сборка, заказы, профиль. Материалы, эскиз, смета и чат открываются листами со стрелкой «назад», как папка чертежей.</p></div>
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">паттерны официальные</h3><p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Списки, шторки, сегменты, свитчи, бабблы и таб-бар — один в один с привычным клиентом, включая главную кнопку мини-аппа внизу.</p></div></div>
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">скриншоты живого мокапа</h3><p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Кадры сняты headless Chromium с кликабельного прототипа, 390×844 @2x. Аксонометрия сборки — параметрический SVG, не картинка.</p></div></div>
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">три вкладки</h3><p style="font-size:14.5px;line-height:1.55;color:var(--pencil)">Конструктор, заказы и «Ещё» с контактами и справками мастерской: профиль не притворяется настройками Telegram.</p></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>обзор экранов</b></div><div>съёмка <b>headless chromium · 390×844 @2x</b></div><div><b>лист 05 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · обзор экранов</span><span>съёмка <b>headless chromium · 390×844 @2x</b></span><span style="margin-left:auto"><b>лист 05 / 18</b></span></div>
 </section>
 
-<!-- 06 СТАРТ + КАТАЛОГ -->
+<!-- 06 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экраны 01–02</span><h2>Вход и каталог листов</h2><div class="rule"></div><span class="no">лист 06</span></div>
-  <div class="body" style="display:flex;gap:48px">
+  <div class="top"><span class="kick">экран 01</span><h2>Конструктор: стек блоков и живой чертёж</h2><span class="pg">лист 06</span></div>
+  <div class="body" style="display:flex;gap:52px">
+    <div class="ph"><img src="../screenshots/01-build.png"><span class="cap">01 · конструктор</span></div>
+    <div class="ann">
+      <div class="a"><div class="n">1</div><div><b>Аксонометрия сборки</b><span>Стек блоков перерисовывается на каждое изменение: габаритные линии, выделенный выбранный блок деревом, подпись материала и отделки.</span></div></div>
+      <div class="a"><div class="n">2</div><div><b>Трудоёмкость на виду</b><span>Габариты, м² материала, количество деталей и вилка срока считаются на ходу. Это не цена: смету назовёт мастер.</span></div></div>
+      <div class="a"><div class="n">3</div><div><b>Список блоков снизу вверх</b><span>Группированный список как в настройках TG: иконка-тип, название, параметры, высота в миллиметрах, шеврон.</span></div></div>
+      <div class="a"><div class="n">4</div><div><b>Главная кнопка мини-аппа</b><span>«Добавить блок» — официальный MainButton, но деревянного цвета мастерской; открывает action sheet с тремя типами блоков.</span></div></div>
+    </div>
+  </div>
+  <div class="bot"><span><b>yo kit</b> · конструктор</span><span>рендер <b>параметрическая аксонометрия, svg</b></span><span style="margin-left:auto"><b>лист 06 / 18</b></span></div>
+</section>
+
+<!-- 07 -->
+<section class="slide">
+  <div class="top"><span class="kick">экраны 02–03</span><h2>Добавление и правка блока</h2><span class="pg">лист 07</span></div>
+  <div class="body" style="display:flex;gap:44px">
     <div class="phs">
-      <div class="ph"><img src="../screenshots/01-splash.png"><span class="cap">01 · заставка</span></div>
-      <div class="ph"><img src="../screenshots/02-catalog.png"><span class="cap">02 · каталог</span></div>
+      <div class="ph"><img src="../screenshots/02-addsheet.png"><span class="cap">02 · action sheet</span></div>
+      <div class="ph"><img src="../screenshots/03-block.png"><span class="cap">03 · правка секции</span></div>
     </div>
-    <div class="ann" style="padding-top:6px">
-      <div class="a"><div class="n">1</div><div><b>Штамп вместо логотипа-картинки</b><span>Заставка встречает чертёжным штампом мастерской: имя, адрес, суть. Кнопка «Начать сборку» ведёт сразу в каталог.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Портфолио стало листами</b><span>Шесть заготовок по реальным проектам: вместо фотографий — изометрические чертежи. Фотографии живут на сайте, в мини-аппе язык чертежа.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Честные ограничения</b><span>Трон из серии «Свирепая мебель» не притворяется конструктором: карточка ведёт в чат с мастером.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Мостик на сайт</b><span>Внизу каталога — ссылка designyo.ru: смотреть живые интерьеры и отзывы.</span><span class="mono">дизайн-язык: ватман, миллиметровка, следы кофе</span></div></div>
-    </div>
-  </div>
-  <div class="tb"><div>yo kit · <b>старт и каталог</b></div><div><b>лист 06 / 18</b></div></div>
-</section>
-
-<!-- 07 КОНСТРУКТОР -->
-<section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экран 03</span><h2>Конструктор: чертёж, который дышит</h2><div class="rule"></div><span class="no">лист 07</span></div>
-  <div class="body" style="display:flex;gap:52px">
-    <div class="ph" style="width:352px;height:761px;flex-basis:352px"><img src="../screenshots/03-build.png"><span class="cap">03 · конструктор</span></div>
-    <div class="ann" style="padding-top:2px">
-      <div class="a"><div class="n">1</div><div><b>Параметрическая изометрия</b><span>Каждое изменение размеров и модулей перерисовывает чертёж: корпус, цоколь или ножки, слэб либо бетон сверху, ящики и фасады на фасаде.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Размерные линии как в цехе</b><span>Три цепочки размеров с миллиметрами: ширина по фасаду, высота от пола, глубина корпуса. Степперы с шагом 50 мм в допусках изделия.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Выноски красным карандашом</b><span>Материал корпуса и тип столешницы подписаны прямо на чертеже — как пометки мастера на листе.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Трудоёмкость вместо цены</b><span>м² материала, количество деталей и недели срока считаются на ходу. Точную смету назовёт мастер — принцип честной работы.</span></div></div>
-      <div class="a"><div class="n">5</div><div><b>Штамп листа</b><span>Внизу чертежа — основной надпись: номер листа, масштаб 1:20, материал, дата. Футуризм сетки + ремесленная небрежность бумаги.</span></div></div>
-      <div class="card" style="padding:16px 20px"><span class="mono" style="font-size:11.5px;letter-spacing:.1em;color:var(--ink2);line-height:2">ЛИСТ 02 · ТОПЧАН-ПОМОСТ<br>2000×450×1200 ММ · ОРЕХ · МАСЛОВОСК · СКРЫТАЯ<br>5,3 М² · 14 ДЕТАЛЕЙ · ОТ 4 НЕД · <span class="red">СМЕТА — ОТ МАСТЕРА</span></span></div>
+    <div class="ann">
+      <div class="a"><div class="n">1</div><div><b>Три типа блоков</b><span>Основание, секция, столешница — шторка снизу с подложкой-блюром и отменой, как системная.</span></div></div>
+      <div class="a"><div class="n">2</div><div><b>Параметры без сюрпризов</b><span>Высота степпером с шагом 50 мм, наполнение сегментом: полки, ящики, фасады или открытая секция; количество и перегородки — там же.</span></div></div>
+      <div class="a"><div class="n">3</div><div><b>Порядок и удаление</b><span>«Выше / Ниже» двигают блок в этажерке, «Удалить блок» набрано красным карандашом — системный destructive-паттерн.</span></div></div>
+      <div class="a"><div class="n">4</div><div><b>Шапка с возвратом</b><span>Центральный заголовок и «Назад» слева с шевроном — навбар официального клиента, цвет дерева вместо синего.</span></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>конструктор</b></div><div>рендер <b>параметрическая изометрия, svg</b></div><div><b>лист 07 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · блоки</span><span style="margin-left:auto"><b>лист 07 / 18</b></span></div>
 </section>
 
-<!-- 08 МАТЕРИАЛЫ -->
+<!-- 08 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экран 04</span><h2>Материалы: выкраски с малярным скотчем</h2><div class="rule"></div><span class="no">лист 08</span></div>
-  <div class="body" style="display:flex;gap:52px">
-    <div class="ph"><img src="../screenshots/04-materials.png"><span class="cap">04 · материалы</span></div>
-    <div class="ann" style="padding-top:2px">
-      <div class="a"><div class="n">1</div><div><b>Тот же список, что в цехе</b><span>Берёзовая фанера, дуб, ясень, орех, бук, карагач, слэб, шпон, HPL — девять позиций с сайта мастерской, без выдуманных.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Выкраска приклеена скотчем</b><span>Образец материала выглядит как кусок шпона, прижатый малярной лентой к листу: цвет и подпись породы.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Отделки и фурнитура</b><span>Масловоск, матовый лак, браширование и синяя ювелирная смола из серии «Свирепая мебель»; фурнитура — скрытая, чёрный металл, латунь.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Образцы приедут сами</b><span>Плашка напоминает: на замер мастер привозит образцы — оттенок выбирают вживую до раскроя.</span></div></div>
-    </div>
-    <div style="flex:0 0 300px;display:flex;flex-direction:column;gap:14px;padding-top:8px">
-      <h3 class="bl">Палитра пород</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="card" style="padding:10px"><div style="height:52px;background:#d9b57e"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">ФАНЕРА</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#c09256"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">ДУБ</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#d8c49a"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">ЯСЕНЬ</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#6f4a2e"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">ОРЕХ</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#cf9d6d"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">БУК</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#9c6836"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">КАРАГАЧ</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#8a5a30"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">СЛЭБ</div></div>
-        <div class="card" style="padding:10px"><div style="height:52px;background:#5a6672"></div><div class="mono" style="font-size:9.5px;letter-spacing:.08em;margin-top:6px">HPL</div></div>
-      </div>
-    </div>
-  </div>
-  <div class="tb"><div>yo kit · <b>материалы</b></div><div><b>лист 08 / 18</b></div></div>
-</section>
-
-<!-- 09 ЭСКИЗ -->
-<section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экран 05</span><h2>Эскиз: то, что сайт умел, стало удобнее</h2><div class="rule"></div><span class="no">лист 09</span></div>
-  <div class="body" style="display:flex;gap:52px">
-    <div class="ph"><img src="../screenshots/05-sketch.png"><span class="cap">05 · эскиз и детали</span></div>
-    <div class="ann" style="padding-top:2px">
-      <div class="a"><div class="n">1</div><div><b>Лимиты формы сайта, без потери</b><span>До 10 файлов по 30 МБ — ровно как в форме designyo.ru, только файлы сразу прикреплены к спецификации, а не к письму.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Рисунок от руки годится</b><span>Фото комнаты, чертёж или салфетка с наброском: мастер читает пакет целиком и уточняет точечно.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Комментарий на линованной бумаге</b><span>Поле ввода выглядит как лист в клетку из блокнота мастера — тон языка: рукописное поверх точного.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Замер одним переключателем</b><span>«Нужен замер помещения» — мастер приедет с образцами материалов и рулеткой.</span></div></div>
-    </div>
-  </div>
-  <div class="tb"><div>yo kit · <b>эскиз</b></div><div>преемственность <b>форма designyo.ru</b></div><div><b>лист 09 / 18</b></div></div>
-</section>
-
-<!-- 10 ЗАЯВКА -->
-<section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экран 06</span><h2>Заявка: лист спецификации</h2><div class="rule"></div><span class="no">лист 10</span></div>
-  <div class="body" style="display:flex;gap:52px">
-    <div class="ph"><img src="../screenshots/06-summary.png"><span class="cap">06 · заявка</span></div>
-    <div class="ann" style="padding-top:2px">
-      <div class="a"><div class="n">1</div><div><b>Спецификация, а не «сообщение»</b><span>Изделие, габариты, модули, столешница, материал, отделка, фурнитура, эскиз, замер — девять строк, которые цех читает без переводчика.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Скотч и штамп</b><span>Лист «приклеен» к делу малярной лентой и проштампован: проверено мастером. Мелочь, которая продаёт характер мастерской.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Никакой оплаты в приложении</b><span>Плашка честно говорит: расчёт, срок и договор физ- или юрлицу пришлёт мастер. Предварительно 3–5 недель.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Одна кнопка</b><span>«Отправить в мастерскую» — главная кнопка Telegram, чёрнильная, со срезанными углами.</span></div></div>
-    </div>
-  </div>
-  <div class="tb"><div>yo kit · <b>заявка</b></div><div><b>лист 10 / 18</b></div></div>
-</section>
-
-<!-- 11 ЧАТ + ЗАКАЗЫ -->
-<section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экраны 07–08</span><h2>Чат с мастером и этапы цеха</h2><div class="rule"></div><span class="no">лист 11</span></div>
-  <div class="body" style="display:flex;gap:48px">
+  <div class="top"><span class="kick">экраны 04–05</span><h2>Проект и материалы мастерской</h2><span class="pg">лист 08</span></div>
+  <div class="body" style="display:flex;gap:44px">
     <div class="phs">
+      <div class="ph"><img src="../screenshots/04-project.png"><span class="cap">04 · проект</span></div>
+      <div class="ph"><img src="../screenshots/05-materials.png"><span class="cap">05 · материал корпуса</span></div>
+    </div>
+    <div class="ann">
+      <div class="a"><div class="n">1</div><div><b>Габариты проекта</b><span>Ширина и глубина степперами, высота — честная сумма блоков: клиент видит, как этажерка складывается в миллиметры.</span></div></div>
+      <div class="a"><div class="n">2</div><div><b>Девять пород из цеха</b><span>Фанера, дуб, ясень, орех, бук, карагач, слэб, шпон, HPL — фактический список мастерской с выкрасками-точками и галочкой выбора.</span></div></div>
+      <div class="a"><div class="n">3</div><div><b>Отделка и фурнитура шторками</b><span>Масловоск, лак, браширование, синяя смола; скрытая фурнитура, чёрный металл, латунь — action sheet с отметкой текущего.</span></div></div>
+      <div class="a"><div class="n">4</div><div><b>Замер одним свитчем</b><span>Системный переключатель: мастер приедет с образцами пород до раскроя.</span></div></div>
+    </div>
+  </div>
+  <div class="bot"><span><b>yo kit</b> · проект и материалы</span><span>список пород <b>designyo.ru</b></span><span style="margin-left:auto"><b>лист 08 / 18</b></span></div>
+</section>
+
+<!-- 09 -->
+<section class="slide">
+  <div class="top"><span class="kick">экраны 06–07</span><h2>Заявка и чат с мастерской</h2><span class="pg">лист 09</span></div>
+  <div class="body" style="display:flex;gap:44px">
+    <div class="phs">
+      <div class="ph"><img src="../screenshots/06-summary.png"><span class="cap">06 · заявка</span></div>
       <div class="ph"><img src="../screenshots/07-chat.png"><span class="cap">07 · чат</span></div>
+    </div>
+    <div class="ann">
+      <div class="a"><div class="n">1</div><div><b>Спецификация списком</b><span>Габариты, состав блоков, материал, отделка, фурнитура, замер и трудоёмкость — группированные строки «ключ — значение».</span></div></div>
+      <div class="a"><div class="n">2</div><div><b>Отправка главной кнопкой</b><span>«Отправить в мастерскую» уводит в чат: спецификация приезжает туда карточкой внутри исходящего баббла.</span></div></div>
+      <div class="a"><div class="n">3</div><div><b>Чат как в телеграме</b><span>Бабблы с хвостиками, время с двойными галочками, аватар и статус «в сети» в шапке, поле ввода со скрепкой и круглой отправкой.</span></div></div>
+      <div class="a"><div class="n">4</div><div><b>Тёплый исходящий</b><span>Вместо системного зелёного — тон масла по дереву: переписка остаётся telegram-похожей, но своей.</span></div></div>
+    </div>
+  </div>
+  <div class="bot"><span><b>yo kit</b> · заявка и чат</span><span style="margin-left:auto"><b>лист 09 / 18</b></span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="top"><span class="kick">экраны 08–09</span><h2>Заказы и «Ещё»</h2><span class="pg">лист 10</span></div>
+  <div class="body" style="display:flex;gap:44px">
+    <div class="phs">
       <div class="ph"><img src="../screenshots/08-orders.png"><span class="cap">08 · заказы</span></div>
+      <div class="ph"><img src="../screenshots/09-profile.png"><span class="cap">09 · ещё</span></div>
     </div>
-    <div class="ann" style="padding-top:6px">
-      <div class="a"><div class="n">1</div><div><b>Заявка приходит пакетом</b><span>В чате мастер видит карточку спецификации и эскизы, а не десять сообщений «а сколько стоит?».</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Быстрые ответы</b><span>«Да, орех», «Позвонить», «Изменить заявку» — диалог продолжается в один тап.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Пять этапов производства</b><span>Раскрой, присадка, сборка, отделка, доставка — ромбики-узлы на линейке заказа; текущий этап залит красным карандашом.</span></div></div>
-      <div class="a"><div class="n">4</div><div><b>Чертёжики вместо фото</b><span>В карточке заказа — мини-изометрия изделия: даже список заказов держит язык чертежа.</span></div></div>
-    </div>
-  </div>
-  <div class="tb"><div>yo kit · <b>чат и заказы</b></div><div><b>лист 11 / 18</b></div></div>
-</section>
-
-<!-- 12 ПРОФИЛЬ -->
-<section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">экран 09</span><h2>Профиль: мастерская на расстоянии вытянутой руки</h2><div class="rule"></div><span class="no">лист 12</span></div>
-  <div class="body" style="display:flex;gap:52px">
-    <div class="ph"><img src="../screenshots/09-profile.png"><span class="cap">09 · профиль</span></div>
-    <div class="ann" style="padding-top:2px">
-      <div class="a"><div class="n">1</div><div><b>Настоящие контакты</b><span>+7 921 992-10-77, @stolyarochka_yo, stolyarochka.yo@gmail.com, Матисов переулок, 4 — клиент всегда может выйти из приложения в живой канал.</span></div></div>
-      <div class="a"><div class="n">2</div><div><b>Справки без воды</b><span>Материалы и технологии, договор и оплата для физ- и юрлиц, дизайн интерьера и партнёрская программа для бюро.</span></div></div>
-      <div class="a"><div class="n">3</div><div><b>Портфолио — на сайте</b><span>Отдельная строка уводит на designyo.ru смотреть живые интерьеры: мини-апп не конкурирует с сайтом, он доводит до заявки.</span></div></div>
+    <div class="ann">
+      <div class="a"><div class="n">1</div><div><b>Этапы цеха прогресс-баром</b><span>Раскрой, присадка, сборка, отделка, доставка: системный линейный прогресс цвета дерева и подпись текущего этапа.</span></div></div>
+      <div class="a"><div class="n">2</div><div><b>Заказ ведёт в чат</b><span>Строка заказа открывает переписку с мастерской: вопросы по производству живут там же, где спецификация.</span></div></div>
+      <div class="a"><div class="n">3</div><div><b>«Ещё» как в клиенте</b><span>Карточка профиля мастерской сверху, группы контактов и справок с цветными иконками-квадратами, как в настройках iOS.</span></div></div>
+      <div class="a"><div class="n">4</div><div><b>Настоящие контакты</b><span>Телефон, @stolyarochka_yo, почта, Матисов 4 и ссылка на портфолио designyo.ru — выход из приложения в живые каналы.</span></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>профиль</b></div><div><b>лист 12 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · заказы и профиль</span><span style="margin-left:auto"><b>лист 10 / 18</b></span></div>
 </section>
 
-<!-- 13 МЕХАНИКА -->
+<!-- 11 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">механика</span><h2>Как параметры становятся сметой</h2><div class="rule"></div><span class="no">лист 13</span></div>
-  <div class="body" style="display:flex;flex-direction:column;gap:34px;justify-content:center">
+  <div class="top"><span class="kick">механика</span><h2>Как блоки становятся спецификацией</h2><span class="pg">лист 11</span></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:32px;justify-content:center">
     <div class="flow">
-      <div class="nd"><b>Габариты</b><span>Ш · В · Г, шаг 50 мм, допуски изделия</span></div>
-      <div class="nd"><b>Модули</b><span>полки · ящики · фасады · цоколь/ножки</span></div>
+      <div class="nd"><b>Габариты проекта</b><span>ширина и глубина, шаг 50 мм</span></div>
+      <div class="nd"><b>Стек блоков</b><span>основание · секции · столешница</span></div>
+      <div class="nd"><b>Параметры блока</b><span>высота · наполнение · перегородки</span></div>
       <div class="nd"><b>Материал и отделка</b><span>9 пород · 4 отделки · 3 фурнитуры</span></div>
-      <div class="nd"><b>Спецификация</b><span>м² · деталей · недель</span></div>
-      <div class="nd" style="border-color:var(--red)"><b>Мастер</b><span>смета · срок · договор</span></div>
+      <div class="nd hi"><b>Спецификация</b><span>м² · деталей · недель · чат</span></div>
     </div>
-    <div style="display:flex;gap:30px">
-      <div class="card" style="flex:1;padding:24px 26px">
-        <h3 class="bl">Что считает приложение</h3>
-        <p style="font-size:16px;line-height:1.6;color:var(--pencil)">Площадь материала по габаритам корпуса, количество деталей по модулям, вилку срока по трудоёмкости (слэб и большие площади добавляют неделю). Цифры ориентировочные и не притворяются ценой.</p>
-      </div>
-      <div class="card" style="flex:1;padding:24px 26px">
-        <h3 class="bl">Что считает мастер</h3>
-        <p style="font-size:16px;line-height:1.6;color:var(--pencil)">Раскрой по карте, фурнитуру и доставку, занятость цеха. Смета приходит в чат вместе с вопросом «что поправить?» — диалог вместо корзины.</p>
-      </div>
-      <div class="card" style="flex:1;padding:24px 26px;border-color:rgba(194,69,45,.5)">
-        <h3 class="bl" style="color:var(--red)">Почему без оплаты</h3>
-        <p style="font-size:16px;line-height:1.6">Индивидуальное изделие не покупается в один тап. Деньги и договор остаются в руках мастерской — приложение экономит её время, а не заменяет её голову.</p>
-      </div>
+    <div style="display:flex;gap:26px">
+      <div class="card" style="flex:1"><div class="in"><h3 class="bl">что считает приложение</h3>
+        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Площадь материала по габаритам этажерки, количество деталей по блокам и наполнению, вилку срока по трудоёмкости: слэб и большие площади добавляют неделю.</p></div></div>
+      <div class="card" style="flex:1"><div class="in"><h3 class="bl">что считает мастер</h3>
+        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Карту раскроя, фурнитуру, доставку и занятость цеха. Смета приходит в чат вместе с вопросом «что поправить?» — диалогом, а не корзиной.</p></div></div>
+      <div class="card" style="flex:1;background:rgba(194,69,45,.06)"><div class="in"><h3 class="bl red">почему без оплаты</h3>
+        <p style="font-size:15.5px;line-height:1.6">Индивидуальное изделие не покупается в один тап. Деньги и договор остаются в руках мастерской: приложение экономит её время, а не заменяет голову.</p></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>механика расчёта</b></div><div><b>лист 13 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · механика</span><span style="margin-left:auto"><b>лист 11 / 18</b></span></div>
 </section>
 
-<!-- 14 МАТЕРИАЛЫ ТАБЛИЦА -->
+<!-- 12 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">справочник</span><h2>Материалы, отделки, фурнитура</h2><div class="rule"></div><span class="no">лист 14</span></div>
+  <div class="top"><span class="kick">справочник</span><h2>Материалы, отделки, фурнитура</h2><span class="pg">лист 12</span></div>
   <div class="body" style="display:flex;gap:36px">
-    <div style="flex:1.5">
-      <h3 class="bl">Корпус и фасады · 9 позиций</h3>
+    <div style="flex:1.45">
       <table class="spec">
-        <tr><th>выкраска</th><th>материал</th><th>характер</th></tr>
-        <tr><td><span class="sw" style="background:#d9b57e"></span></td><td><b>Берёзовая фанера</b></td><td>слоистый торец, тёплый светлый тон<span class="mono">базовый материал мастерской</span></td></tr>
-        <tr><td><span class="sw" style="background:#c09256"></span></td><td><b>Массив дуба</b></td><td>плотная текстура, медовый оттенок</td></tr>
-        <tr><td><span class="sw" style="background:#d8c49a"></span></td><td><b>Массив ясеня</b></td><td>светлый, упругий, крупный рисунок</td></tr>
-        <tr><td><span class="sw" style="background:#6f4a2e"></span></td><td><b>Массив ореха</b></td><td>тёмный шоколадный, благородный</td></tr>
-        <tr><td><span class="sw" style="background:#cf9d6d"></span></td><td><b>Массив бука</b></td><td>ровный розовато-медовый тон<span class="mono">из него — трон «свирепая мебель»</span></td></tr>
-        <tr><td><span class="sw" style="background:#9c6836"></span></td><td><b>Карагач</b></td><td>свилеватый рисунок, слэбы<span class="mono">столешница кухни «карагач»</span></td></tr>
-        <tr><td><span class="sw" style="background:#8a5a30"></span></td><td><b>Слэб массива</b></td><td>живой край, цельная плита</td></tr>
-        <tr><td><span class="sw" style="background:#b78b58"></span></td><td><b>Шпон</b></td><td>срез ценной породы на основе</td></tr>
-        <tr><td><span class="sw" style="background:#5a6672"></span></td><td><b>HPL-пластик</b></td><td>любой цвет, стойкая поверхность</td></tr>
+        <tr><th style="width:56px"></th><th>материал корпуса</th><th>характер</th></tr>
+        <tr><td><span class="dot" style="background:#d9b57e"></span></td><td><b>Берёзовая фанера</b></td><td>слоистый торец · тёплый светлый тон<span class="s">базовый материал мастерской</span></td></tr>
+        <tr><td><span class="dot" style="background:#c09256"></span></td><td><b>Массив дуба</b></td><td>плотная текстура · медовый оттенок</td></tr>
+        <tr><td><span class="dot" style="background:#d8c49a"></span></td><td><b>Массив ясеня</b></td><td>светлый · упругий · крупный рисунок</td></tr>
+        <tr><td><span class="dot" style="background:#6f4a2e"></span></td><td><b>Массив ореха</b></td><td>тёмный шоколадный · благородный</td></tr>
+        <tr><td><span class="dot" style="background:#cf9d6d"></span></td><td><b>Массив бука</b></td><td>ровный розовато-медовый тон</td></tr>
+        <tr><td><span class="dot" style="background:#9c6836"></span></td><td><b>Карагач</b></td><td>свилеватый рисунок · слэбы<span class="s">из него — столешницы кухонь</span></td></tr>
+        <tr><td><span class="dot" style="background:#8a5a30"></span></td><td><b>Слэб массива</b></td><td>живой край · цельная плита</td></tr>
+        <tr><td><span class="dot" style="background:#b78b58"></span></td><td><b>Шпон</b></td><td>срез ценной породы на основе</td></tr>
+        <tr><td><span class="dot" style="background:#5a6672"></span></td><td><b>HPL-пластик</b></td><td>любой цвет · стойкая поверхность</td></tr>
       </table>
     </div>
-    <div style="flex:1;display:flex;flex-direction:column;gap:26px">
-      <div>
-        <h3 class="bl">Отделки</h3>
-        <table class="spec">
-          <tr><td><b>Масловоск</b></td><td>матово, дерево дышит</td></tr>
-          <tr><td><b>Матовый лак</b></td><td>влага и пятна под защитой</td></tr>
-          <tr><td><b>Браширование</b></td><td>рельеф годовых колец</td></tr>
-          <tr><td><b>Синяя смола</b></td><td>инкрустация орнамента</td></tr>
-        </table>
-      </div>
-      <div>
-        <h3 class="bl">Фурнитура</h3>
-        <table class="spec">
-          <tr><td><b>Скрытая</b></td><td>без ручек, push-to-open</td></tr>
-          <tr><td><b>Чёрный металл</b></td><td>ручки и опоры, графит</td></tr>
-          <tr><td><b>Латунь</b></td><td>тёплый металлический акцент</td></tr>
-        </table>
-      </div>
-      <div class="card" style="padding:18px 20px"><span class="mono" style="font-size:11.5px;line-height:1.8;letter-spacing:.04em;color:var(--ink2)">СТОЛЕШНИЦЫ: В КОРПУС · СЛЭБ · БЕТОН<br>ОСНОВАНИЕ: ЦОКОЛЬ · НОЖКИ<br><span class="red">ВСЁ — ИЗ РЕАЛЬНОГО СПИСКА МАСТЕРСКОЙ</span></span></div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:24px">
+      <table class="spec">
+        <tr><th>отделка</th><th>эффект</th></tr>
+        <tr><td><b>Масловоск</b></td><td>матово · дерево дышит</td></tr>
+        <tr><td><b>Матовый лак</b></td><td>влага и пятна под защитой</td></tr>
+        <tr><td><b>Браширование</b></td><td>рельеф годовых колец</td></tr>
+        <tr><td><b>Синяя смола</b></td><td>инкрустация орнамента</td></tr>
+      </table>
+      <table class="spec">
+        <tr><th>фурнитура</th><th>характер</th></tr>
+        <tr><td><b>Скрытая</b></td><td>без ручек · push-to-open</td></tr>
+        <tr><td><b>Чёрный металл</b></td><td>ручки и опоры · графит</td></tr>
+        <tr><td><b>Латунь</b></td><td>тёплый металлический акцент</td></tr>
+      </table>
+      <div class="card"><div class="in" style="padding:18px 22px;font-size:13.5px;line-height:1.8;color:var(--pencil)">СТОЛЕШНИЦЫ: В КОРПУС · СЛЭБ · БЕТОН<br>ОСНОВАНИЯ: ЦОКОЛЬ · НОЖКИ<br><span class="red" style="font-weight:650">ВСЁ — ИЗ ФАКТИЧЕСКОГО СПИСКА МАСТЕРСКОЙ</span></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>справочник материалов</b></div><div>источник <b>designyo.ru</b></div><div><b>лист 14 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · справочник</span><span>источник <b>designyo.ru</b></span><span style="margin-left:auto"><b>лист 12 / 18</b></span></div>
 </section>
 
-<!-- 15 CJM -->
+<!-- 13 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">путь клиента</span><h2>От «открыл Telegram» до доставки</h2><div class="rule"></div><span class="no">лист 15</span></div>
-  <div class="body" style="display:flex;flex-direction:column;gap:40px;justify-content:center">
+  <div class="top"><span class="kick">путь клиента</span><h2>От «открыл Telegram» до доставки</h2><span class="pg">лист 13</span></div>
+  <div class="body" style="display:flex;flex-direction:column;gap:36px;justify-content:center">
     <div class="flow">
-      <div class="nd"><b>Telegram</b><span>кнопка menu / ссылка t.me</span></div>
-      <div class="nd"><b>Каталог</b><span>лист-заготовка</span></div>
-      <div class="nd"><b>Сборка</b><span>размеры и модули</span></div>
-      <div class="nd"><b>Материалы</b><span>выкраски и отделки</span></div>
+      <div class="nd"><b>Telegram</b><span>кнопка меню бота · ссылка t.me</span></div>
+      <div class="nd"><b>Конструктор</b><span>пустой стек · первые блоки</span></div>
+      <div class="nd"><b>Параметры</b><span>габариты · наполнение · порядок</span></div>
+      <div class="nd"><b>Материал</b><span>порода · отделка · фурнитура</span></div>
     </div>
     <div class="flow">
-      <div class="nd"><b>Эскиз</b><span>файлы до 10 × 30 МБ</span></div>
-      <div class="nd"><b>Заявка</b><span>спецификация листом</span></div>
-      <div class="nd"><b>Чат</b><span>смета и срок от мастера</span></div>
-      <div class="nd"><b>Цех и доставка</b><span>5 этапов с фото</span></div>
+      <div class="nd"><b>Заявка</b><span>спецификация и трудоёмкость</span></div>
+      <div class="nd"><b>Чат</b><span>смета · срок · договор</span></div>
+      <div class="nd"><b>Цех</b><span>5 этапов с фото со стола</span></div>
+      <div class="nd hi"><b>Доставка и возврат</b><span>следующая сборка в один тап</span></div>
     </div>
-    <div style="display:flex;gap:30px">
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Точка радости</h3><p style="font-size:15.5px;line-height:1.55;color:var(--pencil)">Первый чертёж своей мебели клиент получает за 2–3 минуты и бесплатно — до всякого разговора с мастерской.</p></div>
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Возврат</h3><p style="font-size:15.5px;line-height:1.55;color:var(--pencil)">После доставки профиль зовёт собрать следующее изделие: история листов и материалов остаётся в приложении.</p></div>
-      <div class="card" style="flex:1;padding:20px 24px"><h3 class="bl">Для бюро</h3><p style="font-size:15.5px;line-height:1.55;color:var(--pencil)">Дизайнер собирает вариант для клиента и отправляет лист в мастерскую от своего имени — партнёрский канал сайта становится инструментом.</p></div>
+    <div style="display:flex;gap:26px">
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">точка радости</h3><p style="font-size:15px;line-height:1.55;color:var(--pencil)">Первый чертёж своей мебели клиент получает за две-три минуты и бесплатно — до всякого разговора с мастерской.</p></div></div>
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">возврат</h3><p style="font-size:15px;line-height:1.55;color:var(--pencil)">Стек блоков и материал проекта хранятся в приложении: повторная сборка начинается не с нуля, а с прошлого листа.</p></div></div>
+      <div class="card" style="flex:1"><div class="in" style="padding:20px 24px"><h3 class="bl">для бюро</h3><p style="font-size:15px;line-height:1.55;color:var(--pencil)">Дизайнер собирает вариант для клиента и отправляет спецификацию в мастерскую от своего имени — партнёрский канал сайта становится инструментом.</p></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>путь клиента</b></div><div><b>лист 15 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · путь клиента</span><span style="margin-left:auto"><b>лист 13 / 18</b></span></div>
 </section>
 
-<!-- 16 ПОРТФОЛИО/САЙТ -->
+<!-- 14 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">контент</span><h2>Портфолио остаётся на сайте</h2><div class="rule"></div><span class="no">лист 16</span></div>
+  <div class="top"><span class="kick">контент</span><h2>Портфолио остаётся на сайте</h2><span class="pg">лист 14</span></div>
   <div class="body" style="display:flex;gap:44px;align-items:flex-start">
-    <div style="flex:1.1;display:flex;flex-direction:column;gap:22px">
-      <div class="card" style="padding:26px 28px"><span class="tape" style="right:-28px;top:14px;transform:rotate(36deg)"></span>
-        <h3 class="bl">Разделение ролей</h3>
-        <p style="font-size:16.5px;line-height:1.6;color:var(--pencil)">Фотографии интерьеров и отзывы живут на designyo.ru и в соцсетях мастерской. Мини-апп не тянет их внутрь: его язык — чертёж, а сайт остаётся витриной. Из каталога и профиля уходят ссылки на сайт.</p>
-      </div>
-      <div class="card" style="padding:22px 26px">
-        <h3 class="bl">Шесть листов каталога</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;font-size:15px;font-weight:700;line-height:1.5">
-          <div>01 · Кухня «Карагач»<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">фанера + слэб карагача</span></div>
-          <div>02 · Топчан-помост<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">фанера, модули хранения</span></div>
-          <div>03 · Трон «Свирепая мебель»<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">бук + синяя смола · только с мастером</span></div>
-          <div>04 · Тумба «Рустик»<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">дуб + бетонная столешница</span></div>
-          <div>05 · Лофт-перегородка<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">берёза, расстекловка, фрамуга</span></div>
-          <div>06 · Модульные сиденья<span class="mono" style="display:block;font-size:10px;color:var(--hint);font-weight:400">фанера · двор на Шпалерной, 1</span></div>
+    <div style="flex:1.15;display:flex;flex-direction:column;gap:22px">
+      <div class="card"><div class="in">
+        <h3 class="bl">разделение ролей</h3>
+        <p style="font-size:16.5px;line-height:1.65;color:var(--pencil)">Фотографии интерьеров, отзывы и живые проекты живут на designyo.ru и в соцсетях мастерской.
+        Мини-апп не тянет их внутрь: он про размеры, блоки и материалы. Из профиля и справок уходят ссылки на сайт.</p>
+      </div></div>
+      <div class="card"><div class="in">
+        <h3 class="bl">что mini-app берёт с сайта</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 26px;font-size:15.5px;font-weight:550;line-height:1.6">
+          <div>Список пород и плит<span style="display:block;font-size:12px;color:var(--hint);font-weight:450">фанера · массив · слэбы · шпон · hpl</span></div>
+          <div>Отделки и смолу<span style="display:block;font-size:12px;color:var(--hint);font-weight:450">масловоск · лак · браширование · смола</span></div>
+          <div>Лимиты формы эскиза<span style="display:block;font-size:12px;color:var(--hint);font-weight:450">до 10 файлов по 30 МБ</span></div>
+          <div>Контакты и договор<span style="display:block;font-size:12px;color:var(--hint);font-weight:450">физ- и юрлица · матисов 4</span></div>
         </div>
-      </div>
+      </div></div>
     </div>
-    <div style="flex:1;display:flex;flex-direction:column;gap:20px;align-items:center;padding-top:10px">
-      <div class="card" style="padding:26px;display:flex;gap:24px;align-items:center">
-        <img src="assets/qr-tg.png" style="width:168px;height:168px;border:1px solid var(--line)" alt="QR">
+    <div style="flex:1;display:flex;flex-direction:column;gap:20px;align-items:center;padding-top:6px">
+      <div class="card"><div class="in" style="display:flex;gap:24px;align-items:center;padding:24px">
+        <img src="assets/qr-tg.png" style="width:164px;height:164px;border:1px solid var(--sep);border-radius:10px" alt="QR">
         <div>
-          <div class="mono" style="font-size:11px;letter-spacing:.18em;color:var(--ink2)">КАНАЛ МАСТЕРСКОЙ</div>
-          <div style="font-size:22px;font-weight:800;margin-top:6px">t.me/stolyarochka_yo</div>
-          <p style="font-size:14px;color:var(--pencil);line-height:1.5;margin-top:8px">Сюда приведёт кнопка мини-приложения и этот QR: заявка из Yo Kit падает в тот же чат, где мастерская уже отвечает клиентам.</p>
+          <div style="font-size:12px;font-weight:650;letter-spacing:.14em;text-transform:uppercase;color:var(--hint)">канал мастерской</div>
+          <div style="font-size:22px;font-weight:700;margin-top:6px;letter-spacing:-.3px">t.me/stolyarochka_yo</div>
+          <p style="font-size:14px;color:var(--pencil);line-height:1.55;margin-top:8px">Сюда приведёт кнопка мини-приложения и этот QR: заявка из Yo Kit падает в тот же чат, где мастерская уже отвечает клиентам.</p>
         </div>
-      </div>
-      <div class="stamp" style="transform:rotate(-3deg)">фото и отзывы —<br>designyo.ru</div>
+      </div></div>
+      <div style="background:var(--acct);color:var(--acc);font-size:14px;font-weight:650;padding:10px 18px;border-radius:999px">фото и отзывы — designyo.ru</div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>контент и сайт</b></div><div><b>лист 16 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · контент и сайт</span><span style="margin-left:auto"><b>лист 14 / 18</b></span></div>
 </section>
 
-<!-- 17 ВНЕДРЕНИЕ -->
+<!-- 15 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div class="sh"><span class="kick">внедрение</span><h2>Три шага до живого мини-аппа</h2><div class="rule"></div><span class="no">лист 17</span></div>
+  <div class="top"><span class="kick">внедрение</span><h2>Три шага до живого мини-аппа</h2><span class="pg">лист 15</span></div>
   <div class="body" style="display:flex;flex-direction:column;gap:30px;justify-content:center">
     <div class="flow">
-      <div class="nd"><b>Шаг 1 · Каркас</b><span>botfather + web app · заявки в чат и таблицу · 2–3 недели</span></div>
-      <div class="nd"><b>Шаг 2 · Цех</b><span>статусы производства из таблицы мастерской · фото в чат · 2 недели</span></div>
-      <div class="nd"><b>Шаг 3 Рост</b><span>замер и образцы · напоминания · повторные сборки · по сезону</span></div>
+      <div class="nd"><b>Шаг 1 · каркас</b><span>botfather + web app · заявки в чат и таблицу · 2–3 недели</span></div>
+      <div class="nd"><b>Шаг 2 · цех</b><span>статусы из таблицы мастерской · фото в чат · 2 недели</span></div>
+      <div class="nd"><b>Шаг 3 · рост</b><span>замер и образцы · повторные сборки · сезоны</span></div>
     </div>
-    <div style="display:flex;gap:30px">
-      <div class="card" style="flex:1.2;padding:24px 26px">
-        <h3 class="bl">Что нужно от мастерской</h3>
-        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Список материалов и допусков по изделиям (уже есть на сайте), вилки сроков по трудоёмкости, доступ к чату для бота и согласие штамповать статусы цеха. Онлайн-платежи не нужны вовсе.</p>
-      </div>
-      <div class="card" style="flex:1.2;padding:24px 26px">
-        <h3 class="bl">Риски и как прикрыты</h3>
-        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Чертёж упрощён — финальную карту раскроя рисует мастер, приложение лишь собирает намерение. Наличия породы нет в реальном времени — мастер подтверждает в чате. Смета не в приложении — и это осознанно.</p>
-      </div>
-      <div class="card" style="flex:1;padding:24px 26px">
-        <h3 class="bl">Метрики успеха</h3>
-        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Доля заявок со спецификацией (цель 70%+), время от первого входа до заявки (цель &lt; 10 минут), возврат к повторной сборке через 6 месяцев.</p>
-      </div>
+    <div style="display:flex;gap:26px">
+      <div class="card" style="flex:1.2"><div class="in"><h3 class="bl">что нужно от мастерской</h3>
+        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Допуски по изделиям и шагам размеров (уже есть на сайте), вилки сроков по трудоёмкости, доступ к чату для бота и готовность штамповать статусы цеха. Онлайн-платежи не нужны вовсе.</p></div></div>
+      <div class="card" style="flex:1.2"><div class="in"><h3 class="bl">риски и как прикрыты</h3>
+        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Аксонометрия упрощена — карту раскроя рисует мастер, приложение лишь собирает намерение. Наличие породы не в реальном времени — мастер подтверждает в чате. Смета не в приложении — и это осознанно.</p></div></div>
+      <div class="card" style="flex:1"><div class="in"><h3 class="bl">метрики успеха</h3>
+        <p style="font-size:15.5px;line-height:1.6;color:var(--pencil)">Доля заявок со спецификацией (цель 70%+), время от входа до заявки (&lt; 10 минут), возврат к повторной сборке за 6 месяцев.</p></div></div>
     </div>
   </div>
-  <div class="tb"><div>yo kit · <b>внедрение</b></div><div><b>лист 17 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · внедрение</span><span style="margin-left:auto"><b>лист 15 / 18</b></span></div>
 </section>
 
-<!-- 18 ФИНАЛ -->
+<!-- 16 -->
 <section class="slide">
-  <div class="frame"><span class="tick tl"></span><span class="tick br"></span></div>
-  <div style="position:absolute;left:110px;top:200px;width:1050px">
-    <div class="mono red" style="font-size:14px;font-weight:700;letter-spacing:.28em">ЛИСТ 18 · ПОСЛЕДНИЙ</div>
-    <h2 style="font-size:76px;font-weight:800;letter-spacing:-1.5px;line-height:1.05;margin-top:16px">Соберём первую<br>заявку вместе?</h2>
-    <p style="font-size:20px;color:var(--pencil);line-height:1.6;margin-top:24px;max-width:820px">Мокап кликабелен: девять экранов, параметрический чертёж и язык ватмана уже работают в браузере. Дальше — каркас бота и настоящий чат мастерской.</p>
-    <div style="margin-top:44px;display:flex;flex-direction:column;gap:12px;font-size:19px;font-weight:700">
-      <div>+7 921 992-10-77 <span class="mono" style="font-size:12px;color:var(--hint);font-weight:400">· звонок и whatsapp</span></div>
-      <div>@stolyarochka_yo <span class="mono" style="font-size:12px;color:var(--hint);font-weight:400">· telegram</span></div>
-      <div>stolyarochka.yo@gmail.com</div>
-      <div>Матисов переулок, 4, Санкт-Петербург <span class="mono" style="font-size:12px;color:var(--hint);font-weight:400">· цех</span></div>
-      <div>designyo.ru <span class="mono" style="font-size:12px;color:var(--hint);font-weight:400">· портфолио</span></div>
+  <div class="top"><span class="kick">дизайн-система</span><h2>Паттерны Telegram, палитра цеха</h2><span class="pg">лист 16</span></div>
+  <div class="body" style="display:flex;gap:36px">
+    <div style="flex:1;display:flex;flex-direction:column;gap:22px">
+      <table class="spec">
+        <tr><th>компонент</th><th>паттерн официального клиента</th></tr>
+        <tr><td><b>Навбар</b></td><td>центральный заголовок · «назад» с шевроном · текстовое действие справа</td></tr>
+        <tr><td><b>Списки</b></td><td>группированные карточки 12 px · волосяные разделители · шевроны и значения</td></tr>
+        <tr><td><b>Контролы</b></td><td>сегменты и свитчи ios · action sheet с блюром · главная кнопка мини-аппа</td></tr>
+        <tr><td><b>Чат</b></td><td>бабблы с хвостом · время с галочками · поле ввода со скрепкой</td></tr>
+        <tr><td><b>Навигация</b></td><td>нижний таб-бар с тремя вкладками и активным акцентом</td></tr>
+      </table>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:22px">
+      <div class="pal">
+        <div><i style="background:#f1ede2"></i><span>бумага · фон</span><em>#f1ede2</em></div>
+        <div><i style="background:#fdfbf5"></i><span>карточка</span><em>#fdfbf5</em></div>
+        <div><i style="background:#1d3350"></i><span>чернильный текст</span><em>#1d3350</em></div>
+      </div>
+      <div class="pal">
+        <div><i style="background:#b3762f"></i><span>дерево · акцент</span><em>#b3762f</em></div>
+        <div><i style="background:#c98d4b"></i><span>дерево светлое</span><em>#c98d4b</em></div>
+        <div><i style="background:#c2452d"></i><span>карандаш · destructive</span><em>#c2452d</em></div>
+      </div>
+      <div class="pal">
+        <div><i style="background:#f4e6c9"></i><span>баббл исходящий</span><em>#f4e6c9</em></div>
+        <div><i style="background:#5d8a54"></i><span>шалфей · готово</span><em>#5d8a54</em></div>
+        <div><i style="background:#8d97a5"></i><span>подсказки</span><em>#8d97a5</em></div>
+      </div>
+      <div class="card"><div class="in" style="padding:18px 22px;font-size:14px;line-height:1.7;color:var(--pencil)">Шрифт — Inter как замена системному SF Pro: те же начертания и плотности, что у официального клиента, без чужих лицензий.</div></div>
     </div>
   </div>
-  <div style="position:absolute;right:150px;top:250px;display:flex;flex-direction:column;align-items:center;gap:22px">
-    <div class="card" style="padding:22px"><img src="assets/qr-tg.png" style="width:220px;height:220px;display:block" alt="QR"></div>
-    <div class="stamp" style="transform:rotate(-4deg)">yo kit · концепт-мокап<br>одобрено к показу<br>21.09.2026</div>
+  <div class="bot"><span><b>yo kit</b> · дизайн-система</span><span style="margin-left:auto"><b>лист 16 / 18</b></span></div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="top"><span class="kick">сравнение</span><h2>Было бы «в синем» — стало «в дереве»</h2><span class="pg">лист 17</span></div>
+  <div class="body" style="display:flex;gap:36px;align-items:center">
+    <div class="card" style="flex:1"><div class="in">
+      <h3 class="bl">стандартный mini-app</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:15.5px;line-height:1.6;color:var(--pencil)">
+        <div style="background:#efeff4;border-radius:10px;padding:12px 16px">фон #efeff4 · карточки #ffffff</div>
+        <div style="background:#3390ec;color:#fff;border-radius:10px;padding:12px 16px;font-weight:600">Добавить блок · #3390ec</div>
+        <div style="background:#e3fee0;border-radius:10px;padding:12px 16px">исходящий баббл #e3fee0</div>
+        <div style="background:#ff3b30;color:#fff;border-radius:10px;padding:12px 16px;font-weight:600">Удалить · #ff3b30</div>
+      </div>
+      <p style="font-size:14px;color:var(--hint);margin-top:16px;line-height:1.5">Узнаваемо, но обезличено: любой бот выглядит одинаково.</p>
+    </div></div>
+    <div style="flex:0 0 90px;display:flex;align-items:center;justify-content:center;color:var(--acc)"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg></div>
+    <div class="card" style="flex:1"><div class="in">
+      <h3 class="bl acc">yo kit в цветах мастерской</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:15.5px;line-height:1.6;color:var(--pencil)">
+        <div style="background:#f1ede2;border:1px solid var(--sep);border-radius:10px;padding:12px 16px">фон-бумага #f1ede2 · карточки #fdfbf5</div>
+        <div style="background:#b3762f;color:#fff;border-radius:10px;padding:12px 16px;font-weight:600">Добавить блок · дерево #b3762f</div>
+        <div style="background:#f4e6c9;border-radius:10px;padding:12px 16px">исходящий баббл — тон масла #f4e6c9</div>
+        <div style="background:#c2452d;color:#fff;border-radius:10px;padding:12px 16px;font-weight:600">Удалить · карандаш #c2452d</div>
+      </div>
+      <p style="font-size:14px;color:var(--hint);margin-top:16px;line-height:1.5">Те же паттерны — но экран пахнет цехом, а не чужим брендом.</p>
+    </div></div>
   </div>
-  <div class="tb"><div>yo kit · <b>финал</b></div><div>столярочка yo · спб</div><div><b>лист 18 / 18</b></div></div>
+  <div class="bot"><span><b>yo kit</b> · сравнение палитр</span><span style="margin-left:auto"><b>лист 17 / 18</b></span></div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div style="position:absolute;left:120px;top:210px;width:1000px">
+    <div style="font-size:15px;font-weight:650;letter-spacing:.16em;text-transform:uppercase;color:var(--acc)">лист 18 · последний</div>
+    <h2 style="font-size:74px;font-weight:750;letter-spacing:-1.8px;line-height:1.06;margin-top:16px">Соберём первую<br>заявку вместе?</h2>
+    <p style="font-size:20px;line-height:1.6;color:var(--pencil);margin-top:24px;max-width:800px">Мокап кликабелен: девять экранов, стек блоков и живая аксонометрия уже работают в браузере. Дальше — каркас бота и настоящий чат мастерской.</p>
+    <div style="margin-top:40px;display:flex;flex-direction:column;gap:12px;font-size:19px;font-weight:600">
+      <div>+7 921 992-10-77 <span style="font-size:13px;color:var(--hint);font-weight:450">· звонок и whatsapp</span></div>
+      <div>@stolyarochka_yo <span style="font-size:13px;color:var(--hint);font-weight:450">· telegram</span></div>
+      <div>stolyarochka.yo@gmail.com</div>
+      <div>Матисов переулок, 4, Санкт-Петербург <span style="font-size:13px;color:var(--hint);font-weight:450">· цех</span></div>
+      <div>designyo.ru <span style="font-size:13px;color:var(--hint);font-weight:450">· портфолио</span></div>
+    </div>
+  </div>
+  <div style="position:absolute;right:150px;top:260px;display:flex;flex-direction:column;align-items:center;gap:20px">
+    <div class="card"><div class="in" style="padding:20px"><img src="assets/qr-tg.png" style="width:216px;height:216px;display:block" alt="QR"></div></div>
+    <div style="background:var(--acct);color:var(--acc);font-size:13.5px;font-weight:650;padding:10px 18px;border-radius:999px">yo kit · концепт-мокап · 21.09.2026</div>
+  </div>
+  <div class="bot"><span><b>yo kit</b> · финал</span><span>столярочка yo · спб</span><span style="margin-left:auto"><b>лист 18 / 18</b></span></div>
 </section>
 
 </body>

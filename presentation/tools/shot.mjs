@@ -45,13 +45,13 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const SHOTS = [
-  ['01-splash',   '#splash'],
-  ['02-catalog',  '#catalog'],
-  ['03-build',    '#build?piece=topchan'],
-  ['04-materials','#materials?piece=topchan'],
-  ['05-sketch',   '#sketch?piece=topchan&files=2'],
-  ['06-summary',  '#summary?piece=topchan&files=2'],
-  ['07-chat',     '#chat?piece=topchan&files=2'],
+  ['01-build',    '#build'],
+  ['02-addsheet', '#build?sheet=add'],
+  ['03-block',    '#block?sel=1'],
+  ['04-project',  '#project'],
+  ['05-materials','#materials'],
+  ['06-summary',  '#summary'],
+  ['07-chat',     '#chat'],
   ['08-orders',   '#orders'],
   ['09-profile',  '#profile'],
 ];
