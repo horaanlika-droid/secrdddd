@@ -216,6 +216,18 @@ for (const [label, lock, pkg, dir] of [
         'сначала звать ensure-deps.js, а приложение держать в src/app.js');
     } else ok('bot/src/index.js не импортирует пакеты напрямую (гарант зависимостей сработает)');
   }
+
+  /* хост с «корнем проекта» = bot/ и командой `node bot/src/index.js`
+     падал с «Cannot find module '/app/bot/src/index.js'» — шим bot/bot/src/index.js
+     делает команду рабочей из обеих папок. Он обязан оставаться на месте
+     и только переходить к настоящей точке входа. */
+  const shim = path.join(BOT, 'bot', 'src', 'index.js');
+  if (!exists(shim)) {
+    bad('bot/bot/src/index.js отсутствует',
+      'это шим для хостов с корнем проекта bot/: `node bot/src/index.js` иначе не находит файл');
+  } else if (!/import\(['"]\.\.\/\.\.\/src\/index\.js['"]\)/.test(read(shim))) {
+    bad('bot/bot/src/index.js не переходит к ../../src/index.js', 'шим должен только импортировать настоящую точку входа');
+  } else ok('bot/bot/src/index.js: шим для хостов с корнем bot/ на месте');
 }
 
 /* ---------- 6. все импорты в коде объявлены в dependencies ---------- */
