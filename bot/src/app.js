@@ -30,7 +30,8 @@ import { registerStickers } from './stickers.js';
 import { createWorkbookApi } from './workbook.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TOKEN = process.env.TG_TOKEN || '';
+/* хосты вроде Bothost задают токен как BOT_TOKEN — принимаем и его */
+const TOKEN = process.env.TG_TOKEN || process.env.BOT_TOKEN || '';
 const ADMINS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean).map(Number));
 const PORT = Number(process.env.PORT || 8080);
 const TRIAL_DAYS = 7;
@@ -42,7 +43,7 @@ const plansLine = () => 'минимальный донат раз в месяц'
 const APP_DIR = path.join(__dirname, '..', '..', 'app');
 
 if (!TOKEN) {
-  console.error('Нет TG_TOKEN. Выстави три переменные: TG_TOKEN, ADMIN_IDS, TRIBUTE_API');
+  console.error('Нет TG_TOKEN (или BOT_TOKEN). Выстави три переменные: TG_TOKEN, ADMIN_IDS, TRIBUTE_API');
   process.exit(1);
 }
 
